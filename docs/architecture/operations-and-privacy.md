@@ -1,0 +1,220 @@
+# Architecture, operations, and privacy
+
+## System boundary
+
+Poyo Local Studio is one full-stack SvelteKit repository and one local Bun process. There is
+no separate browser-only API client and no secondary Node service.
+
+```text
+Browser on this machine
+  └─ same-origin SvelteKit pages and /api routes
+       ├─ capability registry and request adapters
+       ├─ Bun SQLite: jobs, settings, registry, presets, library, cleanup
+       ├─ durable job and cleanup workers
+       ├─ private local files: uploads, media, logs, secrets, reserved thumbnails
+       └─ HTTPS to Poyo API
+            └─ returned output URLs are downloaded to private local media storage
+```
+
+Server-only modules own credentials, Poyo transport, SQLite, filesystem access, downloads,
+logging, and cleanup. Browser routes receive safe DTOs rather than credentials or local media
+paths. Settings deliberately displays resolved storage paths to the local operator; copied
+diagnostics omit them.
+
+## Technology and domain boundaries
+
+- **Runtime and package manager:** Bun 1.3.14.
+- **Application framework:** Svelte 5.56.5 with runes and SvelteKit 2.69.3.
+- **Production server:** `svelte-adapter-bun` 1.0.1.
+- **Styling:** UnoCSS 66.7.5 with `presetWind4`; adapted Modern Minimal tokens; Bits UI
+  primitives where focus management is required.
+- **Persistence:** Bun's native `bun:sqlite`, schema version 2, checksum-verified migrations.
+- **Feature modules:** registry/generation, Poyo transport, jobs, media/library, presets,
+  settings/secrets, cleanup, and diagnostics.
+- **Route modules:** thin load/API boundaries that validate same-origin input and delegate to
+  server services.
+
+The local capability registry—not a generic form and not Poyo's generic OpenAPI schema—owns
+workflow roles, conditional controls, validation, exact payload normalization, provenance,
+and limitations.
+
+## Durable generation lifecycle
+
+1. The guided request is normalized and validated against one registry workflow adapter.
+2. SQLite stores the local job, request fingerprint, guided values, normalized Poyo payload,
+   source roles, and a prepared submission intent before the paid network call.
+3. A transactional submission claim and owner token allow only one worker to transmit the
+   paid request.
+4. A successful response persists the Poyo task ID immediately.
+5. A timeout or network/provider failure after possible transmission becomes an ambiguous
+   submission requiring attention. It is not automatically resubmitted.
+6. The worker polls the authoritative status endpoint. Failed polls record local uncertainty;
+   they do not mark the remote generation failed.
+7. Poyo's real progress is persisted when present. No interpolated or continuously increasing
+   progress is generated locally.
+8. By default, `finished` outputs are downloaded, verified, and recorded independently of
+   remote success. If automatic downloads are disabled, outputs remain available for a manual
+   retry without paying for another generation.
+9. Nonterminal jobs and expired worker claims are reconciled on application startup.
+
+Submission, poll, and download work use bounded leases. Repository transactions reject stale
+claim completion, which allows recovery after crashes without permitting two workers to own
+the same operation.
+
+### Retry behavior
+
+- Balance and status reads may retry safe network/provider/rate-limit failures up to three
+  attempts with bounded exponential backoff, jitter, and an observed `Retry-After` value.
+- Paid generation submission and upload requests are not transport-retried after ambiguity.
+- Polling defaults to five seconds and marks prolonged uncertainty stale after 15 minutes;
+  validated Settings changes are read by the worker, and stale remains distinct from failed.
+
+## SQLite and application data
+
+Migrations run transactionally at startup and record a checksum. Startup fails if an applied
+migration's content changes or the database contains an unknown migration version. Foreign
+keys are enabled.
+
+Persisted data includes:
+
+- public application settings and secret-source metadata (never the secret value);
+- registry versions, current/excluded/audit entries, favorites, and recents;
+- jobs, Poyo task IDs, request payloads, inputs, outputs, events, progress, error history,
+  credit observations, and balance snapshots;
+- download attempts, checksums, signatures, sizes, and availability;
+- presets, favorites, pins, and tags;
+- local cleanup policies, previews, durable actions, claims, and results.
+
+Default data roots are documented in the README. All application directories are created
+privately (`0700` on POSIX). Output and secret files use private permissions (`0600` on POSIX).
+Paths are normalized, null bytes and traversal are rejected, and local deletion refuses
+symbolic links.
+
+Back up the SQLite database and media/upload directories together while the application is
+stopped if a consistent portable snapshot is required.
+
+## Browser live updates
+
+`GET /api/events/jobs` exposes a one-way Server-Sent Events stream. Initial connection sends a
+SQLite snapshot with an event watermark. Reconnection with a valid `Last-Event-ID` replays
+unseen durable events; invalid or compacted cursors receive a fresh snapshot. The stream polls
+the database for new events and never becomes the source of truth.
+
+A disconnected or suspended browser therefore loses only live presentation. Page loads and
+reconnection synchronize from SQLite.
+
+## Source uploads and output downloads
+
+### Inputs
+
+- Remote URL input must use HTTP(S), cannot contain embedded credentials, and cannot target
+  local/private address ranges when passed through the Poyo URL-upload endpoint.
+- Local source intake requires a same-origin multipart request, validates size, MIME type, and
+  file signature, streams to a temporary file, then renames into retained private upload
+  storage.
+- The server streams that retained source to Poyo. Image formats are JPEG, PNG, GIF, and WebP;
+  video formats are MP4, WebM, MOV, AVI, and MKV. Poyo's streaming video limit is 100 MiB.
+- Base64 is accepted only for image sources up to 5 MiB by the server client. Large files and
+  video are never converted to base64.
+
+Moving files outside the managed directories cannot affect retained uploads, but deleting the
+managed upload directory removes the local source copy. Poyo upload expiration is stored when
+returned. Poyo documents no upload-deletion endpoint.
+
+### Outputs
+
+Downloads use a private per-job directory and an unpredictable `.partial` filename. The
+downloader:
+
+1. refuses redirects and enforces a 2 GiB local maximum;
+2. streams bytes directly to disk while computing SHA-256;
+3. rejects empty files and mismatched declared/Poyo lengths;
+4. validates content type and practical PNG/JPEG/GIF/WebP/MP4/MOV/WebM signatures;
+5. flushes and syncs the temporary file;
+6. atomically renames it to a sanitized, collision-resistant destination;
+7. records verification metadata in SQLite.
+
+A generation may therefore be remotely successful while one or more local downloads require
+attention. The states are intentionally separate.
+
+## Local and remote cleanup
+
+Local retention defaults to `never`. Opt-in policies can select files by age, total indexed
+media size, or minimum free space and can exclude favorites, pins, and tags. Manual bulk
+cleanup requires a persisted preview token and explicit confirmation; the preview lists
+candidate filenames, bytes, and reasons. Once an operator saves a non-`never` automatic
+policy, the durable cleanup worker re-evaluates it on startup and every 15 minutes, persists a
+snapshot before scheduling candidates, and avoids duplicate pending actions for the same
+policy and consequence.
+
+Deletion consequences remain distinct:
+
+- **File:** delete the local file and retain history marked unavailable.
+- **Metadata:** delete the output record and leave an untracked local file.
+- **Both:** delete the local file and its output record.
+
+Scheduled actions and worker leases are stored in SQLite. Overdue actions reconcile on the
+next application start; the application cannot run cleanup while it is closed.
+
+Poyo exposes no verified task, upload, or generated-file deletion endpoint. Remote cleanup is
+therefore unavailable. The application never hides a local record and labels that remote
+deletion.
+
+## Credentials
+
+Credential precedence is strict:
+
+1. A non-empty `POYO_API_KEY` environment value is authoritative.
+2. Otherwise, the server checks Bun's operating-system secret service.
+3. If unavailable on a supported non-Windows system, it may use an atomic permission-restricted
+   local secret file.
+4. If neither store is safe, local onboarding is unavailable and the application requires an
+   environment key.
+
+An environment key cannot be overridden or removed by the UI. A locally entered key is sent
+once over the same-origin loopback request, cleared from the field, and returned only as source
+and status metadata. SQLite records connectivity time/status and secret-source metadata, not
+key material.
+
+## Logging and diagnostics
+
+Structured JSONL logs contain timestamps, levels, event names, correlation IDs, local job IDs,
+Poyo task IDs, and redacted metadata. They never intentionally contain authorization headers,
+API keys, cookies, credentials, long base64 values, or raw secret-bearing payloads. Recursive
+redaction also sanitizes bearer strings, secret query values, data URIs, and Poyo-style keys.
+
+Default rotation is 5 MiB or 24 hours, with 14-day retention, at most ten rotated files, and a
+separate error stream. Validated Settings changes are applied to the active logger.
+
+Diagnostics reports application/schema versions, loopback policy, SQLite status, credential
+source/status, connectivity freshness, registry versions, aggregate storage, cleanup-worker
+state, and log health. Copied reports exclude API keys and local filesystem paths. Raw stack
+traces are not rendered in the browser.
+
+## What leaves the machine
+
+Application runtime traffic is limited to operator-requested Poyo work and returned output
+downloads. There is no analytics, advertising, third-party telemetry, or remote font request.
+
+| Destination | Data sent | When |
+| --- | --- | --- |
+| `https://api.poyo.ai` | Bearer API key in the authorization header; model ID; prompt and normalized parameters; referenced remote URLs; selected local media bytes for stream upload; balance/status task identifiers. | Connectivity test, balance refresh, source upload, generation submit, or status polling. |
+| Public URL supplied by the operator | The application sends the URL to Poyo's URL-upload service; Poyo may fetch that resource. | Only when URL upload is selected. |
+| Output host returned by Poyo | A plain GET for the generated file URL. The downloader does not add the Poyo authorization header. | After a successful task or a manual download retry. |
+| `docs.poyo.ai` | Standard documentation HTTP requests; no API key, prompt, media, or generation request. | Only when a developer deliberately runs `bun run registry:audit:network`. |
+
+The local browser communicates with the loopback SvelteKit server. Those same-origin requests
+do not leave the machine. Viewing the GitHub README may load badge images from `img.shields.io`;
+that is repository presentation, not application runtime behavior.
+
+## Network exposure
+
+`bun run start` forces `HOST=127.0.0.1`. Same-origin JSON and multipart mutation routes reject
+missing/mismatched origins and cross-site requests. Private media routes enforce same-origin
+access, safe path resolution, and range bounds.
+
+Changing the adapter host to a non-loopback address is an explicit operator action and is not a
+supported secure multi-user deployment. Before doing so, add an authenticated reverse proxy,
+TLS, host/origin policy, filesystem-user isolation, and a threat review. Poyo webhooks are not
+enabled automatically; they require a public HTTPS endpoint and would change the privacy and
+attack surface materially.
