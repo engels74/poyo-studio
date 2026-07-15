@@ -1,7 +1,7 @@
 <script lang="ts">
 import type { Snippet } from 'svelte';
 
-type Tone = 'neutral' | 'info' | 'success' | 'warning' | 'danger' | 'experimental';
+type Tone = 'neutral' | 'info' | 'success' | 'warning' | 'danger' | 'experimental' | 'stage';
 
 interface Props {
   children: Snippet;
@@ -17,7 +17,8 @@ const tones: Record<Tone, string> = {
   success: 'bg-success/12 text-success',
   warning: 'bg-warning/12 text-warning',
   danger: 'bg-destructive/12 text-destructive',
-  experimental: 'bg-experimental/12 text-experimental'
+  experimental: 'bg-experimental/12 text-experimental',
+  stage: 'bg-stage-elevated text-stage-foreground'
 };
 
 let classes = $derived(

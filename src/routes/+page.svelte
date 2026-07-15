@@ -24,11 +24,11 @@ let { data }: { data: PageData } = $props();
   <section aria-labelledby="overview-heading" class="border-y border-border py-4">
     <h2 id="overview-heading" class="sr-only">System overview</h2>
     <dl class="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-5">
-      <div><dt class="text-xs text-muted-foreground">Poyo balance</dt><dd class="mt-1 flex items-center gap-2 text-sm font-semibold"><AppIcon name="wallet" size={15} /> {data.dashboard.balance ? `${data.dashboard.balance.credits.toLocaleString()} credits` : 'Not refreshed'}</dd>{#if data.dashboard.balance}<p class="mt-1 text-[0.6875rem] text-muted-foreground">As of {dateTimeLabel(data.dashboard.balance.fetchedAt)}</p>{/if}</div>
+      <div><dt class="text-xs text-muted-foreground">Poyo balance</dt><dd class="mt-1 flex items-center gap-2 text-sm font-semibold"><AppIcon name="wallet" size={15} /> {data.dashboard.balance ? `${data.dashboard.balance.credits.toLocaleString()} credits` : 'Not refreshed'}</dd>{#if data.dashboard.balance}<dd class="mt-1 text-[0.6875rem] text-muted-foreground">As of {dateTimeLabel(data.dashboard.balance.fetchedAt)}</dd>{/if}</div>
       <div><dt class="text-xs text-muted-foreground">Active and queued</dt><dd class="mt-1 text-sm font-semibold">{data.dashboard.active.length} jobs</dd></div>
-      <div><dt class="text-xs text-muted-foreground">Local storage</dt><dd class="mt-1 text-sm font-semibold">{byteSizeLabel(data.dashboard.storage.indexedBytes)}</dd><p class="mt-1 text-[0.6875rem] text-muted-foreground">{data.dashboard.storage.verifiedFiles} verified files</p></div>
+      <div><dt class="text-xs text-muted-foreground">Local storage</dt><dd class="mt-1 text-sm font-semibold">{byteSizeLabel(data.dashboard.storage.indexedBytes)}</dd><dd class="mt-1 text-[0.6875rem] text-muted-foreground">{data.dashboard.storage.verifiedFiles} verified files</dd></div>
       <div><dt class="text-xs text-muted-foreground">Model registry</dt><dd class="mt-1"><Badge tone="success">{data.dashboard.registry.imageWorkflows + data.dashboard.registry.videoWorkflows} workflows</Badge></dd></div>
-      <div><dt class="text-xs text-muted-foreground">Application health</dt><dd class="mt-1"><Badge tone={data.dashboard.health.status === 'ok' ? 'success' : 'warning'}>{data.dashboard.health.status}</Badge></dd><p class="mt-1 text-[0.6875rem] text-muted-foreground">API key {data.dashboard.health.apiKeyStatus}</p></div>
+      <div><dt class="text-xs text-muted-foreground">Application health</dt><dd class="mt-1"><Badge tone={data.dashboard.health.status === 'ok' ? 'success' : 'warning'}>{data.dashboard.health.status}</Badge></dd><dd class="mt-1 text-[0.6875rem] text-muted-foreground">API key {data.dashboard.health.apiKeyStatus}</dd></div>
     </dl>
   </section>
 

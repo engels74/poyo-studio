@@ -345,7 +345,7 @@ const pages: Page[] = [
     seed: true
   },
   {
-    slug: 'seedance-1-0-pro',
+    slug: 'seedance-1.0-pro',
     provider: 'ByteDance',
     family: 'Seedance 1.0 Pro',
     models: [{ id: 'seedance-1.0-pro', workflows: textImage }],

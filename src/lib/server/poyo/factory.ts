@@ -12,6 +12,31 @@ export interface PoyoClientFactoryOptions
   apiKeyManager: Pick<ApiKeyManager, 'resolve'>;
   logger?: StructuredLogger;
   clock?: Clock;
+  environment?: Record<string, string | undefined>;
+}
+
+export function runtimePoyoBaseUrl(
+  environment: Record<string, string | undefined>
+): string | undefined {
+  const configured = environment.PLS_TEST_POYO_BASE_URL?.trim();
+  if (!configured) return undefined;
+  if (environment.PLS_TEST_MODE !== '1') {
+    throw new Error('PLS_TEST_POYO_BASE_URL is available only when PLS_TEST_MODE=1.');
+  }
+
+  const url = new URL(configured);
+  if (
+    url.protocol !== 'http:' ||
+    !['127.0.0.1', '::1', 'localhost'].includes(url.hostname) ||
+    url.username ||
+    url.password ||
+    url.pathname !== '/' ||
+    url.search ||
+    url.hash
+  ) {
+    throw new Error('The test Poyo origin must be an origin-only loopback HTTP URL.');
+  }
+  return url.origin;
 }
 
 export async function createPoyoClient(options: PoyoClientFactoryOptions): Promise<PoyoClient> {
@@ -26,10 +51,11 @@ export async function createPoyoClient(options: PoyoClientFactoryOptions): Promi
     });
   }
   const clock = options.clock ?? systemClock;
+  const baseUrl = options.baseUrl ?? runtimePoyoBaseUrl(options.environment ?? {});
   const transport = new PoyoTransport({
     apiKey: resolved.key,
     clock,
-    ...(options.baseUrl ? { baseUrl: options.baseUrl } : {}),
+    ...(baseUrl ? { baseUrl } : {}),
     ...(options.fetch ? { fetch: options.fetch } : {}),
     ...(options.sleeper ? { sleeper: options.sleeper } : {}),
     ...(options.random ? { random: options.random } : {}),
@@ -48,5 +74,9 @@ export async function createPoyoClient(options: PoyoClientFactoryOptions): Promi
 export async function createRuntimePoyoClient(): Promise<PoyoClient> {
   const { getPlatformServices } = await import('../platform/runtime');
   const platform = await getPlatformServices();
-  return createPoyoClient({ apiKeyManager: platform.apiKey, logger: platform.logger });
+  return createPoyoClient({
+    apiKeyManager: platform.apiKey,
+    logger: platform.logger,
+    environment: platform.environment
+  });
 }

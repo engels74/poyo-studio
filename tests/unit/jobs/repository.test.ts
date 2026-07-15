@@ -35,6 +35,28 @@ describe('durable job repository invariants', () => {
     expect(fixture.repository.get(job.id)?.localPhase).toBe('submitting');
   });
 
+  test('JOB-02 permits a deliberate new job with identical settings without sharing its intent', async () => {
+    const fixture = await createJobFixture();
+    cleanups.push(fixture.cleanup);
+    const request = {
+      workflow: 'text-to-image',
+      publicModelId: 'provider/model',
+      guidedRequest: { prompt: 'same reviewed settings' },
+      normalizedPayload: {
+        model: 'provider/model',
+        input: { prompt: 'same reviewed settings' }
+      }
+    };
+    const first = fixture.repository.create(request);
+    const second = fixture.repository.create(request);
+    expect(second.id).not.toBe(first.id);
+    expect(
+      fixture.database
+        .query<{ count: number }, []>('SELECT COUNT(*) count FROM submission_intents')
+        .get()?.count
+    ).toBe(2);
+  });
+
   test('JOB-03 freezes expired possible transmission and creates a linked explicit retry', async () => {
     const fixture = await createJobFixture();
     cleanups.push(fixture.cleanup);
@@ -121,5 +143,36 @@ describe('durable job repository invariants', () => {
       failureDomain: 'remote_generation',
       localPhase: 'complete'
     });
+  });
+
+  test('UPLOAD-04 persists a managed local source reference beside its remote upload URL', async () => {
+    const fixture = await createJobFixture();
+    cleanups.push(fixture.cleanup);
+    const localReference = '/private/studio/uploads/2026-07/source-id.png';
+    const job = fixture.repository.create({
+      workflow: 'image-to-image',
+      publicModelId: 'provider/model',
+      guidedRequest: { prompt: 'reuse the retained source' },
+      normalizedPayload: {
+        model: 'provider/model',
+        input: { prompt: 'reuse the retained source', image_url: 'https://poyo.test/source.png' }
+      },
+      inputs: [
+        {
+          role: 'source-image',
+          mediaKind: 'image',
+          source: 'uploaded',
+          url: 'https://poyo.test/source.png',
+          localReference
+        }
+      ]
+    });
+    expect(
+      fixture.database
+        .query<{ local_reference: string | null; upload_url: string | null }, [string]>(
+          'SELECT local_reference,upload_url FROM job_inputs WHERE job_id=?'
+        )
+        .get(job.id)
+    ).toEqual({ local_reference: localReference, upload_url: 'https://poyo.test/source.png' });
   });
 });

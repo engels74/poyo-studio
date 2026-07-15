@@ -30,7 +30,8 @@ export function latestBalance(database: Database): BalanceSnapshotDto | null {
 export async function refreshBalance(platform: PlatformServices): Promise<BalanceSnapshotDto> {
   const client = await createPoyoClient({
     apiKeyManager: platform.apiKey,
-    logger: platform.logger
+    logger: platform.logger,
+    environment: platform.environment
   });
   const balance = await client.getBalance();
   platform.database

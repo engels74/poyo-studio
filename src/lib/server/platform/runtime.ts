@@ -10,6 +10,7 @@ import { SettingsRepository } from '../settings/settings-repository';
 import { seedImageRegistry, seedVideoRegistry } from '../registry/repository';
 
 export interface PlatformServices {
+  environment: Record<string, string | undefined>;
   paths: ReturnType<typeof resolveAppPaths>;
   database: Awaited<ReturnType<typeof openDatabase>>;
   settings: SettingsRepository;
@@ -64,6 +65,7 @@ async function createPlatformServices(): Promise<PlatformServices> {
   });
 
   return {
+    environment: env,
     paths,
     database,
     settings,

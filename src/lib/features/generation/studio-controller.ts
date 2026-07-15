@@ -26,6 +26,7 @@ export interface StudioCreateJobRequest {
     mediaKind: 'image' | 'video';
     source: 'remote' | 'uploaded';
     url: string;
+    localSourceId?: string;
     metadata: Record<string, unknown>;
   }>;
 }
@@ -210,6 +211,7 @@ export function createJobRequest(
         mediaKind: input.mediaKind,
         source: input.source,
         url: input.url,
+        ...(input.localSourceId ? { localSourceId: input.localSourceId } : {}),
         metadata: {
           name: input.name,
           ...(input.sizeBytes === undefined ? {} : { sizeBytes: input.sizeBytes }),

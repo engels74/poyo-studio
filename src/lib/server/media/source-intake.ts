@@ -1,4 +1,4 @@
-import { mkdir, rename, unlink } from 'node:fs/promises';
+import { lstat, mkdir, readdir, rename, unlink } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import type { AppPaths } from '../platform/app-paths';
 import { resolvePathWithin } from '../platform/app-paths';
@@ -140,4 +140,20 @@ export async function intakeLocalSource(
 
 export function removeLocalSource(path: string): Promise<void> {
   return unlink(path).catch(() => undefined);
+}
+
+export async function resolveLocalSourceReference(paths: AppPaths, id: string): Promise<string> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
+    throw new Error('The managed local source identifier is not valid.');
+  }
+  const buckets = await readdir(paths.uploads, { withFileTypes: true }).catch(() => []);
+  for (const bucket of buckets) {
+    if (!bucket.isDirectory() || !/^\d{4}-\d{2}$/.test(bucket.name)) continue;
+    for (const extension of Object.values(extensions)) {
+      const candidate = resolvePathWithin(paths.uploads, join(bucket.name, `${id}${extension}`));
+      const details = await lstat(candidate).catch(() => null);
+      if (details?.isFile() && !details.isSymbolicLink()) return candidate;
+    }
+  }
+  throw new Error('The managed local source is no longer available.');
 }

@@ -87,7 +87,7 @@ afterNavigate(() => {
     <nav class="flex-1 overflow-y-auto px-2 pb-3" aria-label="Primary navigation">
       {#each navigationGroups as group (group.label)}
         <div class="mb-4">
-          <p class="sidebar-group-label mb-1 px-2 text-[0.625rem] font-semibold tracking-[0.14em] text-muted-foreground uppercase">
+          <p class="sidebar-group-label mb-1 px-2 text-[0.625rem] font-semibold tracking-[0.14em] text-sidebar-foreground uppercase">
             {group.label}
           </p>
           <ul class="m-0 grid list-none gap-0.5 p-0">

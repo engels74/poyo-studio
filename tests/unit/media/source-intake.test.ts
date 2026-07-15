@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { intakeLocalSource } from '../../../src/lib/server/media/source-intake';
+import {
+  intakeLocalSource,
+  resolveLocalSourceReference
+} from '../../../src/lib/server/media/source-intake';
 import { ensureAppPaths, resolveAppPaths } from '../../../src/lib/server/platform/app-paths';
 import { createTemporaryDirectory } from '../../helpers/temporary-directory';
 
@@ -55,6 +58,8 @@ describe('local source intake', () => {
     expect(source.originalName).toBe('unsafe-name.png');
     expect(source.localPath).toStartWith(paths.uploads);
     expect((await stat(source.localPath)).size).toBe(png.byteLength);
+    expect(await resolveLocalSourceReference(paths, source.id)).toBe(source.localPath);
+    await expect(resolveLocalSourceReference(paths, '../unsafe')).rejects.toThrow('not valid');
     expect(await Array.fromAsync(new Bun.Glob('*.part').scan(paths.temporary))).toEqual([]);
   });
 

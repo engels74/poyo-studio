@@ -31,6 +31,8 @@ export interface CreateJobInput {
   mediaKind: 'image' | 'video';
   source: 'remote' | 'uploaded';
   url: string;
+  localSourceId?: string;
+  localReference?: string;
   metadata?: Record<string, unknown>;
 }
 

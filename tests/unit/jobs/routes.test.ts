@@ -1,8 +1,43 @@
 import { describe, expect, test } from 'bun:test';
 import { safeJobDto } from '../../../src/lib/server/jobs/events';
+import {
+  runtimeJobTimings,
+  runtimeOperationsSettings
+} from '../../../src/lib/server/jobs/runtime-settings';
+import { DEFAULT_OPERATIONS_SETTINGS } from '../../../src/lib/server/settings/operations-settings';
 import { createJobFixture, createTestJob } from '../../helpers/job-fixture';
 
 describe('job HTTP boundaries', () => {
+  test('PERF-04 accelerated worker timings are test-only and bounded', () => {
+    expect(() => runtimeJobTimings({ PLS_TEST_JOB_POLL_MS: '50' })).toThrow('PLS_TEST_MODE=1');
+    expect(() => runtimeJobTimings({ PLS_TEST_MODE: '1', PLS_TEST_JOB_POLL_MS: '1' })).toThrow(
+      'between 25 and 10000'
+    );
+    expect(
+      runtimeJobTimings({
+        PLS_TEST_MODE: '1',
+        PLS_TEST_JOB_POLL_MS: '75',
+        PLS_TEST_JOB_WORKER_MS: '50'
+      })
+    ).toEqual({ pollDelayMs: 75, workerIntervalMs: 50 });
+  });
+
+  test('SET-06 coordinator settings use validated persisted values and fail closed to defaults', () => {
+    const persisted = {
+      ...DEFAULT_OPERATIONS_SETTINGS,
+      polling: { intervalMs: 12_000, staleAfterMs: 345_000 },
+      downloads: { automatic: false }
+    };
+    expect(runtimeOperationsSettings(persisted)).toMatchObject({
+      polling: persisted.polling,
+      downloads: persisted.downloads
+    });
+    expect(runtimeOperationsSettings({ polling: { intervalMs: -1 } })).toEqual(
+      DEFAULT_OPERATIONS_SETTINGS
+    );
+    expect(runtimeOperationsSettings(undefined)).toEqual(DEFAULT_OPERATIONS_SETTINGS);
+  });
+
   test('SEC-04 every job mutation applies same-origin bounded JSON checks', async () => {
     const routes = [
       'src/routes/api/jobs/+server.ts',

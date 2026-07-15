@@ -281,6 +281,7 @@ async function uploadFiles(role: string, files: FileList | null): Promise<void> 
         role,
         source: 'uploaded',
         url: result.upload.url,
+        localSourceId: result.source.id,
         name: result.source.name,
         mediaKind: result.source.mediaKind,
         sizeBytes: result.source.sizeBytes,
@@ -328,9 +329,12 @@ async function refreshBalanceSnapshot(): Promise<void> {
 
 async function submit(): Promise<void> {
   if (submitting || submissionLocked || !hasApiKey) return;
-  const normalized = await requestPreview();
-  if (!normalized) return;
   submitting = true;
+  const normalized = await requestPreview();
+  if (!normalized) {
+    submitting = false;
+    return;
+  }
   try {
     const response = await fetch('/api/jobs', {
       method: 'POST',
@@ -797,13 +801,15 @@ function showMobileSection(section: MobileStep, mobile: boolean): boolean {
       {#if activeJob}
         <div class="max-w-xl">
           <div class="mx-auto grid size-12 place-items-center rounded-lg bg-stage-elevated text-stage-foreground">
-            <AppIcon name={activeJob.localPhase === 'complete' ? 'success' : activeJob.failureDomain !== 'none' ? 'pending' : 'activity'} size={23} />
+            <AppIcon name={activeJob.remoteStatus === 'failed' ? 'pending' : activeJob.localPhase === 'complete' ? 'success' : activeJob.failureDomain !== 'none' ? 'pending' : 'activity'} size={23} />
           </div>
           <p class="mt-5 text-xs font-semibold tracking-[0.12em] text-stage-muted uppercase">{activeJob.publicModelId}</p>
           <h2 id={`${data.modality}-stage-heading`} class="mt-2 text-xl font-semibold tracking-tight text-stage-foreground">
             {submissionUnknown
               ? 'Submission outcome needs reconciliation'
-              : activeJob.localPhase === 'complete'
+              : activeJob.remoteStatus === 'failed'
+                ? 'Poyo generation failed'
+                : activeJob.localPhase === 'complete'
                 ? 'Generation verified locally'
                 : activeJob.localPhase === 'requires_attention'
                   ? 'Job needs attention'
@@ -814,7 +820,9 @@ function showMobileSection(section: MobileStep, mobile: boolean): boolean {
           <p class="mx-auto mt-2 max-w-md text-sm leading-6 text-stage-muted">
             {submissionUnknown
               ? 'This request will not be submitted again automatically because doing so could spend credits twice.'
-              : activeJob.failureDomain === 'poll'
+              : activeJob.remoteStatus === 'failed'
+                ? 'Poyo authoritatively reported that the remote generation failed. No local download was attempted.'
+                : activeJob.failureDomain === 'poll'
                 ? `Status check delayed. Last successful check ${activeJob.lastPolledAt ?? 'is not available'}.`
                 : activeJob.localPhase === 'complete'
                   ? 'The Poyo task finished and its downloaded outputs passed local verification.'
@@ -844,7 +852,7 @@ function showMobileSection(section: MobileStep, mobile: boolean): boolean {
               : `${workflowLabel(selectedEntry.workflow)} with ${selectedEntry.inputRoles.length ? `${selectedEntry.inputRoles.length} named media role${selectedEntry.inputRoles.length === 1 ? '' : 's'}` : 'no required source media'}.`}
           </p>
           <div class="mt-5 flex flex-wrap justify-center gap-2">
-            <Badge tone={selectedEntry.status === 'current' ? 'success' : 'experimental'}>{selectedEntry.status}</Badge>
+            <Badge tone="stage">{selectedEntry.status}</Badge>
             <Badge tone="neutral">Verified {new Date(selectedEntry.provenance.verifiedAt).toLocaleDateString()}</Badge>
             {#if selectedEntry.output.safetyChecker}<Badge tone="info">Safety checker: {guided.enableSafetyChecker ? 'On' : 'Off'}</Badge>{/if}
           </div>

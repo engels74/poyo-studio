@@ -12,7 +12,8 @@ export const POST: RequestHandler = async ({ request }) => {
     localPath = source.localPath;
     const client = await createPoyoClient({
       apiKeyManager: platform.apiKey,
-      logger: platform.logger
+      logger: platform.logger,
+      environment: platform.environment
     });
     const localFile = Bun.file(source.localPath);
     const uploaded = await client.upload({

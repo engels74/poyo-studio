@@ -3,6 +3,7 @@ import { createPoyoClient } from '../poyo/factory';
 import { JobCoordinator, JobWorker, type JobPoyoGateway } from './coordinator';
 import { OutputDownloader } from './downloader';
 import { JobRepository } from './repository';
+import { runtimeJobTimings, runtimeOperationsSettings } from './runtime-settings';
 
 export interface JobRuntime {
   repository: JobRepository;
@@ -11,26 +12,58 @@ export interface JobRuntime {
 }
 let runtimePromise: Promise<JobRuntime> | undefined;
 let stopWorker: (() => void) | undefined;
+
 async function createRuntime(): Promise<JobRuntime> {
   const platform = await getPlatformServices();
+  const timings = runtimeJobTimings(platform.environment);
   const repository = new JobRepository(platform.database);
   const gateway: JobPoyoGateway = {
     submit: async (request) =>
-      (await createPoyoClient({ apiKeyManager: platform.apiKey, logger: platform.logger })).submit(
-        request
-      ),
+      (
+        await createPoyoClient({
+          apiKeyManager: platform.apiKey,
+          logger: platform.logger,
+          environment: platform.environment
+        })
+      ).submit(request),
     getStatus: async (id) =>
       (
-        await createPoyoClient({ apiKeyManager: platform.apiKey, logger: platform.logger })
+        await createPoyoClient({
+          apiKeyManager: platform.apiKey,
+          logger: platform.logger,
+          environment: platform.environment
+        })
       ).getStatus(id),
     getBalance: async () =>
       (
-        await createPoyoClient({ apiKeyManager: platform.apiKey, logger: platform.logger })
+        await createPoyoClient({
+          apiKeyManager: platform.apiKey,
+          logger: platform.logger,
+          environment: platform.environment
+        })
       ).getBalance()
   };
   const downloader = new OutputDownloader({ repository, paths: platform.paths });
-  const coordinator = new JobCoordinator({ repository, poyo: gateway, downloader });
-  return { repository, coordinator, worker: new JobWorker(coordinator) };
+  const coordinator = new JobCoordinator({
+    repository,
+    poyo: gateway,
+    downloader,
+    runtimeSettings: () => {
+      const operations = runtimeOperationsSettings(
+        platform.settings.get<unknown>('operations')?.value
+      );
+      return {
+        pollDelayMs: timings.pollDelayMs ?? operations.polling.intervalMs,
+        staleAfterMs: operations.polling.staleAfterMs,
+        automaticDownloads: operations.downloads.automatic
+      };
+    }
+  });
+  return {
+    repository,
+    coordinator,
+    worker: new JobWorker(coordinator, timings.workerIntervalMs)
+  };
 }
 export function getJobRuntime(): Promise<JobRuntime> {
   runtimePromise ??= createRuntime().catch((error) => {

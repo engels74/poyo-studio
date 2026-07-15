@@ -31,9 +31,7 @@ let { current }: Props = $props();
         <li>
           <a
             href={item.href}
-            class="focus-ring flex min-h-9 items-center gap-2 rounded px-2.5 text-sm font-semibold text-muted-foreground no-underline hover:bg-muted hover:text-foreground"
-            class:bg-accent={item.href === current}
-            class:text-accent-foreground={item.href === current}
+            class={`focus-ring flex min-h-9 items-center gap-2 rounded px-2.5 text-sm font-semibold no-underline ${item.href === current ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}
             aria-current={item.href === current ? 'page' : undefined}
           >
             <AppIcon name={item.icon} size={16} />

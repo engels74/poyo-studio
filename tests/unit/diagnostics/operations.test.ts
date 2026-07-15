@@ -49,7 +49,7 @@ describe('operations diagnostics', () => {
           }),
         connectivityStatus: () => ({
           checkedAt: '2026-07-15T12:00:00.000Z',
-          status: 'ok'
+          status: `ok ${sentinel}`
         })
       }
     } as unknown as PlatformServices;
@@ -65,9 +65,18 @@ describe('operations diagnostics', () => {
       expect(json).not.toContain(sentinel);
       expect(json).not.toContain(temporary.path);
       expect(diagnostics).toMatchObject({
-        connectivity: { status: 'ok' },
+        connectivity: { status: 'ok [REDACTED]' },
         remoteCleanup: { available: false, verifiedAt: '2026-07-15' },
-        health: { database: { schemaVersion: 2 } }
+        health: {
+          database: { schemaVersion: 2 },
+          apiKey: {
+            source: 'local',
+            status: 'configured',
+            storeKind: 'os',
+            onboardingAvailable: true,
+            environmentManaged: false
+          }
+        }
       });
     } finally {
       database.close();

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { createPoyoClient } from '../../../src/lib/server/poyo/factory';
+import { createPoyoClient, runtimePoyoBaseUrl } from '../../../src/lib/server/poyo/factory';
 import { MemoryPoyoMetadataLogger } from '../../../src/lib/server/poyo/logging';
 import { PoyoTransport } from '../../../src/lib/server/poyo/transport';
 
@@ -13,6 +13,30 @@ const missingStatus = {
 };
 
 describe('Poyo transport safety boundaries', () => {
+  test('SEC-03 runtime test origins fail closed unless explicitly enabled and loopback-only', () => {
+    expect(() => runtimePoyoBaseUrl({ PLS_TEST_POYO_BASE_URL: 'http://127.0.0.1:4311' })).toThrow(
+      'PLS_TEST_MODE=1'
+    );
+    expect(() =>
+      runtimePoyoBaseUrl({
+        PLS_TEST_MODE: '1',
+        PLS_TEST_POYO_BASE_URL: 'https://api.poyo.ai'
+      })
+    ).toThrow('loopback');
+    expect(() =>
+      runtimePoyoBaseUrl({
+        PLS_TEST_MODE: '1',
+        PLS_TEST_POYO_BASE_URL: 'http://127.0.0.1:4311/path'
+      })
+    ).toThrow('origin-only');
+    expect(
+      runtimePoyoBaseUrl({
+        PLS_TEST_MODE: '1',
+        PLS_TEST_POYO_BASE_URL: 'http://127.0.0.1:4311'
+      })
+    ).toBe('http://127.0.0.1:4311');
+  });
+
   test('SEC-03 only sends credentials to Poyo or explicit loopback fixtures', () => {
     expect(
       () =>

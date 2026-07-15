@@ -65,4 +65,20 @@ describe('durable job SSE protocol', () => {
     expect(JSON.stringify(event.data)).toContain(job.id);
     controller.abort();
   });
+
+  test('PERF-04 durable event replay is bounded and resumes from the returned cursor', async () => {
+    const fixture = await createJobFixture();
+    cleanups.push(fixture.cleanup);
+    for (let index = 0; index < 520; index += 1) {
+      createTestJob(fixture.repository, `bounded-${index}`);
+    }
+
+    const first = fixture.repository.eventsAfter(0);
+    expect(first).toHaveLength(500);
+    const cursor = first.at(-1)?.eventId;
+    if (!cursor) throw new Error('Expected a replay cursor.');
+    const remainder = fixture.repository.eventsAfter(cursor);
+    expect(remainder).toHaveLength(20);
+    expect(remainder.every((event) => event.eventId > cursor)).toBe(true);
+  });
 });

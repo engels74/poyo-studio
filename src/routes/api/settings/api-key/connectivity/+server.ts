@@ -10,7 +10,11 @@ export const POST: RequestHandler = async ({ request }) => {
     await readSameOriginJson<Record<string, never>>(request, { maxBytes: 1024 });
     platform = await getPlatformServices();
     const balance = await (
-      await createPoyoClient({ apiKeyManager: platform.apiKey, logger: platform.logger })
+      await createPoyoClient({
+        apiKeyManager: platform.apiKey,
+        logger: platform.logger,
+        environment: platform.environment
+      })
     ).getBalance();
     platform.database
       .query('INSERT INTO balance_snapshots(email,credits,source,fetched_at) VALUES (?,?,?,?)')

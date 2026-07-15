@@ -33,6 +33,7 @@ export interface StudioRoleInput {
   url: string;
   name: string;
   mediaKind: 'image' | 'video' | 'audio';
+  localSourceId?: string;
   sizeBytes?: number;
   expiresAt?: string;
 }

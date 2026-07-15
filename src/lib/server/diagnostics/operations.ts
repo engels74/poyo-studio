@@ -5,7 +5,7 @@ import { LibraryRepository } from '../library/repository';
 import type { PlatformServices } from '../platform/runtime';
 import { OperationsSettingsService } from '../settings/operations-settings';
 import { buildHealthDto } from './health';
-import { redact } from './redaction';
+import { redactString } from './redaction';
 
 export async function buildOperationsDiagnostics(
   platform: PlatformServices,
@@ -27,13 +27,25 @@ export async function buildOperationsDiagnostics(
       'SELECT version,verified_at,status FROM registry_versions ORDER BY verified_at DESC,version DESC'
     )
     .all();
-  const diagnostics = {
+  const connectivity = platform.apiKey.connectivityStatus();
+  const cleanupDiagnostics = cleanup.diagnostics();
+  return {
     health,
-    connectivity: platform.apiKey.connectivityStatus(),
+    connectivity: {
+      checkedAt: connectivity.checkedAt,
+      status: connectivity.status ? redactString(connectivity.status) : null
+    },
     storage,
-    cleanup: cleanup.diagnostics(),
+    cleanup: {
+      ...cleanupDiagnostics,
+      lastError: cleanupDiagnostics.lastError ? redactString(cleanupDiagnostics.lastError) : null
+    },
     remoteCleanup: REMOTE_CLEANUP_CAPABILITY,
-    registry,
+    registry: registry.map((entry) => ({
+      version: redactString(entry.version),
+      verified_at: redactString(entry.verified_at),
+      status: redactString(entry.status)
+    })),
     settings: {
       polling: settings.polling,
       downloads: settings.downloads,
@@ -43,5 +55,4 @@ export async function buildOperationsDiagnostics(
     },
     logging
   } satisfies OperationsDiagnosticsDto;
-  return redact(diagnostics) as unknown as OperationsDiagnosticsDto;
 }

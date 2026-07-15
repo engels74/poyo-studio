@@ -249,7 +249,7 @@ export class JobRepository extends DatabaseRepository {
       const payload = canonical(request.normalizedPayload);
       const fingerprint =
         request.requestFingerprint ??
-        hash(`${request.publicModelId}:${payload}:${request.retryOfJobId ?? ''}`);
+        hash(`${id}:${request.publicModelId}:${payload}:${request.retryOfJobId ?? ''}`);
       const registry = request.entryKey
         ? this.database
             .query<{ registry_version: string }, [string]>(
@@ -283,13 +283,14 @@ export class JobRepository extends DatabaseRepository {
         if (input.mediaKind !== 'image' && input.mediaKind !== 'video') continue;
         this.database
           .query(
-            `INSERT INTO job_inputs(job_id,role,input_order,media_kind,source_url,upload_url,metadata_json,availability) VALUES (?,?,?,?,?,?,?,'available')`
+            `INSERT INTO job_inputs(job_id,role,input_order,media_kind,local_reference,source_url,upload_url,metadata_json,availability) VALUES (?,?,?,?,?,?,?,?,'available')`
           )
           .run(
             id,
             input.role,
             inputOrder,
             input.mediaKind,
+            input.source === 'uploaded' ? (input.localReference ?? null) : null,
             input.source === 'remote' ? input.url : null,
             input.source === 'uploaded' ? input.url : null,
             JSON.stringify(input.metadata ?? {})
@@ -725,10 +726,12 @@ export class JobRepository extends DatabaseRepository {
       .query('INSERT INTO balance_snapshots(email,credits,source,fetched_at) VALUES (?,?,?,?)')
       .run(email, credits, source, this.timestamp());
   }
-  eventsAfter(id: number): JobEvent[] {
+  eventsAfter(id: number, limit = 500): JobEvent[] {
     return this.database
-      .query<EventRow, [number]>('SELECT * FROM job_events WHERE event_id>? ORDER BY event_id')
-      .all(id)
+      .query<EventRow, [number, number]>(
+        'SELECT * FROM job_events WHERE event_id>? ORDER BY event_id LIMIT ?'
+      )
+      .all(id, Math.min(500, Math.max(1, limit)))
       .map(mapEvent);
   }
   eventBounds(): { min: number; max: number } {

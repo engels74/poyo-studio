@@ -14,6 +14,11 @@ export interface JobPoyoGateway {
   getStatus(taskId: string): Promise<PoyoStatusResult>;
   getBalance(): Promise<PoyoBalanceResult>;
 }
+export interface JobRuntimeSettings {
+  pollDelayMs: number;
+  staleAfterMs: number;
+  automaticDownloads: boolean;
+}
 export interface JobCoordinatorOptions {
   repository: JobRepository;
   poyo: JobPoyoGateway;
@@ -23,6 +28,8 @@ export interface JobCoordinatorOptions {
   workLeaseMs?: number;
   pollDelayMs?: number;
   staleAfterMs?: number;
+  automaticDownloads?: boolean;
+  runtimeSettings?: () => JobRuntimeSettings;
   now?: () => Date;
 }
 export class JobCoordinator {
@@ -32,6 +39,7 @@ export class JobCoordinator {
   private readonly workLeaseMs;
   private readonly pollDelayMs;
   private readonly staleAfterMs;
+  private readonly automaticDownloads;
   constructor(private readonly options: JobCoordinatorOptions) {
     this.workerId = options.workerId ?? crypto.randomUUID();
     this.now = options.now ?? (() => new Date());
@@ -39,6 +47,16 @@ export class JobCoordinator {
     this.workLeaseMs = options.workLeaseMs ?? 60_000;
     this.pollDelayMs = options.pollDelayMs ?? 5_000;
     this.staleAfterMs = options.staleAfterMs ?? 15 * 60_000;
+    this.automaticDownloads = options.automaticDownloads ?? true;
+  }
+  private settings(): JobRuntimeSettings {
+    return (
+      this.options.runtimeSettings?.() ?? {
+        pollDelayMs: this.pollDelayMs,
+        staleAfterMs: this.staleAfterMs,
+        automaticDownloads: this.automaticDownloads
+      }
+    );
   }
   private requireJob(jobId: string): JobRecord {
     const job = this.options.repository.get(jobId);
@@ -87,9 +105,13 @@ export class JobCoordinator {
     const claim = this.options.repository.claimWork('poll', jobId, this.workerId, this.workLeaseMs);
     if (!claim) return job;
     try {
+      const settings = this.settings();
       const status = await this.options.poyo.getStatus(job.poyoTaskId);
-      const updated = this.options.repository.applyStatus(jobId, status, this.pollDelayMs);
-      if (status.status === 'finished') await this.downloadPending(jobId);
+      const updated = this.options.repository.applyStatus(jobId, status, settings.pollDelayMs);
+      if (status.status === 'finished') {
+        if (settings.automaticDownloads) await this.downloadPending(jobId);
+        else await this.refreshBalance('remote_completion');
+      }
       if (status.status === 'failed') await this.refreshBalance('remote_failure');
       return updated;
     } catch (error) {
@@ -97,7 +119,7 @@ export class JobCoordinator {
       return this.options.repository.recordPollFailure(
         jobId,
         error instanceof PoyoError ? error.technicalCode : 'poll_error',
-        !manual && age > this.staleAfterMs
+        !manual && age > this.settings().staleAfterMs
       );
     } finally {
       this.options.repository.releaseWork(claim);
@@ -155,7 +177,7 @@ export class JobCoordinator {
         return this.poll(jobId);
     }
     if (job.localPhase === 'downloading') {
-      await this.downloadPending(jobId);
+      if (this.settings().automaticDownloads) await this.downloadPending(jobId);
       return this.requireJob(jobId);
     }
     return job;
