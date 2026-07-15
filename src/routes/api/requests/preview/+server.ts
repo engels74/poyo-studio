@@ -1,16 +1,25 @@
-import { normalizeImageRequest, RegistryValidationError } from '$lib/features/registry/normalize';
-import type { ExpertOverride, GuidedImageRequest } from '$lib/features/registry/types';
+import { RegistryValidationError } from '$lib/features/registry/normalize';
+import { normalizeRegistryRequest } from '$lib/features/registry/normalize-registry';
+import type {
+  ExpertOverride,
+  GuidedImageRequest,
+  GuidedVideoRequest
+} from '$lib/features/registry/types';
 import { readSameOriginJson, RequestSecurityError } from '$lib/server/platform/request-security';
 import type { RequestHandler } from './$types';
 type PreviewBody = {
   entryKey: string;
-  values: GuidedImageRequest;
+  values: GuidedImageRequest | GuidedVideoRequest;
   expertOverrides?: ExpertOverride[];
 };
 export const POST: RequestHandler = async ({ request }) => {
   try {
     const body = await readSameOriginJson<PreviewBody>(request, { maxBytes: 256 * 1024 });
-    const preview = normalizeImageRequest(body.entryKey, body.values, body.expertOverrides ?? []);
+    const preview = normalizeRegistryRequest(
+      body.entryKey,
+      body.values,
+      body.expertOverrides ?? []
+    );
     return Response.json(preview);
   } catch (error) {
     if (error instanceof RequestSecurityError)

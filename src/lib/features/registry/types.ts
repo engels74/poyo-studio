@@ -1,16 +1,36 @@
 import type { PoyoSubmitRequest } from '../../server/poyo/types';
 
 export type ImageWorkflow = 'text-to-image' | 'image-to-image' | 'image-edit';
-export type RegistryStatus = 'current' | 'experimental' | 'legacy' | 'unindexed';
+export type VideoWorkflow =
+  | 'text-to-video'
+  | 'image-to-video'
+  | 'frame-to-video'
+  | 'reference-to-video'
+  | 'video-to-video'
+  | 'video-edit'
+  | 'motion-control'
+  | 'character-animation'
+  | 'character-replacement'
+  | 'multi-shot-video'
+  | 'image-fusion-video'
+  | 'avatar-video';
+export type RegistryStatus =
+  | 'current'
+  | 'experimental'
+  | 'legacy'
+  | 'unindexed'
+  | 'excluded-initial-scope';
 export type FieldLevel = 'essential' | 'common' | 'advanced' | 'expert';
 export type FieldKind =
   | 'text'
+  | 'number'
   | 'integer'
   | 'boolean'
   | 'enum'
   | 'string-list'
   | 'dimensions'
-  | 'elements';
+  | 'elements'
+  | 'object-list';
 export interface FieldDefinition {
   key: string;
   apiKey: string;
@@ -24,12 +44,25 @@ export interface FieldDefinition {
   description?: string;
 }
 export interface InputRole {
-  role: 'reference' | 'mask';
+  role:
+    | 'reference'
+    | 'mask'
+    | 'image'
+    | 'start-frame'
+    | 'end-frame'
+    | 'reference-image'
+    | 'source-video'
+    | 'reference-video'
+    | 'reference-audio'
+    | 'audio'
+    | 'element-image';
   required: boolean;
   min: number;
   max: number | null;
-  mediaKind: 'image';
+  mediaKind: 'image' | 'video' | 'audio';
   formats: readonly string[];
+  requestKey?: keyof GuidedVideoRequest;
+  apiKey?: string;
 }
 export interface RegistryProvenance {
   pageSlug: string;
@@ -101,6 +134,77 @@ export interface GuidedImageRequest {
   webSearch?: boolean;
   syncMode?: boolean;
 }
+export interface VideoRegistryEntry {
+  key: string;
+  provider: string;
+  family: string;
+  displayName: string;
+  publicModelId: string;
+  workflow: VideoWorkflow;
+  status: RegistryStatus;
+  inputRoles: readonly InputRole[];
+  output: {
+    mediaKind: 'video';
+    formats: readonly string[];
+    durations: readonly number[] | { min: number; max: number } | null;
+    resolutions: readonly string[] | null;
+    aspectRatios: readonly string[] | null;
+    seed: boolean;
+    safetyChecker: boolean;
+    audio: 'none' | 'boolean-sound' | 'boolean-generate' | 'string-setting';
+  };
+  fields: readonly FieldDefinition[];
+  ui: {
+    form: 'guided-video';
+    fieldOrder: readonly string[];
+  };
+  validation: {
+    conditionalRules: readonly string[];
+  };
+  payload: {
+    adapter: 'video-input-v1';
+    fixedInput?: Readonly<Record<string, unknown>>;
+  };
+  response: {
+    normalizer: 'poyo-task-video-v1';
+    mediaKind: 'video';
+  };
+  limitations: readonly string[];
+  provenance: RegistryProvenance;
+}
+export interface GuidedVideoRequest {
+  prompt?: string;
+  negativePrompt?: string;
+  imageUrls?: string[];
+  startImageUrl?: string;
+  endImageUrl?: string;
+  referenceImageUrls?: string[];
+  videoUrls?: string[];
+  videoUrl?: string;
+  referenceVideoUrls?: string[];
+  referenceAudioUrls?: string[];
+  audioUrl?: string;
+  elementImageUrls?: string[];
+  aspectRatio?: string;
+  resolution?: string;
+  duration?: number;
+  seed?: number;
+  enableSafetyChecker?: boolean;
+  cfgScale?: number;
+  promptOptimizer?: boolean;
+  mode?: string;
+  sound?: boolean;
+  generateAudio?: boolean;
+  fixedLens?: boolean;
+  audioSetting?: string;
+  audio?: string;
+  characterOrientation?: string;
+  referenceVideoDuration?: number;
+  sourceVideoDuration?: number;
+  multiShots?: boolean;
+  multiPrompt?: Array<{ prompt: string; duration: number }>;
+  elements?: unknown[];
+}
 export interface ExpertOverride {
   key: string;
   value: unknown;
@@ -111,12 +215,12 @@ export interface NormalizedPreview {
   expertDiff: Array<{ key: string; status: 'verified' | 'unverified'; value: unknown }>;
   warnings: string[];
 }
-export interface RegistryManifest {
+export interface RegistryManifest<TEntry = ImageRegistryEntry> {
   version: string;
   verifiedAt: string;
   pageCount: number;
   publicIdCount: number;
-  entries: readonly ImageRegistryEntry[];
+  entries: readonly TEntry[];
   sourceHash: string;
   manifestHash: string;
 }
