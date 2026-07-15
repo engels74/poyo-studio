@@ -1,0 +1,181 @@
+{
+  "version": 1,
+  "reviewedAt": "2026-07-15T18:02:01Z",
+  "vectors": [
+    {
+      "rule": "size-and-resolution-required",
+      "entryKey": "flux-2-pro:text-to-image",
+      "values": { "prompt": "studio image", "aspectRatio": "1:1" },
+      "issueIncludes": "requires both size and resolution"
+    },
+    {
+      "rule": "pro-only-output-format-and-web-search",
+      "entryKey": "nano-banana-2:text-to-image",
+      "values": { "prompt": "studio image", "webSearch": true },
+      "issueIncludes": "only by Nano Banana Pro"
+    },
+    {
+      "rule": "reference-count-plus-output-count-at-most-15",
+      "entryKey": "seedream-4-edit:image-edit",
+      "values": {
+        "prompt": "studio image",
+        "imageUrls": [
+          "https://assets.example/0.png",
+          "https://assets.example/1.png",
+          "https://assets.example/2.png",
+          "https://assets.example/3.png",
+          "https://assets.example/4.png",
+          "https://assets.example/5.png",
+          "https://assets.example/6.png",
+          "https://assets.example/7.png",
+          "https://assets.example/8.png",
+          "https://assets.example/9.png"
+        ],
+        "n": 15
+      },
+      "issueIncludes": "image_urls plus n to be at most 15"
+    },
+    {
+      "rule": "size-is-one-of-resolution-ratio-or-custom",
+      "entryKey": "seedream-5.0-pro:text-to-image",
+      "values": { "prompt": "studio image", "resolution": "1K", "aspectRatio": "1:1" },
+      "issueIncludes": "resolution or aspect ratio, not both"
+    },
+    {
+      "rule": "size-required-for-text-only",
+      "entryKey": "z-image:text-to-image",
+      "values": { "prompt": "studio image" },
+      "issueIncludes": "text generation requires size"
+    },
+    {
+      "rule": "happy-horse-input-modes-exclusive",
+      "entryKey": "happy-horse:text-to-video",
+      "values": {
+        "prompt": "studio video",
+        "duration": 5,
+        "aspectRatio": "16:9",
+        "resolution": "1080p",
+        "seed": 0,
+        "enableSafetyChecker": false,
+        "imageUrls": ["https://assets.example/a.png"]
+      },
+      "issueIncludes": "imageUrls is not supported"
+    },
+    {
+      "rule": "kling-1.6-frames-elements-cfg-conflicts",
+      "entryKey": "kling-1.6/standard:reference-to-video",
+      "values": {
+        "prompt": "studio video",
+        "duration": 5,
+        "imageUrls": ["https://assets.example/reference-image-0.png"],
+        "cfgScale": 0.5
+      },
+      "issueIncludes": "cfgScale is not supported"
+    },
+    {
+      "rule": "end-frame-requires-sound-false",
+      "entryKey": "kling-2.6:frame-to-video",
+      "values": {
+        "prompt": "studio video",
+        "duration": 5,
+        "aspectRatio": "1:1",
+        "imageUrls": ["https://assets.example/start-frame-0.png"],
+        "endImageUrl": "https://assets.example/end-frame-0.png",
+        "sound": true
+      },
+      "issueIncludes": "sound is not supported"
+    },
+    {
+      "rule": "orientation-controls-reference-video-duration",
+      "entryKey": "kling-2.6-motion-control:motion-control",
+      "values": {
+        "resolution": "720p",
+        "characterOrientation": "image",
+        "referenceVideoDuration": 11,
+        "imageUrls": ["https://assets.example/image-0.png"],
+        "videoUrls": ["https://assets.example/reference-video-0.mp4"]
+      },
+      "issueIncludes": "through 10 seconds only"
+    },
+    {
+      "rule": "prompt-vs-multi-prompt-and-sound",
+      "entryKey": "kling-3.0/pro:multi-shot-video",
+      "values": {
+        "multiPrompt": [{ "prompt": "establishing shot", "duration": 3 }],
+        "duration": 3,
+        "aspectRatio": "1:1",
+        "sound": true,
+        "prompt": "conflict"
+      },
+      "issueIncludes": "prompt is not supported"
+    },
+    {
+      "rule": "omni-image-count-one-or-three-and-video-omits-duration",
+      "entryKey": "omni-flash:image-fusion-video",
+      "values": {
+        "prompt": "studio video",
+        "duration": 6,
+        "aspectRatio": "16:9",
+        "resolution": "720p",
+        "imageUrls": ["https://assets.example/a.png", "https://assets.example/b.png"]
+      },
+      "issueIncludes": "requires at least 3 input"
+    },
+    {
+      "rule": "frames-vs-references-and-reference-counts",
+      "entryKey": "seedance-2:reference-to-video",
+      "values": {
+        "prompt": "studio video",
+        "duration": 4,
+        "aspectRatio": "auto",
+        "resolution": "480p",
+        "generateAudio": false,
+        "referenceAudioUrls": ["https://assets.example/a.mp3"]
+      },
+      "issueIncludes": "audio requires an image or video reference"
+    },
+    {
+      "rule": "generation-type-model-duration-matrix",
+      "entryKey": "veo3.1-fast-official:reference-to-video",
+      "values": {
+        "prompt": "studio video",
+        "duration": 6,
+        "aspectRatio": "16:9",
+        "resolution": "720p",
+        "sound": true,
+        "imageUrls": [
+          "https://assets.example/reference-image-0.png",
+          "https://assets.example/reference-image-1.png",
+          "https://assets.example/reference-image-2.png"
+        ]
+      },
+      "issueIncludes": "requires 8 seconds"
+    },
+    {
+      "rule": "video-to-video-duration-max-ten",
+      "entryKey": "wan2.6-video-to-video:video-to-video",
+      "values": {
+        "prompt": "studio video",
+        "duration": 11,
+        "resolution": "720p",
+        "multiShots": false,
+        "videoUrls": ["https://assets.example/source-video-0.mp4"]
+      },
+      "issueIncludes": "duration is unsupported"
+    },
+    {
+      "rule": "wan-id-specific-input-and-duration",
+      "entryKey": "wan2.7-reference-to-video:reference-to-video",
+      "values": {
+        "prompt": "studio video",
+        "duration": 2,
+        "aspectRatio": "16:9",
+        "resolution": "720p",
+        "seed": 0,
+        "enableSafetyChecker": false,
+        "multiShots": false
+      },
+      "issueIncludes": "requires reference image or video input"
+    }
+  ]
+}
