@@ -9,6 +9,7 @@ export interface CleanupExclusions {
 
 export interface LocalCleanupPolicy {
   mode: CleanupPolicyMode;
+  consequence: CleanupConsequence;
   olderThanDays: number | null;
   maxBytes: number | null;
   minFreeBytes: number | null;

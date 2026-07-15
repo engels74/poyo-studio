@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite';
 import type { CleanupConsequence, LocalCleanupPolicy } from '../../features/cleanup/contracts';
 import { DatabaseRepository } from '../platform/repository';
-import { cleanupHash } from './policy';
+import { cleanupHash, normalizeCleanupPolicy } from './policy';
 
 export const LOCAL_CLEANUP_POLICY_ID = 'local-default';
 
@@ -79,12 +79,20 @@ export class CleanupRepository extends DatabaseRepository {
   }
 
   getPolicy(): LocalCleanupPolicy | null {
+    return this.readPolicy(false);
+  }
+
+  getEnabledPolicy(): LocalCleanupPolicy | null {
+    return this.readPolicy(true);
+  }
+
+  private readPolicy(enabledOnly: boolean): LocalCleanupPolicy | null {
     const row = this.database
       .query<{ policy_json: string }, [string]>(
-        'SELECT policy_json FROM cleanup_policies WHERE id=?'
+        `SELECT policy_json FROM cleanup_policies WHERE id=?${enabledOnly ? ' AND enabled=1' : ''}`
       )
       .get(LOCAL_CLEANUP_POLICY_ID);
-    return row ? (JSON.parse(row.policy_json) as LocalCleanupPolicy) : null;
+    return row ? normalizeCleanupPolicy(JSON.parse(row.policy_json)) : null;
   }
 
   savePolicy(policy: LocalCleanupPolicy): LocalCleanupPolicy {
@@ -180,6 +188,19 @@ export class CleanupRepository extends DatabaseRepository {
     });
   }
 
+  hasPendingActions(policyHash: string, consequence: CleanupConsequence): boolean {
+    return Boolean(
+      this.database
+        .query<{ present: number }, [string, CleanupClaim['actionKind']]>(
+          `SELECT 1 present FROM cleanup_actions a
+           JOIN cleanup_previews p ON p.token=a.preview_version
+           WHERE p.policy_hash=? AND a.action_kind=? AND a.state IN ('scheduled','executing')
+           LIMIT 1`
+        )
+        .get(policyHash, actionKind(consequence))
+    );
+  }
+
   schedulePreview(token: string): number {
     return this.transaction(() => {
       const preview = this.database
@@ -242,13 +263,51 @@ export class CleanupRepository extends DatabaseRepository {
   claimNext(owner: string, leaseMs: number): CleanupClaim | null {
     return this.transaction(() => {
       const now = this.now().toISOString();
-      const action = this.database
-        .query<ActionRow, [string]>(
-          `SELECT id,target_id,action_kind,safe_result_json FROM cleanup_actions
-           WHERE state='scheduled' AND due_at IS NOT NULL AND due_at<=?
-           ORDER BY due_at,id LIMIT 1`
-        )
-        .get(now);
+      let action: ActionRow | null;
+      let snapshot: CleanupActionSnapshot;
+      while (true) {
+        action = this.database
+          .query<ActionRow, [string]>(
+            `SELECT id,target_id,action_kind,safe_result_json FROM cleanup_actions
+             WHERE state='scheduled' AND due_at IS NOT NULL AND due_at<=?
+             ORDER BY due_at,id LIMIT 1`
+          )
+          .get(now);
+        if (!action) return null;
+        const candidateAction = action;
+        snapshot = (
+          JSON.parse(candidateAction.safe_result_json) as {
+            preview: CleanupActionSnapshot;
+          }
+        ).preview;
+        const policy = this.getEnabledPolicy();
+        const current = this.listOutputs().find(
+          (output) => output.outputId === candidateAction.target_id
+        );
+        const stale =
+          !policy ||
+          cleanupHash(policy) !== snapshot.policyHash ||
+          !current ||
+          current.localPath !== snapshot.localPath ||
+          current.bytes !== snapshot.bytes ||
+          (policy.exclusions.favorites && current.favorite) ||
+          (policy.exclusions.pinned && current.pinned) ||
+          current.tags.some((tag) => policy.exclusions.tags.includes(tag));
+        if (!stale) break;
+        this.database
+          .query(
+            `UPDATE cleanup_actions SET state='cancelled',safe_result_json=?,executed_at=?
+             WHERE id=? AND state='scheduled'`
+          )
+          .run(
+            JSON.stringify({ preview: snapshot, reconciliation: { status: 'candidate-changed' } }),
+            now,
+            candidateAction.id
+          );
+        this.database
+          .query("DELETE FROM work_claims WHERE work_type='cleanup' AND work_id=?")
+          .run(candidateAction.id);
+      }
       if (!action) return null;
       const existing = this.database
         .query<{ expires_at: string; attempt: number }, [string]>(
@@ -295,12 +354,11 @@ export class CleanupRepository extends DatabaseRepository {
            VALUES (?,?,'started',?)`
         )
         .run(action.id, attempt, now);
-      const parsed = JSON.parse(action.safe_result_json) as { preview: CleanupActionSnapshot };
       return {
         actionId: action.id,
         outputId: action.target_id,
         actionKind: action.action_kind,
-        snapshot: parsed.preview,
+        snapshot,
         owner,
         token,
         attempt

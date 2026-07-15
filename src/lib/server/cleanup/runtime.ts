@@ -1,19 +1,45 @@
 import { CleanupRepository } from './repository';
 import { CleanupService } from './service';
 
+export const DEFAULT_CLEANUP_INTERVAL_MS = 15 * 60_000;
+export const MIN_CLEANUP_INTERVAL_MS = 60_000;
+export const MAX_CLEANUP_INTERVAL_MS = 24 * 60 * 60_000;
+
+export type CleanupSchedule = (run: () => Promise<void>, intervalMs: number) => () => void;
+
 export interface CleanupRuntimeOptions {
   repository: CleanupRepository;
   service: CleanupService;
   owner?: string;
   leaseMs?: number;
   intervalMs?: number;
+  schedule?: CleanupSchedule;
+}
+
+function cleanupIntervalMs(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) &&
+    parsed >= MIN_CLEANUP_INTERVAL_MS &&
+    parsed <= MAX_CLEANUP_INTERVAL_MS
+    ? parsed
+    : DEFAULT_CLEANUP_INTERVAL_MS;
+}
+
+const scheduleInterval: CleanupSchedule = (run, intervalMs) => {
+  const timer = setInterval(() => void run(), intervalMs);
+  timer.unref?.();
+  return () => clearInterval(timer);
+};
+
+function errorName(error: unknown): string {
+  return error instanceof Error ? error.name : 'Error';
 }
 
 export class CleanupRuntime {
   private readonly owner: string;
   private readonly leaseMs: number;
   private readonly intervalMs: number;
-  private timer: ReturnType<typeof setInterval> | null = null;
+  private cancelSchedule: (() => void) | null = null;
   private running = false;
   private lastRunAt: string | null = null;
   private lastError: string | null = null;
@@ -21,7 +47,7 @@ export class CleanupRuntime {
   constructor(readonly options: CleanupRuntimeOptions) {
     this.owner = options.owner ?? `cleanup-worker-${crypto.randomUUID()}`;
     this.leaseMs = options.leaseMs ?? 60_000;
-    this.intervalMs = options.intervalMs ?? 30_000;
+    this.intervalMs = cleanupIntervalMs(options.intervalMs);
   }
 
   async runOnce(maxActions = 100): Promise<number> {
@@ -30,6 +56,12 @@ export class CleanupRuntime {
     let completed = 0;
     try {
       this.options.repository.reconcileExpiredClaims();
+      let policyError: unknown;
+      try {
+        await this.options.service.scheduleEnabledPolicy();
+      } catch (error) {
+        policyError = error;
+      }
       for (let index = 0; index < maxActions; index += 1) {
         const claim = this.options.repository.claimNext(this.owner, this.leaseMs);
         if (!claim) break;
@@ -37,10 +69,10 @@ export class CleanupRuntime {
         completed += 1;
       }
       this.lastRunAt = new Date().toISOString();
-      this.lastError = null;
+      this.lastError = policyError === undefined ? null : errorName(policyError);
       return completed;
     } catch (error) {
-      this.lastError = error instanceof Error ? error.name : 'Error';
+      this.lastError = errorName(error);
       throw error;
     } finally {
       this.running = false;
@@ -48,23 +80,25 @@ export class CleanupRuntime {
   }
 
   start(): () => void {
-    if (!this.timer) {
-      void this.runOnce().catch(() => undefined);
-      this.timer = setInterval(() => void this.runOnce().catch(() => undefined), this.intervalMs);
-      this.timer.unref?.();
+    if (!this.cancelSchedule) {
+      const run = async () => {
+        await this.runOnce().catch(() => undefined);
+      };
+      this.cancelSchedule = (this.options.schedule ?? scheduleInterval)(run, this.intervalMs);
+      void run();
     }
     return () => this.stop();
   }
 
   stop(): void {
-    if (this.timer) clearInterval(this.timer);
-    this.timer = null;
+    this.cancelSchedule?.();
+    this.cancelSchedule = null;
   }
 
   diagnostics() {
     return {
       running: this.running,
-      scheduled: this.timer !== null,
+      scheduled: this.cancelSchedule !== null,
       lastRunAt: this.lastRunAt,
       lastError: this.lastError,
       actions: this.options.repository.actionCounts()
@@ -82,7 +116,8 @@ export async function getCleanupRuntime(): Promise<CleanupRuntime> {
       const repository = new CleanupRepository(platform.database);
       return new CleanupRuntime({
         repository,
-        service: new CleanupService({ repository, paths: platform.paths })
+        service: new CleanupService({ repository, paths: platform.paths }),
+        intervalMs: cleanupIntervalMs(Bun.env.PLS_CLEANUP_INTERVAL_MS)
       });
     })
     .catch((error) => {

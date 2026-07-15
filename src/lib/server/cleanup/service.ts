@@ -6,15 +6,15 @@ import type {
   CleanupPreviewDto,
   LocalCleanupPolicy
 } from '../../features/cleanup/contracts';
-import { resolvePathWithin, type AppPaths } from '../platform/app-paths';
 import { safeErrorSummary } from '../diagnostics/redaction';
-import type { CleanupActionSnapshot, CleanupClaim, CleanupRepository } from './repository';
+import { type AppPaths, resolvePathWithin } from '../platform/app-paths';
 import {
-  cleanupHash,
   CleanupValidationError,
+  cleanupHash,
   DEFAULT_CLEANUP_POLICY,
   normalizeCleanupPolicy
 } from './policy';
+import type { CleanupActionSnapshot, CleanupClaim, CleanupRepository } from './repository';
 
 export interface CleanupStorageSnapshot {
   freeBytes: number | null;
@@ -88,6 +88,15 @@ export class CleanupService {
 
   setPolicy(input: unknown): LocalCleanupPolicy {
     return this.options.repository.savePolicy(normalizeCleanupPolicy(input));
+  }
+
+  async scheduleEnabledPolicy(): Promise<number> {
+    const policy = this.options.repository.getEnabledPolicy();
+    if (!policy) return 0;
+    if (this.options.repository.hasPendingActions(cleanupHash(policy), policy.consequence))
+      return 0;
+    const preview = await this.preview(policy.consequence);
+    return this.options.repository.schedulePreview(preview.token);
   }
 
   async preview(consequenceInput: unknown): Promise<CleanupPreviewDto> {

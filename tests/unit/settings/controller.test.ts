@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { REMOTE_CLEANUP_CAPABILITY } from '../../../src/lib/features/cleanup/contracts';
 import type { OperationsDiagnosticsDto } from '../../../src/lib/features/diagnostics/contracts';
+import type { ApiKeySettingsDto, SettingsDto } from '../../../src/lib/features/settings/contracts';
 import {
   apiKeyUiState,
   cleanupConsequenceLabel,
@@ -9,10 +10,10 @@ import {
   operationsRequest,
   settingsDraft
 } from '../../../src/lib/features/settings/controller';
-import type { ApiKeySettingsDto, SettingsDto } from '../../../src/lib/features/settings/contracts';
 
 const localCleanup: SettingsDto['localCleanup'] = {
   mode: 'never',
+  consequence: 'file',
   olderThanDays: null,
   maxBytes: null,
   minFreeBytes: null,
@@ -156,8 +157,9 @@ describe('settings UI controller', () => {
       intervalMs: 8_000,
       staleAfterMs: 900_000
     });
-    expect(cleanupPolicyRequest(draft)).toEqual({
+    expect(cleanupPolicyRequest(draft, 'both')).toEqual({
       mode: 'total-size',
+      consequence: 'both',
       olderThanDays: null,
       maxBytes: 2 * 1024 * 1024 * 1024,
       minFreeBytes: null,

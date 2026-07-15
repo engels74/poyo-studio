@@ -74,7 +74,10 @@ export function operationsRequest(draft: SettingsDraft) {
   };
 }
 
-export function cleanupPolicyRequest(draft: SettingsDraft): LocalCleanupPolicy {
+export function cleanupPolicyRequest(
+  draft: SettingsDraft,
+  consequence: CleanupConsequence = 'file'
+): LocalCleanupPolicy {
   const tags = [
     ...new Set(
       draft.excludedTags
@@ -85,6 +88,7 @@ export function cleanupPolicyRequest(draft: SettingsDraft): LocalCleanupPolicy {
   ];
   return {
     mode: draft.cleanupMode,
+    consequence,
     olderThanDays: draft.cleanupMode === 'age' ? integer(draft.olderThanDays, 'Age') : null,
     maxBytes:
       draft.cleanupMode === 'total-size' ? integer(draft.maxStorageGb * gb, 'Storage limit') : null,

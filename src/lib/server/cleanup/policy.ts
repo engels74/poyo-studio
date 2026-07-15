@@ -2,6 +2,7 @@ import type { LocalCleanupPolicy } from '../../features/cleanup/contracts';
 
 export const DEFAULT_CLEANUP_POLICY: LocalCleanupPolicy = {
   mode: 'never',
+  consequence: 'file',
   olderThanDays: null,
   maxBytes: null,
   minFreeBytes: null,
@@ -32,6 +33,10 @@ export function normalizeCleanupPolicy(value: unknown): LocalCleanupPolicy {
   if (!['never', 'age', 'total-size', 'min-free-space'].includes(String(mode))) {
     throw new CleanupValidationError('Cleanup policy mode is not supported.');
   }
+  const consequence = input.consequence ?? 'file';
+  if (!['file', 'metadata', 'both'].includes(String(consequence))) {
+    throw new CleanupValidationError('Cleanup consequence is not supported.');
+  }
   const exclusionInput =
     input.exclusions && typeof input.exclusions === 'object' && !Array.isArray(input.exclusions)
       ? (input.exclusions as Record<string, unknown>)
@@ -50,6 +55,7 @@ export function normalizeCleanupPolicy(value: unknown): LocalCleanupPolicy {
   ].toSorted();
   const policy: LocalCleanupPolicy = {
     mode: mode as LocalCleanupPolicy['mode'],
+    consequence: consequence as LocalCleanupPolicy['consequence'],
     olderThanDays: optionalPositiveInteger(input.olderThanDays, 'olderThanDays', 36500),
     maxBytes: optionalPositiveInteger(input.maxBytes, 'maxBytes', Number.MAX_SAFE_INTEGER),
     minFreeBytes: optionalPositiveInteger(
