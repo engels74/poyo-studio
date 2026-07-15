@@ -1,43 +1,61 @@
 # Repeatable model-registry audit
 
-The registry is a reviewed capability baseline, not a runtime claim that Poyo will never
-change. Re-run this process whenever Poyo documentation changes or before updating the
-registry verification date.
+The checked-in registry is a reviewed capability baseline. It is not a runtime claim that
+Poyo's documentation will never change. Re-run this process before changing a registry
+adapter, its verification date, or its source evidence.
 
 ## Safety properties
 
-- `bun run validate:registry` is local and performs no network request.
-- `bun run registry:audit:network` contacts only `https://docs.poyo.ai/llms.txt`; it does not
-  authenticate, submit a generation, upload media, or spend credits.
-- Neither command needs `POYO_API_KEY`. Unset it during documentation audits.
-- A successful page-index audit does not prove that fields, enums, defaults, conditional
-  rules, pricing, or model availability are unchanged.
+- `bun run validate:registry` is offline and reads only committed evidence.
+- `bun run registry:audit:network` performs unauthenticated `GET` requests only to official
+  Poyo documentation and the public pricing page. It uploads no media, submits no generation,
+  and spends zero credits.
+- Neither command reads or needs `POYO_API_KEY`; unset it during an audit.
+- `bun run registry:evidence:refresh` rewrites review-candidate evidence. Never commit its
+  output without inspecting the source, structured, fixture, and manual-decision diffs.
 
-## Baseline
+## Reviewed baseline
 
-The current reviewed baseline is dated 2026-07-15:
+The 2026-07-15 baseline uses registry versions `image-2026-07-15.2` and
+`video-2026-07-15.2`.
 
-| Registry | Version | Pages | Public IDs | Current workflows |
-| --- | --- | ---: | ---: | ---: |
-| Image | `image-2026-07-15` | 22 | 44 | 50 |
-| Video | `video-2026-07-15` | 35 | 53 | 121 |
+| Evidence | Count |
+| --- | ---: |
+| Indexed image model pages | 22 Markdown + 22 JSON |
+| Indexed video model pages | 35 Markdown + 35 JSON |
+| Model bodies with HTTP 200 | 114 of 114 |
+| Operational, index, pricing, and audit-only bodies | 30 |
+| **Official source records** | **144** |
+| Reviewed workflow fixtures | 173 (50 image, 121 current video, 2 excluded) |
+| Reviewed conditional-invalid vectors | 15 |
+| Explicit conflicts/manual decisions | 8 |
 
-Video also retains two excluded Kling Avatar variants and eight legacy/unindexed audit
-records. Image retains two duplicate/unindexed audit records.
+Every source record stores its URL, HTTP status, fetch timestamp through the manifest,
+byte length, raw-body SHA-256, canonical SHA-256, classification, and—when it is OpenAPI
+JSON—a structured snapshot of paths plus property types, required flags, enums, defaults,
+formats, and bounds. The source corpus hash is
+`4b2e5e25abcace6e553df8021a0069ce14f23af336db7a8ba6ca4e764eba1483`.
 
-## 1. Start from a clean branch
+Current non-available classifications are deliberate and machine-readable:
+
+- `overview.json`, `error-codes.json`, `task-management/status.json`, and
+  `task-management/webhooks.json` return 404; their Markdown forms remain available.
+- The generic `openapi.json` is **contradictory** because its permissive input cannot express
+  all model-specific restrictions.
+- The public pricing page is **unstructured** HTML, not a pricing-estimate API.
+
+## 1. Prepare a clean, unauthenticated audit
 
 ```bash
 git status --short
-bun --version        # must be 1.3.14 for the supported toolchain
+bun --version        # supported version: 1.3.14
 bun install --frozen-lockfile
 unset POYO_API_KEY
 ```
 
-Stop if the worktree contains unrelated registry edits or if the pinned Bun version is not
-available.
+Do not refresh evidence over unrelated registry edits. No API key is required.
 
-## 2. Validate the checked-in registry
+## 2. Validate the committed reviewed evidence offline
 
 ```bash
 bun run validate:registry
@@ -46,126 +64,82 @@ bun test tests/unit/registry
 
 The validator proves:
 
-- exact page, public-ID, workflow, exclusion, and audit-record counts;
-- unique cross-modality workflow keys;
-- source and manifest hash shape;
-- a functional minimum-valid payload for every current workflow;
-- exact model-ID transformation for each adapter.
+- the source manifest contains exactly 57 paired model Markdown/JSON sources and the complete
+  144-source corpus;
+- every current model source was fetched successfully and every JSON body has a structured
+  extraction;
+- registry provenance uses the actual fetched Markdown/JSON body hashes;
+- every adapter's fields, roles, defaults, enums, bounds, conditions, output contract,
+  limitations, and payload metadata exactly match a committed reviewed fixture;
+- every current workflow's minimum and advanced values still normalize to the exact reviewed
+  request body and public model ID;
+- every current workflow has an invalid vector, all declared conditional rules have a
+  targeted invalid vector, and all conflict records reference real source evidence;
+- inventory, exclusions, safety defaults, Seedream behavior, and corpus/manifest hashes remain
+  stable.
 
-The unit tests additionally cover conditional roles, required inputs, enums, dimensions,
-durations, output counts, safety defaults, expert overrides, Seedream 5 Pro, exclusions, and
-SQLite seeding.
+The fixture refresh script derives a review candidate from runtime adapters for convenience.
+That does **not** make the result self-authorizing: an adapter and its regenerated fixture must
+be reviewed against the paired official structured evidence and Markdown before both change.
 
-## 3. Compare the live documentation index
+## 3. Audit all official sources over the network
 
 ```bash
-bun run registry:audit:network | tee /tmp/poyo-registry-index-audit.json
+bun run registry:audit:network | tee /tmp/poyo-registry-audit.json
 ```
 
-The command extracts current image/video Markdown page slugs from the official `llms.txt` and
-compares them with `IMAGE_PAGE_SLUGS` and `VIDEO_PAGE_SLUGS`.
+The network audit refetches and hashes all 144 sources, compares source availability and HTTP
+status, detects added/removed model pages from `llms.txt`, and reports structured OpenAPI path
+or property changes. Safe documentation reads retry transient 429/5xx responses and have a
+bounded timeout. The command exits non-zero for substantive status, body, page, or schema
+drift.
 
-Classification:
+The pricing page uses canonical visible `<main>` text so volatile build metadata does not
+create false failures; a visible price/content change still fails. The report always declares
+`authenticated: false` and `paidCalls: 0`.
 
-- **Removed page:** fails the command. Do not delete the adapter until a human verifies the
-  replacement/deprecation and migration consequence.
-- **Added page:** warning. Classify it as current, explicitly excluded, legacy, duplicate, or
-  unindexed.
-- **Unknown candidate ID:** warning. The index parser is deliberately broad; verify it against
-  the model page before adding anything.
+## 4. Review and refresh evidence deliberately
 
-The output timestamp is evidence for the index check only. It must not replace the registry's
-review date.
+When the network audit reports drift:
 
-## 4. Review paired Markdown and JSON
+1. Read both official forms for every affected model page:
+   `https://docs.poyo.ai/api-manual/{image-series|video-series}/{slug}.md` and `.json`.
+2. Review JSON fields, types, required arrays, enums, defaults, numeric/string/array bounds,
+   unions, examples, and response schemas.
+3. Review Markdown for roles, maximum counts, formats, duration/dimension matrices,
+   mutually-exclusive fields, billing, retention, and operational warnings.
+4. Update `reviewed-conflicts.json` when sources disagree. Do not silently choose one source.
+5. Update adapters and regression tests only after deciding what can be submitted truthfully.
+6. Generate review candidates:
 
-For every added/changed page, retrieve both official forms where present:
+   ```bash
+   bun run registry:evidence:refresh
+   git diff -- src/lib/features/registry/evidence
+   ```
 
-```text
-https://docs.poyo.ai/api-manual/{image-series|video-series}/{slug}.md
-https://docs.poyo.ai/api-manual/{image-series|video-series}/{slug}.json
-```
+7. Inspect every source status/hash/structured diff and every fixture schema/request diff.
+   Refreshing evidence must never be used to hide unexplained drift.
 
-Record the HTTP status and SHA-256 of each body. Compare JSON for:
+Kling O3 Image's paired JSON now returns 200 and is included in the structured corpus. Its
+`elements` behavior remains a reviewed adapter surface rather than an inferred generic form.
 
-- public model IDs and workflow-specific IDs;
-- property names and types;
-- `required` arrays;
-- enums and defaults;
-- numeric, string, and array bounds;
-- nullable/union behavior;
-- request and response examples.
+## 5. Mandatory manual decisions
 
-Review Markdown separately for conditions that OpenAPI often cannot express:
+Always re-check these project choices:
 
-- “required for”, “only”, “cannot”, “must”, and mutually exclusive fields;
-- input roles and maximum role counts;
-- file formats, size, duration, dimension, and aspect-ratio matrices;
-- model/variant-specific restrictions;
-- billing, retention, progress, and operational warnings.
+1. Compatible models explicitly send `enable_safety_checker: false` by default, send `true`
+   only after user opt-in, and omit the field for unsupported models.
+2. Seedream 5.0 Pro treats resolution and aspect ratio as separate internal concepts but
+   accepts only one current `size` selection.
+3. Kling Avatar remains an explicit excluded record while avatar/audio-driven generation is
+   outside scope.
+4. Legacy and duplicate OpenAPI records stay out of selectors.
+5. Expert overrides cannot replace protected/local/security fields and remain visibly
+   unverified when not in reviewed schemas.
+6. Poyo exposes no verified cancellation, remote deletion, dynamic discovery, pricing
+   estimation, or submission-idempotency contract.
 
-If Markdown and JSON disagree, do not silently generate code from either. Record the conflict,
-choose the behavior that can be submitted truthfully, and add a regression test.
-
-Kling O3 Image is the existing manual-adapter example: its Markdown embeds OpenAPI but the
-adjacent JSON is missing. Keep `incomplete-json` provenance until official JSON exists and is
-reviewed.
-
-## 5. Update the reviewed registry
-
-Relevant files:
-
-- `src/lib/features/registry/image-registry.ts`
-- `src/lib/features/registry/video-registry.ts`
-- `src/lib/features/registry/normalize.ts`
-- `src/lib/features/registry/normalize-video.ts`
-- `src/lib/features/registry/normalize-registry.ts`
-- `tests/unit/registry/`
-
-For each current workflow, keep provider, family, public ID, workflow, media roles, fields,
-output capabilities, limitations, Markdown/JSON URLs, source hash, and verification time
-together. Do not spread model-specific business rules into page components.
-
-Change the registry version and manifest hash only after every changed workflow adapter and
-test is reviewed. Removed or uncertain specifications remain explicit audit records rather
-than disappearing.
-
-## 6. Mandatory regression checks
-
-Always re-check these deliberate decisions:
-
-1. `enable_safety_checker` is emitted as explicit `false` by default for every compatible
-   family, explicit `true` when selected, and omitted everywhere else.
-2. Seedream 5.0 Pro rejects simultaneous resolution and aspect ratio and emits exactly one
-   `size` value.
-3. Kling Avatar IDs remain excluded while avatar/audio-driven generation is out of scope.
-4. Legacy/unindexed duplicate OpenAPI records remain absent from selectors.
-5. Expert overrides cannot replace `model`, `callback_url`, `api_key`, or `local_path`, and new
-   unknown fields remain visibly unverified.
-6. Every current workflow produces an exact minimum-valid request whose `model` equals the
-   public ID.
-
-## 7. Audit operational documentation separately
-
-Re-check these pages even when the model index is unchanged:
-
-- [Getting Started](https://docs.poyo.ai/.md)
-- [API Overview](https://docs.poyo.ai/api-manual/overview.md)
-- [Task Status](https://docs.poyo.ai/api-manual/task-management/status.md)
-- [Webhooks](https://docs.poyo.ai/api-manual/task-management/webhooks.md)
-- [Error Codes](https://docs.poyo.ai/api-manual/error-codes.md)
-- [Balance](https://docs.poyo.ai/api-manual/account-management/user-balance.md)
-- [URL upload](https://docs.poyo.ai/api-manual/file-series/upload-url.md)
-- [Base64 upload](https://docs.poyo.ai/api-manual/file-series/upload-base64.md)
-- [Streaming upload](https://docs.poyo.ai/api-manual/file-series/upload-stream.md)
-- [Pricing catalogue](https://poyo.ai/pricing)
-
-Pricing is not an API contract and changes independently. Never update a cost estimate from a
-single rendered value without versioning the source and date. Continue to treat remote
-cancel/delete/cleanup, dynamic discovery, pricing estimation, and idempotent submission as
-unsupported until a documented verified endpoint appears.
-
-## 8. Final evidence
+## 6. Quality gates and audit report
 
 ```bash
 bun run format:check
@@ -177,16 +151,10 @@ bun run build
 git diff --check
 ```
 
-An audit report should state:
+Record the audit timestamp, old/new versions and corpus hashes, page/status/body/structured
+changes, manual decisions, safety/Seedream results, pricing classification, and whether an
+authenticated live test ran. A documentation audit normally reports **no authenticated test
+and zero credits spent**.
 
-- index check timestamp and result;
-- old/new registry versions and counts;
-- added, removed, excluded, legacy, and unresolved records;
-- changed fields/enums/defaults/conditions;
-- Markdown/JSON discrepancies and manual decisions;
-- safety and Seedream regression results;
-- pricing audit status;
-- whether an authenticated live test ran and its observed credit spend (normally `not run`).
-
-The complete current coverage matrix and known discrepancies live in
-[Poyo API and model audit](poyo-api-model-audit.md).
+See [Poyo API and model audit](poyo-api-model-audit.md) for the coverage matrix and known
+limitations.

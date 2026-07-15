@@ -28,7 +28,7 @@ diagnostics omit them.
 - **Production server:** `svelte-adapter-bun` 1.0.1.
 - **Styling:** UnoCSS 66.7.5 with `presetWind4`; adapted Modern Minimal tokens; Bits UI
   primitives where focus management is required.
-- **Persistence:** Bun's native `bun:sqlite`, schema version 2, checksum-verified migrations.
+- **Persistence:** Bun's native `bun:sqlite`, schema version 3, checksum-verified migrations.
 - **Feature modules:** registry/generation, Poyo transport, jobs, media/library, presets,
   settings/secrets, cleanup, and diagnostics.
 - **Route modules:** thin load/API boundaries that validate same-origin input and delegate to
@@ -190,6 +190,16 @@ Diagnostics reports application/schema versions, loopback policy, SQLite status,
 source/status, connectivity freshness, registry versions, aggregate storage, cleanup-worker
 state, and log health. Copied reports exclude API keys and local filesystem paths. Raw stack
 traces are not rendered in the browser.
+
+### Temporary production-dependency audit exception
+
+As of 2026-07-15, `bun audit --production` reports low-severity advisory
+`GHSA-pxg6-pf52-xh8x` for transitive `cookie@0.6.0`, required by the pinned SvelteKit 2.69.3.
+The advisory concerns out-of-bounds characters in cookie names, paths, or domains. This
+application does not construct those values from attacker-controlled input, so the observed
+exposure is low. The project tracks a compatible upstream SvelteKit update rather than forcing
+an unrelated dependency override; the exception must be removed or re-reviewed when the
+framework dependency changes.
 
 ## What leaves the machine
 

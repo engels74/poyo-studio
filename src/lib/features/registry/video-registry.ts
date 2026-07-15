@@ -8,9 +8,10 @@ import type {
   VideoRegistryEntry,
   VideoWorkflow
 } from './types';
+import { OFFICIAL_SOURCE_MANIFEST, officialModelSources } from './evidence/source-evidence';
 
-export const VIDEO_REGISTRY_VERSION = 'video-2026-07-15';
-export const VIDEO_VERIFIED_AT = '2026-07-15T10:31:34Z';
+export const VIDEO_REGISTRY_VERSION = 'video-2026-07-15.2';
+export const VIDEO_VERIFIED_AT = OFFICIAL_SOURCE_MANIFEST.verifiedAt;
 const videoFormats = ['video/mp4', 'video/webm', 'video/quicktime'];
 const imageFormats = ['image/jpeg', 'image/png', 'image/webp'];
 const audioFormats = ['audio/mpeg', 'audio/wav', 'audio/mp4'];
@@ -925,14 +926,15 @@ function fieldsFor(page: Page, modelId: string, workflow: VideoWorkflow): FieldD
 }
 
 function provenance(page: Page): RegistryProvenance {
-  const url = `https://docs.poyo.ai/api-manual/video-series/${page.slug}.md`;
+  const sources = officialModelSources('video', page.slug);
   return {
     pageSlug: page.slug,
-    markdownUrl: url,
-    jsonStatus: 'available',
-    sourceHash: new Bun.CryptoHasher('sha256')
-      .update(`${url}\n${JSON.stringify(page)}`)
-      .digest('hex'),
+    markdownUrl: sources.markdown.url,
+    markdownSha256: sources.markdown.sha256,
+    jsonUrl: sources.json.url,
+    jsonStatus: sources.json.status,
+    jsonSha256: sources.json.sha256,
+    sourceManifestVersion: `${OFFICIAL_SOURCE_MANIFEST.version}:${OFFICIAL_SOURCE_MANIFEST.corpusSha256}`,
     verifiedAt: VIDEO_VERIFIED_AT
   };
 }
@@ -1081,14 +1083,6 @@ export const VIDEO_AUDIT_RECORDS: readonly RegistryAuditRecord[] = [
   }
 ];
 
-const sourceHash = new Bun.CryptoHasher('sha256')
-  .update(
-    JSON.stringify({
-      pages: VIDEO_REGISTRY_ENTRIES.map((item) => item.provenance.sourceHash),
-      audit: VIDEO_AUDIT_RECORDS.map((item) => item.sourceUrl)
-    })
-  )
-  .digest('hex');
 const manifestMaterial = JSON.stringify({
   entries: VIDEO_REGISTRY_ENTRIES,
   audit: VIDEO_AUDIT_RECORDS
@@ -1099,6 +1093,6 @@ export const VIDEO_REGISTRY: RegistryManifest<VideoRegistryEntry> = {
   pageCount: VIDEO_PAGE_SLUGS.length,
   publicIdCount: VIDEO_PUBLIC_IDS.length,
   entries: VIDEO_REGISTRY_ENTRIES,
-  sourceHash,
+  sourceCorpusHash: OFFICIAL_SOURCE_MANIFEST.corpusSha256,
   manifestHash: new Bun.CryptoHasher('sha256').update(manifestMaterial).digest('hex')
 };

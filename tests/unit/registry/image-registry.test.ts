@@ -30,7 +30,10 @@ describe('audited image registry', () => {
     expect(new Set(IMAGE_REGISTRY_ENTRIES.map((entry) => entry.key)).size).toBe(50);
     for (const entry of IMAGE_REGISTRY_ENTRIES) {
       expect(entry.provenance.markdownUrl).toStartWith('https://docs.poyo.ai/');
-      expect(entry.provenance.sourceHash).toHaveLength(64);
+      expect(entry.provenance.markdownSha256).toHaveLength(64);
+      expect(entry.provenance.jsonSha256).toHaveLength(64);
+      expect(entry.provenance.jsonStatus).toBe('available');
+      expect(entry.provenance.sourceManifestVersion).toMatch(/^1:[a-f0-9]{64}$/);
       expect(entry.fields.some((field) => field.level === 'essential')).toBe(true);
       expect(entry.status).toBe('current');
     }
@@ -153,16 +156,13 @@ describe('audited image registry', () => {
     ).toBe(IMAGE_REGISTRY.manifestHash);
     database.close();
   });
-  test('REG-10 preserves the Kling O3 manual-adapter decision separately', () => {
+  test('REG-10 records the now-available paired Kling O3 source evidence', () => {
     const entries = IMAGE_REGISTRY_ENTRIES.filter(
       (entry) => entry.provenance.pageSlug === 'kling-o3'
     );
     expect(entries).toHaveLength(2);
-    expect(
-      entries.every(
-        (entry) => entry.provenance.jsonStatus === 'missing' && entry.provenance.manualDecision
-      )
-    ).toBe(true);
+    expect(entries.every((entry) => entry.provenance.jsonStatus === 'available')).toBe(true);
+    expect(entries.every((entry) => entry.provenance.jsonSha256.length === 64)).toBe(true);
   });
   test('REG-10 retains unindexed duplicate schemas outside current selectors', () => {
     expect(IMAGE_AUDIT_RECORDS).toHaveLength(2);

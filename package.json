@@ -25,6 +25,7 @@
     "validate:registry": "bun scripts/validate-registry.ts",
     "registry:validate": "bun run validate:registry",
     "registry:audit:network": "bun scripts/audit-registry-network.ts",
+    "registry:evidence:refresh": "bun scripts/refresh-registry-sources.ts && bun scripts/refresh-registry-fixtures.ts",
     "test:production-smoke": "bun scripts/production-smoke.ts",
     "test:smoke": "bun run test:production-smoke"
   },

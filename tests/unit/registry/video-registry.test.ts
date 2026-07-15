@@ -57,7 +57,10 @@ describe('audited video registry coverage', () => {
       expect(entry.ui.form).toBe('guided-video');
       expect(entry.payload.adapter).toBe('video-input-v1');
       expect(entry.response.normalizer).toBe('poyo-task-video-v1');
-      expect(entry.provenance.sourceHash).toHaveLength(64);
+      expect(entry.provenance.markdownSha256).toHaveLength(64);
+      expect(entry.provenance.jsonSha256).toHaveLength(64);
+      expect(entry.provenance.jsonStatus).toBe('available');
+      expect(entry.provenance.sourceManifestVersion).toMatch(/^1:[a-f0-9]{64}$/);
     }
   });
 

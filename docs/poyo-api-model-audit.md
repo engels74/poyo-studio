@@ -2,8 +2,8 @@
 
 ## Audit baseline
 
-- **Verified:** 2026-07-15 10:31:34 UTC
-- **Registry versions:** `image-2026-07-15`, `video-2026-07-15`
+- **Verified:** 2026-07-15 18:02:01 UTC
+- **Registry versions:** `image-2026-07-15.2`, `video-2026-07-15.2`
 - **Official index:** <https://docs.poyo.ai/llms.txt>
 - **API origin:** `https://api.poyo.ai`
 - **Scope:** Current documented image and video generation, uploads, balance, asynchronous
@@ -11,10 +11,11 @@
   avatars are outside the current product scope.
 
 The baseline was built from every indexed image/video Markdown page and its paired OpenAPI
-JSON where available. JSON governs fields, types, required arrays, enums, defaults, and
-bounds. Markdown supplies conditional rules and operational caveats that OpenAPI cannot
-express. A reviewed adapter resolves disagreements; the generic top-level OpenAPI schema does
-not drive model forms.
+JSON. All 57 Markdown and all 57 paired JSON model bodies returned HTTP 200. Actual fetched
+body hashes and structured JSON paths/properties are committed in a 144-source evidence
+manifest. JSON supplies fields, types, required arrays, enums, defaults, and bounds; Markdown
+supplies conditional rules and operational caveats that OpenAPI cannot express. A reviewed
+adapter resolves disagreements; the generic top-level OpenAPI schema does not drive forms.
 
 ## Implemented coverage
 
@@ -30,8 +31,9 @@ workflow variants; a model may expose several workflow-specific adapters.
 
 Current manifest hashes:
 
-- Image: `1cd41f03e22fbb591e309cbf4fb0334d62dade10ae2fa2cf7260aed2ba26bde1`
-- Video: `f7d4833a5492b8d1a3449741f767d015db9da773e4aaa3b13772f31c579f5fd1`
+- Source corpus: `4b2e5e25abcace6e553df8021a0069ce14f23af336db7a8ba6ca4e764eba1483`
+- Image: `54b15e8eb765942b4edf368a0fdae6fa9f3c6fc1a9b1bf9a2b84ab016ad7c7d2`
+- Video: `41a2bfed7979e1de6f5830fff71ac97e67a9f2e852a5d52e7c5c0d9a6085e2ad`
 
 ## Core API lifecycle
 
@@ -150,8 +152,8 @@ truthful `size` value.
 | Webhooks are signed and retried, but require public HTTPS and reject private/internal callback targets. | A loopback-only installation uses persisted polling. SSE is only local server-to-browser delivery. |
 | Status/balance docs say credits are charged on finish; some Seedream pages describe pre-deduction and refunds. | Treat balance as a timestamped snapshot and refresh around submission and terminal work. Persist actual `credits_amount`. |
 | Current webhook Markdown uses an unwrapped task object; older material described `{code,data}`. | Response normalization is forward-compatible, but the app does not expose a public webhook receiver. |
-| Task Status JSON omits `audio` from `file_type`; Markdown includes it. | Preserve known and unknown file-type strings; the initial local library indexes image and video outputs. |
-| Kling O3 Image has Markdown-embedded OpenAPI, while the adjacent JSON is missing. | Use a reviewed manual adapter with provenance and an incomplete-JSON limitation. |
+| The paired Task Status JSON URL currently returns 404; historical JSON omitted `audio` while Markdown includes it. | Preserve known and unknown file-type strings; the initial local library indexes image and video outputs. |
+| Kling O3 Image's paired JSON is now available, including the structured `elements` surface. | Pin both fetched bodies and retain a reviewed adapter rather than inferring a universal elements form. |
 | The generic OpenAPI request permits fields that conflict with specific model pages. | Specific page JSON plus reviewed prose validation wins. |
 
 ## Unsupported or unverified Poyo behavior

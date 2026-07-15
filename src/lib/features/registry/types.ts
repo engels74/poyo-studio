@@ -67,8 +67,11 @@ export interface InputRole {
 export interface RegistryProvenance {
   pageSlug: string;
   markdownUrl: string;
-  jsonStatus: 'available' | 'missing' | 'incomplete';
-  sourceHash: string;
+  markdownSha256: string;
+  jsonUrl: string;
+  jsonStatus: 'available' | 'unavailable' | 'contradictory' | 'unstructured';
+  jsonSha256: string;
+  sourceManifestVersion: string;
   verifiedAt: string;
   manualDecision?: string;
 }
@@ -221,7 +224,7 @@ export interface RegistryManifest<TEntry = ImageRegistryEntry> {
   pageCount: number;
   publicIdCount: number;
   entries: readonly TEntry[];
-  sourceHash: string;
+  sourceCorpusHash: string;
   manifestHash: string;
 }
 export interface RegistryAuditRecord {

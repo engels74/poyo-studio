@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "reviewedAt": "2026-07-15T18:02:01Z",
+  "conflicts": [
+    {
+      "scope": "operations:retention",
+      "sources": [
+        "operations:getting-started:markdown",
+        "operations:overview:markdown",
+        "operations:task-status:markdown"
+      ],
+      "finding": "Generated-media retention is described as three days in Getting Started and 24 hours in Overview/Task Status.",
+      "decision": "Download immediately and use 24 hours only as a safe operational floor without fabricating expiry metadata."
+    },
+    {
+      "scope": "operations:upload-retention",
+      "sources": [
+        "operations:upload-url:markdown",
+        "operations:upload-base64:markdown",
+        "operations:upload-stream:markdown"
+      ],
+      "finding": "Upload retention varies by method and media type.",
+      "decision": "Persist the returned expires_at value; do not assume a global upload lifetime."
+    },
+    {
+      "scope": "operations:credits",
+      "sources": [
+        "operations:balance:markdown",
+        "operations:task-status:markdown",
+        "model:image:seedream-4-5:markdown"
+      ],
+      "finding": "Status and balance describe charge-on-finish while model prose also describes pre-deduction/refunds.",
+      "decision": "Treat balance as timestamped and persist authoritative terminal credits_amount."
+    },
+    {
+      "scope": "operations:generic-openapi",
+      "sources": ["operations:generic-openapi:json"],
+      "finding": "The generic submit input permits fields and combinations narrowed by model pages.",
+      "decision": "Model-specific Markdown/JSON and reviewed conditional adapters take precedence."
+    },
+    {
+      "scope": "operations:task-status-json",
+      "sources": ["operations:task-status:markdown", "operations:task-status:json"],
+      "finding": "The paired Task Status JSON URL currently returns 404; historical JSON omitted audio while Markdown includes it.",
+      "decision": "Preserve forward-compatible raw file types and index only image/video in the initial library."
+    },
+    {
+      "scope": "model:image:seedream-5-0-pro",
+      "sources": ["model:image:seedream-5-0-pro:markdown", "model:image:seedream-5-0-pro:json"],
+      "finding": "One size union accepts a resolution or aspect ratio, not both independently.",
+      "decision": "Keep concepts separate internally, reject simultaneous selection, and emit exactly one size."
+    },
+    {
+      "scope": "project:safety-default",
+      "sources": ["model:image:seedream-4-5:json", "model:video:happy-horse:json"],
+      "finding": "Some Poyo schemas default enable_safety_checker to true.",
+      "decision": "Poyo Local Studio explicitly sends false by default for supported workflows and preserves user opt-in."
+    },
+    {
+      "scope": "pricing:catalogue",
+      "sources": ["pricing:catalogue:html"],
+      "finding": "The public pricing catalogue is rendered HTML and not a pricing-estimate API contract.",
+      "decision": "Track canonical visible-text drift but do not claim deterministic request cost estimates."
+    }
+  ]
+}

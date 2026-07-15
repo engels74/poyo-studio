@@ -9,7 +9,7 @@ export function seedImageRegistry(database: Database): void {
       )
       .run(
         IMAGE_REGISTRY.version,
-        IMAGE_REGISTRY.sourceHash,
+        IMAGE_REGISTRY.sourceCorpusHash,
         IMAGE_REGISTRY.manifestHash,
         IMAGE_REGISTRY.verifiedAt
       );
@@ -53,7 +53,7 @@ export function seedVideoRegistry(database: Database): void {
       )
       .run(
         VIDEO_REGISTRY.version,
-        VIDEO_REGISTRY.sourceHash,
+        VIDEO_REGISTRY.sourceCorpusHash,
         VIDEO_REGISTRY.manifestHash,
         VIDEO_REGISTRY.verifiedAt
       );

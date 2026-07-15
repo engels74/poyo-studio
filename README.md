@@ -29,7 +29,8 @@ The project is independent and is not an official Poyo.ai client.
 - Separate Image and Video Studios with progressive, model-specific controls and expert
   request inspection.
 - A versioned capability registry covering **22 image pages / 44 public IDs / 50 workflows**
-  and **35 video pages / 53 public IDs / 121 current workflows**.
+  and **35 video pages / 53 public IDs / 121 current workflows**, backed by fetched-body
+  hashes, structured OpenAPI evidence, and reviewed request fixtures.
 - Durable SQLite jobs that recover after restarts, preserve ambiguous submissions, poll with
   backoff, and stream safe updates to browsers with Server-Sent Events.
 - Local source intake, Poyo URL/base64/stream uploads, and atomic output downloads with size,
@@ -124,13 +125,15 @@ bun run test:restart
 bun run test:security
 bun run test:performance
 bun run validate:registry
+bun run registry:audit:network
 bun run build
 bun run test:production-smoke
 prek run --all-files
 ```
 
 Normal tests use mocked/loopback Poyo responses and do not spend credits. The paid live test is
-fail-closed, skipped by default, and documented separately from the network registry audit:
+fail-closed and skipped by default. The registry network audit fetches only public official
+documentation, sends no credentials, and spends zero credits:
 
 - [Repeatable registry audit](docs/registry-audit.md)
 - [Optional live integration procedure](docs/live-integration.md)

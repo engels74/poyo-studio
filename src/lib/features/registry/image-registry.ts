@@ -6,9 +6,10 @@ import type {
   RegistryManifest,
   RegistryProvenance
 } from './types';
+import { OFFICIAL_SOURCE_MANIFEST, officialModelSources } from './evidence/source-evidence';
 
-export const IMAGE_REGISTRY_VERSION = 'image-2026-07-15';
-export const IMAGE_VERIFIED_AT = '2026-07-15T10:31:34Z';
+export const IMAGE_REGISTRY_VERSION = 'image-2026-07-15.2';
+export const IMAGE_VERIFIED_AT = OFFICIAL_SOURCE_MANIFEST.verifiedAt;
 const ratios8 = ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3', 'auto'];
 const seedreamRatios = ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3', '21:9'];
 const ratios10 = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'];
@@ -65,7 +66,6 @@ type Page = {
   seed?: boolean;
   safety?: boolean;
   extra?: FieldDefinition[];
-  json?: 'missing' | 'incomplete';
   limitations?: string[];
 };
 const pages: Page[] = [
@@ -212,8 +212,7 @@ const pages: Page[] = [
     n: [1, 9],
     formats: ['jpeg', 'png', 'webp'],
     extra: [{ key: 'elements', apiKey: 'elements', kind: 'elements', level: 'advanced' }],
-    json: 'missing',
-    limitations: ['Adjacent JSON resource is missing; reviewed from embedded Markdown OpenAPI.']
+    limitations: ['Elements remain a reviewed structured adapter surface.']
   },
   {
     slug: 'nano-banana',
@@ -368,21 +367,16 @@ function workflow(mode: 'base' | 'edit'): ImageWorkflow {
   return mode === 'edit' ? 'image-edit' : 'text-to-image';
 }
 function provenance(page: Page): RegistryProvenance {
-  const url = `https://docs.poyo.ai/api-manual/image-series/${page.slug}.md`;
+  const sources = officialModelSources('image', page.slug);
   return {
     pageSlug: page.slug,
-    markdownUrl: url,
-    jsonStatus: page.json ?? 'available',
-    sourceHash: new Bun.CryptoHasher('sha256')
-      .update(`${url}\n${JSON.stringify(page)}`)
-      .digest('hex'),
-    verifiedAt: IMAGE_VERIFIED_AT,
-    ...(page.json
-      ? {
-          manualDecision:
-            'Reviewed Markdown/OpenAPI adapter because paired JSON was unavailable or incomplete.'
-        }
-      : {})
+    markdownUrl: sources.markdown.url,
+    markdownSha256: sources.markdown.sha256,
+    jsonUrl: sources.json.url,
+    jsonStatus: sources.json.status,
+    jsonSha256: sources.json.sha256,
+    sourceManifestVersion: `${OFFICIAL_SOURCE_MANIFEST.version}:${OFFICIAL_SOURCE_MANIFEST.corpusSha256}`,
+    verifiedAt: IMAGE_VERIFIED_AT
   };
 }
 function entry(page: Page, id: string, mode: 'base' | 'edit'): ImageRegistryEntry {
@@ -582,14 +576,6 @@ export const IMAGE_AUDIT_RECORDS: readonly RegistryAuditRecord[] = [
     reason: 'Top-level duplicate OpenAPI is retained outside normal selectors.'
   }
 ];
-const sourceHash = new Bun.CryptoHasher('sha256')
-  .update(
-    JSON.stringify({
-      pages: IMAGE_REGISTRY_ENTRIES.map((entry) => entry.provenance.sourceHash),
-      auditSources: IMAGE_AUDIT_RECORDS.map((record) => record.sourceUrl)
-    })
-  )
-  .digest('hex');
 const manifestMaterial = JSON.stringify({
   entries: IMAGE_REGISTRY_ENTRIES,
   audit: IMAGE_AUDIT_RECORDS
@@ -600,6 +586,6 @@ export const IMAGE_REGISTRY: RegistryManifest = {
   pageCount: IMAGE_PAGE_SLUGS.length,
   publicIdCount: IMAGE_PUBLIC_IDS.length,
   entries: IMAGE_REGISTRY_ENTRIES,
-  sourceHash,
+  sourceCorpusHash: OFFICIAL_SOURCE_MANIFEST.corpusSha256,
   manifestHash: new Bun.CryptoHasher('sha256').update(manifestMaterial).digest('hex')
 };
