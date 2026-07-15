@@ -37,3 +37,26 @@ export interface HealthDto {
     };
   };
 }
+
+export interface OperationsDiagnosticsDto {
+  health: HealthDto;
+  connectivity: { checkedAt: string | null; status: string | null };
+  storage: import('../library/contracts').StorageStatisticsDto;
+  cleanup: {
+    running: boolean;
+    scheduled: boolean;
+    lastRunAt: string | null;
+    lastError: string | null;
+    actions: Record<string, number>;
+  };
+  remoteCleanup: import('../cleanup/contracts').RemoteCleanupCapabilityDto;
+  registry: Array<{ version: string; verified_at: string; status: string }>;
+  settings: {
+    polling: { intervalMs: number; staleAfterMs: number };
+    downloads: { automatic: boolean };
+    theme: { defaultMode: 'light' | 'dark' | 'system' };
+    logs: HealthDto['logging']['rotation'];
+    storageSource: 'environment' | 'platform-default';
+  };
+  logging: HealthDto['logging'];
+}

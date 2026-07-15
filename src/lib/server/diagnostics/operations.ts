@@ -1,4 +1,5 @@
 import { REMOTE_CLEANUP_CAPABILITY } from '../../features/cleanup/contracts';
+import type { OperationsDiagnosticsDto } from '../../features/diagnostics/contracts';
 import type { CleanupRuntime } from '../cleanup/runtime';
 import { LibraryRepository } from '../library/repository';
 import type { PlatformServices } from '../platform/runtime';
@@ -9,7 +10,7 @@ import { redact } from './redaction';
 export async function buildOperationsDiagnostics(
   platform: PlatformServices,
   cleanup: CleanupRuntime
-): Promise<ReturnType<typeof redact>> {
+): Promise<OperationsDiagnosticsDto> {
   const apiKey = await platform.apiKey.status();
   const [health, logging, storage] = await Promise.all([
     buildHealthDto({ database: platform.database, apiKey, logger: platform.logger }),
@@ -26,7 +27,7 @@ export async function buildOperationsDiagnostics(
       'SELECT version,verified_at,status FROM registry_versions ORDER BY verified_at DESC,version DESC'
     )
     .all();
-  return redact({
+  const diagnostics = {
     health,
     connectivity: platform.apiKey.connectivityStatus(),
     storage,
@@ -41,5 +42,6 @@ export async function buildOperationsDiagnostics(
       storageSource: platform.paths.source
     },
     logging
-  });
+  } satisfies OperationsDiagnosticsDto;
+  return redact(diagnostics) as unknown as OperationsDiagnosticsDto;
 }
