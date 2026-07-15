@@ -44,17 +44,17 @@ credentials.*
 *.sqlite3-wal
 
 # Local application state and generated media
-data/
-.data/
-app-data/
-storage/
-media/
-outputs/
-downloads/
-uploads/
-thumbnails/
-tmp/
-temp/
+/data/
+/.data/
+/app-data/
+/storage/
+/media/
+/outputs/
+/downloads/
+/uploads/
+/thumbnails/
+/tmp/
+/temp/
 
 # Logs and runtime state
 logs/

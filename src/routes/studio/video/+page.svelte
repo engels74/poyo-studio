@@ -1,5 +1,8 @@
 <script lang="ts">
-import StudioScaffold from '$lib/components/studio/StudioScaffold.svelte';
+import StudioWorkspace from '$lib/components/studio/StudioWorkspace.svelte';
+import type { PageData } from './$types';
+
+let { data }: { data: PageData } = $props();
 </script>
 
 <svelte:head>
@@ -7,4 +10,4 @@ import StudioScaffold from '$lib/components/studio/StudioScaffold.svelte';
   <meta name="description" content="Compose documented Poyo video generation workflows." />
 </svelte:head>
 
-<StudioScaffold kind="video" />
+<StudioWorkspace {data} />
