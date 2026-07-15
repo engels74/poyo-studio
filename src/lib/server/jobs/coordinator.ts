@@ -7,7 +7,7 @@ import type {
 } from '../poyo/types';
 import type { OutputDownloader } from './downloader';
 import type { JobRepository } from './repository';
-import type { JobRecord } from './types';
+import type { JobRecord, WorkClaim } from './types';
 
 export interface JobPoyoGateway {
   submit(request: PoyoSubmitRequest): Promise<PoyoSubmitResult>;
@@ -62,6 +62,32 @@ export class JobCoordinator {
     const job = this.options.repository.get(jobId);
     if (!job) throw new Error('Job not found.');
     return job;
+  }
+  private async withDownloadLease<T>(
+    claim: WorkClaim,
+    operation: (signal: AbortSignal) => Promise<T>
+  ): Promise<T> {
+    const controller = new AbortController();
+    let current = claim;
+    const heartbeat = () => {
+      try {
+        const renewed = this.options.repository.renewWork(current, this.workLeaseMs);
+        if (renewed) current = renewed;
+        else controller.abort(new Error('Download work lease ownership was lost.'));
+      } catch (error) {
+        controller.abort(error);
+      }
+    };
+    const interval = setInterval(
+      heartbeat,
+      Math.max(1, Math.min(20_000, Math.floor(this.workLeaseMs / 3)))
+    );
+    interval.unref();
+    try {
+      return await operation(controller.signal);
+    } finally {
+      clearInterval(interval);
+    }
   }
   async refreshBalance(source: string): Promise<void> {
     try {
@@ -137,7 +163,9 @@ export class JobCoordinator {
       );
       if (!claim) continue;
       try {
-        await this.options.downloader.download(output.id);
+        await this.withDownloadLease(claim, (signal) =>
+          this.options.downloader.download(output.id, { signal, workClaim: claim })
+        );
       } catch {
       } finally {
         this.options.repository.releaseWork(claim);
@@ -157,7 +185,9 @@ export class JobCoordinator {
     );
     if (!claim) return;
     try {
-      await this.options.downloader.download(output.id);
+      await this.withDownloadLease(claim, (signal) =>
+        this.options.downloader.download(output.id, { signal, workClaim: claim })
+      );
       this.options.repository.finishIfDownloaded(output.jobId);
     } finally {
       this.options.repository.releaseWork(claim);

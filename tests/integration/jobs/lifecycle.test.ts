@@ -26,6 +26,36 @@ function accepted(fixture: Awaited<ReturnType<typeof createJobFixture>>, suffix:
   if (!acceptedJob) throw new Error('accepted job missing');
   return acceptedJob;
 }
+function finishedOutput(fixture: Awaited<ReturnType<typeof createJobFixture>>, suffix: string) {
+  const job = accepted(fixture, suffix);
+  fixture.repository.applyStatus(
+    job.id,
+    {
+      taskId: `task-${suffix}`,
+      statusRaw: 'finished',
+      status: 'finished',
+      creditsAmount: 1,
+      files: [
+        {
+          url: 'https://media.example/result.png',
+          fileType: 'image',
+          label: null,
+          format: 'png',
+          contentType: 'image/png',
+          fileName: 'result.png',
+          fileSize: 8
+        }
+      ],
+      createdTime: 'now',
+      progress: 100,
+      errorMessage: null
+    },
+    1_000
+  );
+  const output = fixture.repository.outputs(job.id)[0];
+  if (!output) throw new Error('output missing');
+  return { job, output };
+}
 function gateway(overrides: Partial<JobPoyoGateway> = {}): JobPoyoGateway {
   return {
     submit: async () => ({
@@ -373,5 +403,97 @@ describe('durable coordinator and media lifecycle', () => {
     await coordinator.reconcile(job.id);
     expect(downloads).toBe(1);
     expect(fixture.repository.get(job.id)?.localPhase).toBe('complete');
+  });
+
+  test('JOB-14 renews a download lease before expiry while media work is active', async () => {
+    const fixture = await createJobFixture();
+    cleanups.push(fixture.cleanup);
+    const { job, output } = finishedOutput(fixture, 'download-heartbeat');
+    let started: (() => void) | undefined;
+    let release: ((response: Response) => void) | undefined;
+    const fetchStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const response = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    const coordinator = new JobCoordinator({
+      repository: fixture.repository,
+      poyo: gateway(),
+      downloader: new OutputDownloader({
+        repository: fixture.repository,
+        paths: fixture.paths,
+        resolveHost: publicDns,
+        fetch: async () => {
+          started?.();
+          return response;
+        }
+      }),
+      workerId: 'lease-owner',
+      workLeaseMs: 60
+    });
+
+    const download = coordinator.downloadPending(job.id);
+    await fetchStarted;
+    fixture.setNow(new Date('2026-07-15T12:00:00.040Z'));
+    await Bun.sleep(30);
+    fixture.setNow(new Date('2026-07-15T12:00:00.070Z'));
+    expect(fixture.repository.claimWork('download', output.id, 'contender', 60)).toBeNull();
+    release?.(
+      new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), {
+        headers: { 'content-type': 'image/png' }
+      })
+    );
+    await download;
+    expect(fixture.repository.output(output.id)?.downloadState).toBe('verified');
+    expect(fixture.repository.get(job.id)?.localPhase).toBe('complete');
+  });
+
+  test('JOB-15 aborts mutation when an expired download lease is reclaimed', async () => {
+    const fixture = await createJobFixture();
+    cleanups.push(fixture.cleanup);
+    const { job, output } = finishedOutput(fixture, 'download-lease-lost');
+    let started: (() => void) | undefined;
+    const fetchStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const coordinator = new JobCoordinator({
+      repository: fixture.repository,
+      poyo: gateway(),
+      downloader: new OutputDownloader({
+        repository: fixture.repository,
+        paths: fixture.paths,
+        resolveHost: publicDns,
+        fetch: async () => {
+          started?.();
+          return new Promise<Response>(() => undefined);
+        }
+      }),
+      workerId: 'expired-owner',
+      workLeaseMs: 60
+    });
+
+    const download = coordinator.downloadPending(job.id);
+    await fetchStarted;
+    fixture.setNow(new Date('2026-07-15T12:00:00.061Z'));
+    const contender = fixture.repository.claimWork('download', output.id, 'contender', 60);
+    expect(contender).not.toBeNull();
+    await Bun.sleep(30);
+    await download;
+
+    expect(fixture.repository.output(output.id)?.downloadState).toBe('downloading');
+    expect(fixture.repository.get(job.id)).toMatchObject({
+      localPhase: 'downloading',
+      failureDomain: 'none',
+      attentionCode: null
+    });
+    expect(
+      fixture.database
+        .query<{ status: string }, [string]>(
+          'SELECT status FROM download_attempts WHERE output_id=? ORDER BY attempt DESC LIMIT 1'
+        )
+        .get(output.id)?.status
+    ).toBe('started');
+    if (contender) expect(fixture.repository.releaseWork(contender)).toBe(true);
   });
 });

@@ -641,6 +641,29 @@ export class JobRepository extends DatabaseRepository {
         .run(claim.workType, claim.workId, claim.owner, claim.token).changes === 1
     );
   }
+  renewWork(claim: WorkClaim, leaseMs: number): WorkClaim | null {
+    return this.transaction(() => {
+      const now = this.timestamp();
+      const expiresAt = new Date(this.now().getTime() + leaseMs).toISOString();
+      const renewed = this.database
+        .query(
+          `UPDATE work_claims SET expires_at=?
+           WHERE work_type=? AND work_id=? AND owner=? AND token=? AND expires_at>?`
+        )
+        .run(expiresAt, claim.workType, claim.workId, claim.owner, claim.token, now).changes;
+      return renewed === 1 ? { ...claim, expiresAt } : null;
+    });
+  }
+  ownsWork(claim: WorkClaim): boolean {
+    return Boolean(
+      this.database
+        .query<{ held: number }, [WorkType, string, string, string, string]>(
+          `SELECT 1 held FROM work_claims
+           WHERE work_type=? AND work_id=? AND owner=? AND token=? AND expires_at>?`
+        )
+        .get(claim.workType, claim.workId, claim.owner, claim.token, this.timestamp())?.held
+    );
+  }
   applyStatus(jobId: string, status: PoyoStatusResult, pollDelayMs: number): JobRecord {
     return this.transaction(() => {
       const current = this.get(jobId);
@@ -826,9 +849,11 @@ export class JobRepository extends DatabaseRepository {
       checksum: string;
       signature: string;
       contentType: string | null;
-    }
-  ): void {
-    this.transaction(() => {
+    },
+    claim?: WorkClaim
+  ): boolean {
+    return this.transaction(() => {
+      if (claim && !this.ownsWork(claim)) return false;
       const output = this.output(id);
       if (!output) throw new Error('Output not found.');
       const now = this.timestamp();
@@ -843,10 +868,18 @@ export class JobRepository extends DatabaseRepository {
         )
         .run(data.path, data.size, data.checksum, data.signature, data.contentType, now, id);
       this.append(this.requireJob(output.jobId), 'download.verified', { outputId: id });
+      return true;
     });
   }
-  failDownload(id: string, attempt: number, error: Record<string, unknown>, expired = false): void {
-    this.transaction(() => {
+  failDownload(
+    id: string,
+    attempt: number,
+    error: Record<string, unknown>,
+    expired = false,
+    claim?: WorkClaim
+  ): boolean {
+    return this.transaction(() => {
+      if (claim && !this.ownsWork(claim)) return false;
       const now = this.timestamp(),
         state = expired ? 'expired' : 'failed';
       this.database
@@ -854,7 +887,10 @@ export class JobRepository extends DatabaseRepository {
           `UPDATE download_attempts SET status=?,safe_error_json=?,completed_at=? WHERE output_id=? AND attempt=?`
         )
         .run(state, JSON.stringify(error), now, id, attempt);
-      this.database.query(`UPDATE job_outputs SET download_state=? WHERE id=?`).run(state, id);
+      const changed = this.database
+        .query(`UPDATE job_outputs SET download_state=? WHERE id=? AND download_state!='verified'`)
+        .run(state, id).changes;
+      if (changed === 0) return false;
       const output = this.output(id);
       if (output) {
         const job = this.requireJob(output.jobId);
@@ -868,6 +904,7 @@ export class JobRepository extends DatabaseRepository {
           .run(job.id);
         this.append(this.requireJob(job.id), 'download.failed', { outputId: id });
       }
+      return true;
     });
   }
   finishIfDownloaded(jobId: string): JobRecord {

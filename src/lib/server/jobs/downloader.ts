@@ -11,7 +11,7 @@ import {
   resolveDownloadTarget
 } from './download-egress';
 import type { JobRepository } from './repository';
-import type { OutputRecord } from './types';
+import type { OutputRecord, WorkClaim } from './types';
 
 const extensions: Record<string, string> = {
   'image/jpeg': '.jpg',
@@ -33,6 +33,7 @@ const mediaKinds: Record<string, OutputRecord['mediaKind']> = {
 };
 const genericTypes = new Set(['application/octet-stream', 'binary/octet-stream']);
 const RECEIPT_MAX_BYTES = 4_096;
+const RECEIPT_TEMP_STALE_MS = 5 * 60_000;
 type ReceiptLogger = Pick<StructuredLogger, 'warn'>;
 
 interface DownloadVerification {
@@ -186,7 +187,13 @@ function receiptQuarantinePath(directory: string, outputId: string): string {
 }
 
 function isReceiptTempName(name: string, outputId: string): boolean {
-  return name.startsWith(`.${outputId}.published.`) && name.endsWith('.tmp');
+  const prefix = `.${outputId}.published.`;
+  return (
+    name.startsWith(prefix) &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.tmp$/i.test(
+      name.slice(prefix.length)
+    )
+  );
 }
 
 async function logReceiptWarning(
@@ -359,6 +366,7 @@ async function cleanupReceiptTemps(
   logger?: ReceiptLogger
 ): Promise<void> {
   const names = await readdir(directory).catch(() => [] as string[]);
+  let removed = false;
   await Promise.all(
     names
       .filter((name) => isReceiptTempName(name, output.id))
@@ -369,7 +377,7 @@ async function cleanupReceiptTemps(
           throw error;
         });
         if (!details) return;
-        if (!details.isFile() && !details.isSymbolicLink()) {
+        if (!details.isFile() || details.isSymbolicLink()) {
           await logReceiptWarning(logger, output, {
             action: 'left_temp_in_place',
             reason: 'temp_not_regular_file',
@@ -377,15 +385,50 @@ async function cleanupReceiptTemps(
           });
           return;
         }
-        await rm(path, { force: true });
+        if (Date.now() - details.mtimeMs <= RECEIPT_TEMP_STALE_MS) {
+          return;
+        }
+        let handle: Awaited<ReturnType<typeof open>> | null = null;
+        try {
+          handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+          const opened = await handle.stat();
+          if (
+            !opened.isFile() ||
+            opened.dev !== details.dev ||
+            opened.ino !== details.ino ||
+            Date.now() - opened.mtimeMs <= RECEIPT_TEMP_STALE_MS
+          ) {
+            await logReceiptWarning(logger, output, {
+              action: 'left_temp_in_place',
+              reason: 'temp_identity_changed',
+              receipt: name
+            });
+            return;
+          }
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+          await logReceiptWarning(logger, output, {
+            action: 'left_temp_in_place',
+            reason: 'temp_no_follow_open_failed',
+            receipt: name,
+            error: safeErrorSummary(error)
+          });
+          return;
+        } finally {
+          await handle?.close().catch(() => undefined);
+        }
+        const rechecked = await lstat(path).catch(() => null);
+        if (!rechecked || rechecked.dev !== details.dev || rechecked.ino !== details.ino) return;
+        await rm(path);
+        removed = true;
         await logReceiptWarning(logger, output, {
           action: 'removed_temp',
-          reason: 'interrupted_receipt_publication',
+          reason: 'stale_interrupted_receipt_publication',
           receipt: name
         });
       })
   );
-  if (names.some((name) => isReceiptTempName(name, output.id))) await syncDirectory(directory);
+  if (removed) await syncDirectory(directory);
 }
 
 async function removeReceipt(directory: string, outputId: string): Promise<void> {
@@ -636,6 +679,10 @@ export interface OutputDownloaderOptions {
   totalTimeoutMs?: number;
   afterPublish?: (publication: { outputId: string; path: string }) => void | Promise<void>;
 }
+export interface OutputDownloadExecution {
+  signal?: AbortSignal;
+  workClaim?: WorkClaim;
+}
 export class OutputDownloader {
   private readonly fetcher;
   private readonly maxBytes: number;
@@ -651,11 +698,19 @@ export class OutputDownloader {
     this.idleTimeoutMs = positiveDuration(options.idleTimeoutMs, 30_000);
     this.totalTimeoutMs = positiveDuration(options.totalTimeoutMs, 30 * 60_000);
   }
-  async download(outputId: string): Promise<OutputRecord> {
+  async download(outputId: string, execution: OutputDownloadExecution = {}): Promise<OutputRecord> {
     const output = this.options.repository.output(outputId);
     if (!output?.remoteUrl) throw new Error('Download output is unavailable.');
+    if (execution.signal?.aborted) throw abortedReason(execution.signal);
     const attempt = this.options.repository.startDownload(outputId);
     const abortController = new AbortController();
+    const abortFromLease = () => {
+      if (!abortController.signal.aborted && execution.signal?.aborted) {
+        abortController.abort(abortedReason(execution.signal));
+      }
+    };
+    execution.signal?.addEventListener('abort', abortFromLease, { once: true });
+    abortFromLease();
     const totalTimer = setTimeout(
       () => abortController.abort(new Error('Remote output total deadline exceeded.')),
       this.totalTimeoutMs
@@ -676,7 +731,16 @@ export class OutputDownloader {
           this.maxBytes
         ).catch(() => null);
         if (recovered && sameVerification(recovered, receipt)) {
-          this.options.repository.verifyDownload(outputId, attempt, recovered);
+          if (
+            !this.options.repository.verifyDownload(
+              outputId,
+              attempt,
+              recovered,
+              execution.workClaim
+            )
+          ) {
+            throw new Error('Download work lease ownership was lost.');
+          }
           await removeReceipt(directory, output.id).catch(() => undefined);
           const verified = this.options.repository.output(outputId);
           if (!verified) throw new Error('Recovered output was not found.');
@@ -777,6 +841,10 @@ export class OutputDownloader {
       await handle.sync();
       await handle.close();
       handle = null;
+      if (execution.workClaim && !this.options.repository.ownsWork(execution.workClaim)) {
+        throw new Error('Download work lease ownership was lost.');
+      }
+      if (abortController.signal.aborted) throw abortedReason(abortController.signal);
       await assertSafeDirectory(root, directory);
       const published = await publishOutput(
         root,
@@ -790,7 +858,11 @@ export class OutputDownloader {
       await rm(temporary);
       temporary = null;
       await this.options.afterPublish?.({ outputId, path: published.path });
-      this.options.repository.verifyDownload(outputId, attempt, published);
+      if (
+        !this.options.repository.verifyDownload(outputId, attempt, published, execution.workClaim)
+      ) {
+        throw new Error('Download work lease ownership was lost.');
+      }
       await removeReceipt(directory, output.id).catch(() => undefined);
       const verified = this.options.repository.output(outputId);
       if (!verified) throw new Error('Verified output was not found.');
@@ -807,11 +879,13 @@ export class OutputDownloader {
         outputId,
         attempt,
         safeErrorSummary(failure),
-        (failure as { expired?: boolean }).expired === true
+        (failure as { expired?: boolean }).expired === true,
+        execution.workClaim
       );
       throw failure;
     } finally {
       clearTimeout(totalTimer);
+      execution.signal?.removeEventListener('abort', abortFromLease);
     }
   }
 }

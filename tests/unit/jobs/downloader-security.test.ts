@@ -1,5 +1,18 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { exists, mkdir, readdir, readFile, symlink, unlink, writeFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import {
+  exists,
+  link,
+  mkdir,
+  open,
+  readdir,
+  readFile,
+  rm,
+  symlink,
+  unlink,
+  utimes,
+  writeFile
+} from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { OutputDownloader } from '../../../src/lib/server/jobs/downloader';
 import {
@@ -519,7 +532,10 @@ describe('output downloader security boundaries', () => {
     const { output } = readyOutput(fixture, 'receipt-temp');
     const directory = jobDirectory(fixture, output);
     await mkdir(directory, { recursive: true, mode: 0o700 });
-    await writeFile(join(directory, `.${output.id}.published.interrupted.tmp`), '{"version":1');
+    const interrupted = join(directory, `.${output.id}.published.${crypto.randomUUID()}.tmp`);
+    await writeFile(interrupted, '{"version":1');
+    const stale = new Date(Date.now() - 10 * 60_000);
+    await utimes(interrupted, stale, stale);
 
     const recovered = await new OutputDownloader({
       repository: fixture.repository,
@@ -531,6 +547,42 @@ describe('output downloader security boundaries', () => {
         })
     }).download(output.id);
 
+    expect(recovered.downloadState).toBe('verified');
+    expect(await receiptArtifacts(directory, output.id)).toEqual([]);
+  });
+
+  test('MEDIA-DL-13 leaves a fresh uniquely owned receipt temp for its live writer', async () => {
+    const fixture = await createJobFixture();
+    cleanups.push(fixture.cleanup);
+    const { output } = readyOutput(fixture, 'receipt-live-writer');
+    const directory = jobDirectory(fixture, output);
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    const writerTemp = join(directory, `.${output.id}.published.${crypto.randomUUID()}.tmp`);
+    const writerFinal = join(directory, '.writer-completed-receipt');
+    const writer = await open(
+      writerTemp,
+      constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW,
+      0o600
+    );
+    await writer.writeFile('{"version":1');
+    await writer.sync();
+
+    const recovered = await new OutputDownloader({
+      repository: fixture.repository,
+      paths: fixture.paths,
+      resolveHost: publicDns,
+      fetch: async () =>
+        new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), {
+          headers: { 'content-type': 'image/png' }
+        })
+    }).download(output.id);
+
+    expect(await exists(writerTemp)).toBe(true);
+    await writer.close();
+    await link(writerTemp, writerFinal);
+    expect(await exists(writerFinal)).toBe(true);
+    await rm(writerTemp);
+    await rm(writerFinal);
     expect(recovered.downloadState).toBe('verified');
     expect(await receiptArtifacts(directory, output.id)).toEqual([]);
   });
@@ -600,5 +652,52 @@ describe('output downloader security boundaries', () => {
     expect(results.every((result) => result.downloadState === 'verified')).toBe(true);
     expect(fetches).toBeGreaterThanOrEqual(1);
     expect(await receiptArtifacts(jobDirectory(fixture, output), output.id)).toEqual([]);
+  });
+
+  test('MEDIA-DL-14 a late failed attempt cannot regress a concurrently verified output', async () => {
+    const fixture = await createJobFixture();
+    cleanups.push(fixture.cleanup);
+    const { job, output } = readyOutput(fixture, 'verified-before-late-failure');
+    let startedA: (() => void) | undefined;
+    let releaseA: ((response: Response) => void) | undefined;
+    const aStarted = new Promise<void>((resolve) => {
+      startedA = resolve;
+    });
+    const aResponse = new Promise<Response>((resolve) => {
+      releaseA = resolve;
+    });
+    const a = new OutputDownloader({
+      repository: fixture.repository,
+      paths: fixture.paths,
+      resolveHost: publicDns,
+      fetch: async () => {
+        startedA?.();
+        return aResponse;
+      }
+    }).download(output.id);
+    await aStarted;
+
+    const verified = await new OutputDownloader({
+      repository: fixture.repository,
+      paths: fixture.paths,
+      resolveHost: publicDns,
+      fetch: async () =>
+        new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), {
+          headers: { 'content-type': 'image/png' }
+        })
+    }).download(output.id);
+    releaseA?.(
+      new Response(new Uint8Array([1, 2, 3]), {
+        headers: { 'content-type': 'image/png' }
+      })
+    );
+    await expect(a).rejects.toThrow('signature');
+
+    expect(verified.downloadState).toBe('verified');
+    expect(fixture.repository.output(output.id)?.downloadState).toBe('verified');
+    expect(fixture.repository.get(job.id)).toMatchObject({
+      failureDomain: 'none',
+      attentionCode: null
+    });
   });
 });

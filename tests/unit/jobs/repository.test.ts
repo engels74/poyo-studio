@@ -205,6 +205,22 @@ describe('durable job repository invariants', () => {
     }
   });
 
+  test('JOB-13 renews only the current unexpired owner-token lease', async () => {
+    const fixture = await createJobFixture();
+    cleanups.push(fixture.cleanup);
+    const first = fixture.repository.claimWork('download', 'output-renew', 'a', 1_000);
+    if (!first) throw new Error('work claim missing');
+    fixture.setNow(new Date('2026-07-15T12:00:00.500Z'));
+    const renewed = fixture.repository.renewWork(first, 1_000);
+    expect(renewed).toMatchObject({ owner: 'a', token: first.token });
+    fixture.setNow(new Date('2026-07-15T12:00:01.100Z'));
+    expect(fixture.repository.claimWork('download', 'output-renew', 'b', 1_000)).toBeNull();
+    fixture.setNow(new Date('2026-07-15T12:00:01.600Z'));
+    const second = fixture.repository.claimWork('download', 'output-renew', 'b', 1_000);
+    expect(second).toMatchObject({ owner: 'b', attempt: 2 });
+    expect(fixture.repository.renewWork(first, 1_000)).toBeNull();
+  });
+
   test('JOB-02 rejects credential-like payload fields before creating an intent', async () => {
     const fixture = await createJobFixture();
     cleanups.push(fixture.cleanup);

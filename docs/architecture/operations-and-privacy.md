@@ -57,9 +57,11 @@ and limitations.
    retry without paying for another generation.
 9. Nonterminal jobs and expired worker claims are reconciled on application startup.
 
-Submission, poll, and download work use bounded leases. Repository transactions reject stale
-claim completion, which allows recovery after crashes without permitting two workers to own
-the same operation.
+Submission, poll, and download work use bounded leases. A download worker renews its 60-second
+lease every 20 seconds while media I/O remains active. Verification and failure transitions
+compare the current owner token transactionally; a worker that loses renewal aborts its I/O and
+cannot overwrite a newer verified result. This allows recovery after crashes without permitting
+two workers to commit the same operation.
 
 ### Retry behavior
 
@@ -153,7 +155,9 @@ downloader:
 8. durably records an output-specific publication receipt before the link, syncs the containing
    directory, and then records verification metadata in SQLite. After a crash in that window,
    restart recovery re-hashes and signature-checks the exact receipt target before adoption. A
-   changed collision is preserved and a collision-safe alternate name is used instead.
+   changed collision is preserved and a collision-safe alternate name is used instead. Receipt
+   writes use unique temporary names; cleanup leaves fresh writer-owned files alone and removes
+   only regular no-follow files older than a five-minute grace period.
 
 Poyo documents no stable output-host allowlist. The downloader therefore trusts the operating
 system's DNS result only after validating every returned address. Production requests retain
