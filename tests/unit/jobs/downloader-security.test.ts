@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { exists, mkdir, readFile, symlink, unlink, writeFile } from 'node:fs/promises';
+import { exists, mkdir, readdir, readFile, symlink, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { OutputDownloader } from '../../../src/lib/server/jobs/downloader';
 import {
@@ -64,6 +64,26 @@ function readyOutput(
   const output = fixture.repository.outputs(job.id)[0];
   if (!output) throw new Error('Output fixture was not created.');
   return { job, output };
+}
+
+function jobDirectory(
+  fixture: Awaited<ReturnType<typeof createJobFixture>>,
+  output: ReturnType<typeof readyOutput>['output']
+): string {
+  return join(fixture.paths.media, output.jobId);
+}
+
+function publicationReceiptPath(
+  fixture: Awaited<ReturnType<typeof createJobFixture>>,
+  output: ReturnType<typeof readyOutput>['output']
+): string {
+  return join(jobDirectory(fixture, output), `.${output.id}.published.json`);
+}
+
+async function receiptArtifacts(directory: string, outputId: string): Promise<string[]> {
+  return (await readdir(directory)).filter(
+    (name) => name === `.${outputId}.published.json` || name.startsWith(`.${outputId}.published.`)
+  );
 }
 
 describe('output downloader security boundaries', () => {
@@ -425,5 +445,160 @@ describe('output downloader security boundaries', () => {
     expect(recovered.localPath).not.toBe(join(jobDirectory, crashPath));
     expect(recovered.localPath && new Uint8Array(await readFile(recovered.localPath))).toEqual(png);
     expect(new Uint8Array(await readFile(join(jobDirectory, crashPath)))).toEqual(tampered);
+  });
+
+  test('MEDIA-DL-08 treats zero-byte, truncated and unsupported receipts as recoverable', async () => {
+    const cases: Array<[string, string]> = [
+      ['zero-byte', ''],
+      ['truncated-json', '{"version":1,"outputId"'],
+      ['invalid-schema', JSON.stringify({ version: 1, outputId: 'wrong', fileName: '../x.png' })],
+      ['unsupported-version', JSON.stringify({ version: 2, outputId: 'future', fileName: 'x.png' })]
+    ];
+    for (const [suffix, receipt] of cases) {
+      const fixture = await createJobFixture();
+      cleanups.push(fixture.cleanup);
+      const { output } = readyOutput(fixture, `receipt-${suffix}`);
+      const directory = jobDirectory(fixture, output);
+      await mkdir(directory, { recursive: true, mode: 0o700 });
+      await writeFile(publicationReceiptPath(fixture, output), receipt);
+      const warnings: unknown[] = [];
+      let fetches = 0;
+
+      const recovered = await new OutputDownloader({
+        repository: fixture.repository,
+        paths: fixture.paths,
+        resolveHost: publicDns,
+        logger: { warn: async (...entry: unknown[]) => void warnings.push(entry) },
+        fetch: async () => {
+          fetches += 1;
+          return new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), {
+            headers: { 'content-type': 'image/png' }
+          });
+        }
+      }).download(output.id);
+
+      expect(recovered).toMatchObject({ downloadState: 'verified', contentType: 'image/png' });
+      expect(fetches).toBe(1);
+      expect(await receiptArtifacts(directory, output.id)).toEqual([]);
+      expect(warnings.length).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  test('MEDIA-DL-09 removes symlink receipts without following them and redownloads', async () => {
+    const fixture = await createJobFixture();
+    cleanups.push(fixture.cleanup);
+    const { output } = readyOutput(fixture, 'receipt-symlink');
+    const directory = jobDirectory(fixture, output);
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    const outside = join(dirname(fixture.paths.media), 'receipt-outside.json');
+    await writeFile(outside, '{"version":1}');
+    await symlink(outside, publicationReceiptPath(fixture, output));
+    let fetches = 0;
+
+    const recovered = await new OutputDownloader({
+      repository: fixture.repository,
+      paths: fixture.paths,
+      resolveHost: publicDns,
+      fetch: async () => {
+        fetches += 1;
+        return new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), {
+          headers: { 'content-type': 'image/png' }
+        });
+      }
+    }).download(output.id);
+
+    expect(recovered.downloadState).toBe('verified');
+    expect(fetches).toBe(1);
+    expect(await readFile(outside, 'utf8')).toBe('{"version":1}');
+    expect(await receiptArtifacts(directory, output.id)).toEqual([]);
+  });
+
+  test('MEDIA-DL-10 cleans interrupted receipt temps before retrying publication', async () => {
+    const fixture = await createJobFixture();
+    cleanups.push(fixture.cleanup);
+    const { output } = readyOutput(fixture, 'receipt-temp');
+    const directory = jobDirectory(fixture, output);
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    await writeFile(join(directory, `.${output.id}.published.interrupted.tmp`), '{"version":1');
+
+    const recovered = await new OutputDownloader({
+      repository: fixture.repository,
+      paths: fixture.paths,
+      resolveHost: publicDns,
+      fetch: async () =>
+        new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), {
+          headers: { 'content-type': 'image/png' }
+        })
+    }).download(output.id);
+
+    expect(recovered.downloadState).toBe('verified');
+    expect(await receiptArtifacts(directory, output.id)).toEqual([]);
+  });
+
+  test('MEDIA-DL-11 retries after a bad receipt without a permanent failure loop', async () => {
+    const fixture = await createJobFixture();
+    cleanups.push(fixture.cleanup);
+    const { output } = readyOutput(fixture, 'receipt-restart');
+    const directory = jobDirectory(fixture, output);
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    await writeFile(publicationReceiptPath(fixture, output), '{');
+    let fetches = 0;
+    const options = {
+      repository: fixture.repository,
+      paths: fixture.paths,
+      resolveHost: publicDns
+    };
+
+    await expect(
+      new OutputDownloader({
+        ...options,
+        fetch: async () => {
+          fetches += 1;
+          throw new Error('network still unavailable');
+        }
+      }).download(output.id)
+    ).rejects.toThrow('network still unavailable');
+    expect(await receiptArtifacts(directory, output.id)).toEqual([]);
+
+    const recovered = await new OutputDownloader({
+      ...options,
+      fetch: async () => {
+        fetches += 1;
+        return new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), {
+          headers: { 'content-type': 'image/png' }
+        });
+      }
+    }).download(output.id);
+
+    expect(fetches).toBe(2);
+    expect(recovered.downloadState).toBe('verified');
+  });
+
+  test('MEDIA-DL-12 concurrent downloaders do not leave receipt readers in a permanent loop', async () => {
+    const fixture = await createJobFixture();
+    cleanups.push(fixture.cleanup);
+    const { output } = readyOutput(fixture, 'receipt-concurrent');
+    let fetches = 0;
+    const downloader = () =>
+      new OutputDownloader({
+        repository: fixture.repository,
+        paths: fixture.paths,
+        resolveHost: publicDns,
+        fetch: async () => {
+          fetches += 1;
+          await Bun.sleep(5);
+          return new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), {
+            headers: { 'content-type': 'image/png' }
+          });
+        }
+      });
+
+    const results = await Promise.all([
+      downloader().download(output.id),
+      downloader().download(output.id)
+    ]);
+    expect(results.every((result) => result.downloadState === 'verified')).toBe(true);
+    expect(fetches).toBeGreaterThanOrEqual(1);
+    expect(await receiptArtifacts(jobDirectory(fixture, output), output.id)).toEqual([]);
   });
 });

@@ -1,6 +1,7 @@
 import { constants } from 'node:fs';
-import { link, lstat, mkdir, open, readFile, realpath, rm } from 'node:fs/promises';
+import { link, lstat, mkdir, open, readdir, realpath, rename, rm } from 'node:fs/promises';
 import { basename, extname } from 'node:path';
+import type { StructuredLogger } from '../diagnostics/jsonl-logger';
 import { safeErrorSummary } from '../diagnostics/redaction';
 import { syncDirectory } from '../media/filesystem-boundary';
 import { type AppPaths, resolvePathWithin } from '../platform/app-paths';
@@ -32,6 +33,7 @@ const mediaKinds: Record<string, OutputRecord['mediaKind']> = {
 };
 const genericTypes = new Set(['application/octet-stream', 'binary/octet-stream']);
 const RECEIPT_MAX_BYTES = 4_096;
+type ReceiptLogger = Pick<StructuredLogger, 'warn'>;
 
 interface DownloadVerification {
   path: string;
@@ -150,7 +152,11 @@ async function safeOutputDirectory(
     if (error.code === 'ENOENT') return null;
     throw error;
   });
-  if (!existing) await mkdir(directory, { mode: 0o700 });
+  if (!existing) {
+    await mkdir(directory, { mode: 0o700 }).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'EEXIST') throw error;
+    });
+  }
   const info = await lstat(directory);
   if (!info.isDirectory() || info.isSymbolicLink()) {
     throw new Error('Output directory may not be a symbolic link.');
@@ -169,6 +175,31 @@ async function assertSafeDirectory(root: string, directory: string): Promise<voi
 
 function receiptPath(directory: string, outputId: string): string {
   return resolvePathWithin(directory, `.${outputId}.published.json`);
+}
+
+function receiptTempName(outputId: string): string {
+  return `.${outputId}.published.${crypto.randomUUID()}.tmp`;
+}
+
+function receiptQuarantinePath(directory: string, outputId: string): string {
+  return resolvePathWithin(directory, `.${outputId}.receipt-quarantine.${crypto.randomUUID()}`);
+}
+
+function isReceiptTempName(name: string, outputId: string): boolean {
+  return name.startsWith(`.${outputId}.published.`) && name.endsWith('.tmp');
+}
+
+async function logReceiptWarning(
+  logger: ReceiptLogger | undefined,
+  output: OutputRecord,
+  data: Record<string, unknown>
+): Promise<void> {
+  await logger
+    ?.warn('download.receipt.untrusted', {
+      localJobId: output.jobId,
+      data: { outputId: output.id, ...data }
+    })
+    .catch(() => undefined);
 }
 
 function isPublicationReceipt(value: unknown, output: OutputRecord): value is PublicationReceipt {
@@ -196,22 +227,165 @@ function isPublicationReceipt(value: unknown, output: OutputRecord): value is Pu
 
 async function readReceipt(
   directory: string,
-  output: OutputRecord
+  output: OutputRecord,
+  logger?: ReceiptLogger
 ): Promise<PublicationReceipt | null> {
+  await cleanupReceiptTemps(directory, output, logger);
   const path = receiptPath(directory, output.id);
   const details = await lstat(path).catch((error: NodeJS.ErrnoException) => {
     if (error.code === 'ENOENT') return null;
     throw error;
   });
   if (!details) return null;
-  if (!details.isFile() || details.isSymbolicLink() || details.size > RECEIPT_MAX_BYTES) {
-    throw new Error('Published output receipt is not a safe regular file.');
+  if (details.isSymbolicLink()) {
+    await removeUntrustedReceipt(directory, output, logger, 'symlink', path);
+    return null;
   }
-  const value: unknown = JSON.parse(await readFile(path, 'utf8'));
+  if (!details.isFile()) {
+    await removeUntrustedReceipt(directory, output, logger, 'not_regular_file', path);
+    return null;
+  }
+  if (details.size <= 0) {
+    await removeUntrustedReceipt(directory, output, logger, 'empty', path);
+    return null;
+  }
+  if (details.size > RECEIPT_MAX_BYTES) {
+    await removeUntrustedReceipt(directory, output, logger, 'too_large', path, {
+      bytes: details.size,
+      maxBytes: RECEIPT_MAX_BYTES
+    });
+    return null;
+  }
+  const canonical = await realpath(path).catch(async (error) => {
+    await removeUntrustedReceipt(directory, output, logger, 'realpath_failed', path, {
+      error: safeErrorSummary(error)
+    });
+    return null;
+  });
+  if (!canonical) return null;
+  try {
+    resolvePathWithin(directory, canonical);
+  } catch (error) {
+    await removeUntrustedReceipt(directory, output, logger, 'escaped_directory', path, {
+      error: safeErrorSummary(error)
+    });
+    return null;
+  }
+  const canonicalDetails = await lstat(canonical).catch(async (error) => {
+    await removeUntrustedReceipt(directory, output, logger, 'canonical_lstat_failed', path, {
+      error: safeErrorSummary(error)
+    });
+    return null;
+  });
+  if (!canonicalDetails) return null;
+  if (!canonicalDetails.isFile() || canonicalDetails.isSymbolicLink()) {
+    await removeUntrustedReceipt(directory, output, logger, 'canonical_not_regular_file', path);
+    return null;
+  }
+  let receiptHandle: Awaited<ReturnType<typeof open>> | null = null;
+  const text = await (async () => {
+    receiptHandle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    return receiptHandle.readFile('utf8');
+  })()
+    .catch(async (error) => {
+      await removeUntrustedReceipt(directory, output, logger, 'read_failed', path, {
+        error: safeErrorSummary(error)
+      });
+      return null;
+    })
+    .finally(async () => {
+      await receiptHandle?.close().catch(() => undefined);
+    });
+  if (text === null) return null;
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch (error) {
+    await removeUntrustedReceipt(directory, output, logger, 'malformed_json', path, {
+      error: safeErrorSummary(error)
+    });
+    return null;
+  }
   if (!isPublicationReceipt(value, output)) {
-    throw new Error('Published output receipt is invalid.');
+    await removeUntrustedReceipt(directory, output, logger, 'invalid_schema', path);
+    return null;
   }
   return value;
+}
+
+async function removeUntrustedReceipt(
+  directory: string,
+  output: OutputRecord,
+  logger: ReceiptLogger | undefined,
+  reason: string,
+  path: string,
+  data: Record<string, unknown> = {}
+): Promise<void> {
+  const name = basename(path);
+  const details = await lstat(path).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  });
+  if (!details) {
+    await logReceiptWarning(logger, output, {
+      action: 'already_missing',
+      reason,
+      receipt: name,
+      ...data
+    });
+    return;
+  }
+  if (!details.isFile() && !details.isSymbolicLink()) {
+    const quarantine = receiptQuarantinePath(directory, output.id);
+    await rename(path, quarantine);
+    await syncDirectory(directory);
+    await logReceiptWarning(logger, output, {
+      action: 'quarantined',
+      reason,
+      receipt: name,
+      quarantine: basename(quarantine),
+      ...data
+    });
+    return;
+  }
+  await rm(path, { force: true });
+  await syncDirectory(directory);
+  await logReceiptWarning(logger, output, { action: 'removed', reason, receipt: name, ...data });
+}
+
+async function cleanupReceiptTemps(
+  directory: string,
+  output: OutputRecord,
+  logger?: ReceiptLogger
+): Promise<void> {
+  const names = await readdir(directory).catch(() => [] as string[]);
+  await Promise.all(
+    names
+      .filter((name) => isReceiptTempName(name, output.id))
+      .map(async (name) => {
+        const path = resolvePathWithin(directory, name);
+        const details = await lstat(path).catch((error: NodeJS.ErrnoException) => {
+          if (error.code === 'ENOENT') return null;
+          throw error;
+        });
+        if (!details) return;
+        if (!details.isFile() && !details.isSymbolicLink()) {
+          await logReceiptWarning(logger, output, {
+            action: 'left_temp_in_place',
+            reason: 'temp_not_regular_file',
+            receipt: name
+          });
+          return;
+        }
+        await rm(path, { force: true });
+        await logReceiptWarning(logger, output, {
+          action: 'removed_temp',
+          reason: 'interrupted_receipt_publication',
+          receipt: name
+        });
+      })
+  );
+  if (names.some((name) => isReceiptTempName(name, output.id))) await syncDirectory(directory);
 }
 
 async function removeReceipt(directory: string, outputId: string): Promise<void> {
@@ -230,18 +404,26 @@ async function removeReceipt(directory: string, outputId: string): Promise<void>
 
 async function writeReceipt(directory: string, receipt: PublicationReceipt): Promise<void> {
   const path = receiptPath(directory, receipt.outputId);
-  const handle = await open(
-    path,
-    constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW,
-    0o600
-  );
+  const temporary = resolvePathWithin(directory, receiptTempName(receipt.outputId));
+  let handle: Awaited<ReturnType<typeof open>> | null = null;
   try {
+    handle = await open(
+      temporary,
+      constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW,
+      0o600
+    );
     await handle.writeFile(`${JSON.stringify(receipt)}\n`, 'utf8');
     await handle.sync();
-  } finally {
     await handle.close();
+    handle = null;
+    await link(temporary, path);
+    await rm(temporary, { force: true });
+    await syncDirectory(directory);
+  } catch (error) {
+    await handle?.close().catch(() => undefined);
+    await rm(temporary, { force: true }).catch(() => undefined);
+    throw error;
   }
-  await syncDirectory(directory);
 }
 
 async function inspectPublishedFile(
@@ -325,15 +507,18 @@ async function publishOutput(
   temporary: string,
   output: OutputRecord,
   verification: Omit<DownloadVerification, 'path'>,
-  maxBytes: number
+  maxBytes: number,
+  logger?: ReceiptLogger
 ): Promise<DownloadVerification> {
   let fileName = safeName(output, verification.contentType);
   for (let collision = 0; collision < 8; collision += 1) {
     await assertSafeDirectory(root, directory);
     const destination = resolvePathWithin(directory, fileName);
-    await writeReceipt(directory, receiptFor(output, fileName, verification));
     let linked = false;
+    let receiptWritten = false;
     try {
+      await writeReceipt(directory, receiptFor(output, fileName, verification));
+      receiptWritten = true;
       await link(temporary, destination);
       linked = true;
       await syncDirectory(directory);
@@ -342,8 +527,22 @@ async function publishOutput(
       // If publication succeeded but the directory sync reported an error, retain the already
       // durable receipt. Recovery will verify either the linked file or its absence safely.
       if (linked) throw error;
-      await removeReceipt(directory, output.id);
+      if (receiptWritten) await removeReceipt(directory, output.id).catch(() => undefined);
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      if (!receiptWritten) {
+        const receipt = await readReceipt(directory, output, logger);
+        if (!receipt) continue;
+        const recovered = await inspectPublishedFile(
+          root,
+          directory,
+          output,
+          receipt.fileName,
+          maxBytes
+        ).catch(() => null);
+        if (recovered && sameVerification(recovered, verification)) return recovered;
+        await removeReceipt(directory, output.id).catch(() => undefined);
+        continue;
+      }
       const details = await lstat(destination);
       if (!details.isFile() || details.isSymbolicLink()) {
         throw new Error('Output destination already exists and is not a safe regular file.');
@@ -356,7 +555,11 @@ async function publishOutput(
         maxBytes
       ).catch(() => null);
       if (existing && sameVerification(existing, verification)) {
-        await writeReceipt(directory, receiptFor(output, fileName, verification));
+        await writeReceipt(directory, receiptFor(output, fileName, verification)).catch(
+          (writeError) => {
+            if ((writeError as NodeJS.ErrnoException).code !== 'EEXIST') throw writeError;
+          }
+        );
         return existing;
       }
       fileName = collisionName(safeName(output, verification.contentType));
@@ -423,6 +626,7 @@ function readWithIdleDeadline(
 export interface OutputDownloaderOptions {
   repository: JobRepository;
   paths: Pick<AppPaths, 'media' | 'temporary'>;
+  logger?: ReceiptLogger;
   fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
   resolveHost?: DownloadHostResolver;
   maxBytes?: number;
@@ -462,7 +666,7 @@ export class OutputDownloader {
     let temporary: string | null = null;
     try {
       const { root, directory } = await safeOutputDirectory(this.options.paths.media, output.jobId);
-      const receipt = await readReceipt(directory, output);
+      const receipt = await readReceipt(directory, output, this.options.logger);
       if (receipt) {
         const recovered = await inspectPublishedFile(
           root,
@@ -580,7 +784,8 @@ export class OutputDownloader {
         temporary,
         output,
         verification,
-        this.maxBytes
+        this.maxBytes,
+        this.options.logger
       );
       await rm(temporary);
       temporary = null;

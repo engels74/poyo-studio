@@ -35,6 +35,7 @@ async function createRuntime(): Promise<JobRuntime> {
   const downloader = new OutputDownloader({
     repository,
     paths: platform.paths,
+    logger: platform.logger,
     ...runtimeTestDownloadTransport(platform.environment)
   });
   const coordinator = new JobCoordinator({
