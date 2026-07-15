@@ -14,11 +14,20 @@ import type { StudioEntry, StudioRoleInput } from './contracts';
 export type SizeMode = 'resolution' | 'aspect-ratio' | 'custom';
 
 export interface StudioCreateJobRequest {
+  entryKey: string;
   workflow: string;
   publicModelId: string;
   guidedRequest: Record<string, unknown>;
   normalizedPayload: NormalizedPreview['request'];
   prompt?: string;
+  expertDiff: NormalizedPreview['expertDiff'];
+  inputs: Array<{
+    role: string;
+    mediaKind: 'image' | 'video';
+    source: 'remote' | 'uploaded';
+    url: string;
+    metadata: Record<string, unknown>;
+  }>;
 }
 
 function cloneJson<T>(value: T): T {
@@ -180,14 +189,33 @@ export function presetValues(
 export function createJobRequest(
   entry: StudioEntry,
   guided: GuidedImageRequest | GuidedVideoRequest,
-  preview: NormalizedPreview
+  preview: NormalizedPreview,
+  roleInputs: Record<string, StudioRoleInput[]> = {}
 ): StudioCreateJobRequest {
   const prompt = typeof guided.prompt === 'string' ? guided.prompt : undefined;
   return {
+    entryKey: entry.key,
     workflow: entry.workflow,
     publicModelId: entry.publicModelId,
     guidedRequest: guided as Record<string, unknown>,
     normalizedPayload: preview.request,
+    expertDiff: preview.expertDiff,
+    inputs: Object.values(roleInputs)
+      .flat()
+      .filter((input): input is StudioRoleInput & { mediaKind: 'image' | 'video' } =>
+        ['image', 'video'].includes(input.mediaKind)
+      )
+      .map((input) => ({
+        role: input.role,
+        mediaKind: input.mediaKind,
+        source: input.source,
+        url: input.url,
+        metadata: {
+          name: input.name,
+          ...(input.sizeBytes === undefined ? {} : { sizeBytes: input.sizeBytes }),
+          ...(input.expiresAt === undefined ? {} : { expiresAt: input.expiresAt })
+        }
+      })),
     ...(prompt ? { prompt } : {})
   };
 }

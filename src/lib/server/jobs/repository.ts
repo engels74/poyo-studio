@@ -17,6 +17,8 @@ import type {
 
 type JobRow = {
   id: string;
+  registry_version: string | null;
+  entry_key: string | null;
   workflow: string;
   public_model_id: string;
   local_phase: LocalPhase;
@@ -35,8 +37,10 @@ type JobRow = {
   next_poll_at: string | null;
   last_polled_at: string | null;
   created_at: string;
+  started_at: string | null;
   updated_at: string;
   completed_at: string | null;
+  expert_diff_json: string | null;
 };
 type IntentRow = {
   job_id: string;
@@ -79,7 +83,12 @@ type OutputRow = {
   byte_size: number | null;
   checksum: string | null;
   signature: string | null;
+  aspect_ratio: string | null;
   download_state: OutputRecord['downloadState'];
+  favorite: number;
+  pinned: number;
+  verified_at: string | null;
+  deleted_at: string | null;
 };
 
 const transitions: Record<LocalPhase, readonly LocalPhase[]> = {
@@ -122,6 +131,8 @@ function assertSafeRequest(value: unknown): void {
 function mapJob(row: JobRow): JobRecord {
   return {
     id: row.id,
+    registryVersion: row.registry_version,
+    entryKey: row.entry_key,
     workflow: row.workflow,
     publicModelId: row.public_model_id,
     localPhase: row.local_phase,
@@ -140,8 +151,10 @@ function mapJob(row: JobRow): JobRecord {
     nextPollAt: row.next_poll_at,
     lastPolledAt: row.last_polled_at,
     createdAt: row.created_at,
+    startedAt: row.started_at,
     updatedAt: row.updated_at,
-    completedAt: row.completed_at
+    completedAt: row.completed_at,
+    expertDiff: row.expert_diff_json ? JSON.parse(row.expert_diff_json) : []
   };
 }
 function mapEvent(row: EventRow): JobEvent {
@@ -172,7 +185,12 @@ function mapOutput(row: OutputRow): OutputRecord {
     byteSize: row.byte_size,
     checksum: row.checksum,
     signature: row.signature,
-    downloadState: row.download_state
+    aspectRatio: row.aspect_ratio,
+    downloadState: row.download_state,
+    favorite: row.favorite === 1,
+    pinned: row.pinned === 1,
+    verifiedAt: row.verified_at,
+    deletedAt: row.deleted_at
   };
 }
 
@@ -223,6 +241,8 @@ export class JobRepository extends DatabaseRepository {
       throw new Error('Estimated credits cannot be negative.');
     assertSafeRequest(request.guidedRequest);
     assertSafeRequest(request.normalizedPayload);
+    assertSafeRequest(request.expertDiff ?? []);
+    assertSafeRequest(request.inputs ?? []);
     return this.transaction(() => {
       const id = crypto.randomUUID();
       const now = this.timestamp();
@@ -230,16 +250,27 @@ export class JobRepository extends DatabaseRepository {
       const fingerprint =
         request.requestFingerprint ??
         hash(`${request.publicModelId}:${payload}:${request.retryOfJobId ?? ''}`);
+      const registry = request.entryKey
+        ? this.database
+            .query<{ registry_version: string }, [string]>(
+              "SELECT registry_version FROM registry_entries WHERE entry_key=? AND status='current' ORDER BY registry_version DESC LIMIT 1"
+            )
+            .get(request.entryKey)
+        : null;
+      if (request.entryKey && !registry) throw new Error('Registry entry is unavailable.');
       this.database
         .query(
-          `INSERT INTO jobs(id,workflow,public_model_id,local_phase,guided_request_json,actual_payload_json,estimated_credits,prompt_text,search_text,correlation_id,retry_of_job_id,created_at,updated_at) VALUES (?,?,?,'submission_prepared',?,?,?,?,?,?,?,?,?)`
+          `INSERT INTO jobs(id,registry_version,entry_key,workflow,public_model_id,local_phase,guided_request_json,actual_payload_json,expert_diff_json,estimated_credits,prompt_text,search_text,correlation_id,retry_of_job_id,created_at,updated_at) VALUES (?,?,?,?,?,'submission_prepared',?,?,?,?,?,?,?,?,?,?)`
         )
         .run(
           id,
+          registry?.registry_version ?? null,
+          request.entryKey ?? null,
           request.workflow,
           request.publicModelId,
           canonical(request.guidedRequest),
           payload,
+          request.expertDiff?.length ? canonical(request.expertDiff) : null,
           request.estimatedCredits ?? null,
           request.prompt ?? null,
           `${request.prompt ?? ''} ${request.publicModelId}`,
@@ -248,6 +279,22 @@ export class JobRepository extends DatabaseRepository {
           now,
           now
         );
+      for (const [inputOrder, input] of (request.inputs ?? []).entries()) {
+        if (input.mediaKind !== 'image' && input.mediaKind !== 'video') continue;
+        this.database
+          .query(
+            `INSERT INTO job_inputs(job_id,role,input_order,media_kind,source_url,upload_url,metadata_json,availability) VALUES (?,?,?,?,?,?,?,'available')`
+          )
+          .run(
+            id,
+            input.role,
+            inputOrder,
+            input.mediaKind,
+            input.source === 'remote' ? input.url : null,
+            input.source === 'uploaded' ? input.url : null,
+            JSON.stringify(input.metadata ?? {})
+          );
+      }
       this.database
         .query(
           `INSERT INTO submission_intents(job_id,request_fingerprint,payload_hash,state,prepared_at,updated_at) VALUES (?,?,?,'prepared',?,?)`
@@ -272,6 +319,24 @@ export class JobRepository extends DatabaseRepository {
       ...(job.estimatedCredits === null ? {} : { estimatedCredits: job.estimatedCredits }),
       retryOfJobId: job.id,
       requestFingerprint: hash(`${job.id}:${crypto.randomUUID()}`)
+    });
+  }
+  rerunAsNew(jobId: string): JobRecord {
+    const job = this.get(jobId);
+    if (!job) throw new Error('Job not found.');
+    if (job.attentionCode === 'submission_unknown')
+      throw new Error('An ambiguous paid submission cannot be run again from its history record.');
+    return this.create({
+      ...(job.entryKey ? { entryKey: job.entryKey } : {}),
+      workflow: job.workflow,
+      publicModelId: job.publicModelId,
+      guidedRequest: job.guidedRequest,
+      normalizedPayload: job.normalizedPayload,
+      ...(typeof job.guidedRequest.prompt === 'string' ? { prompt: job.guidedRequest.prompt } : {}),
+      ...(job.estimatedCredits === null ? {} : { estimatedCredits: job.estimatedCredits }),
+      retryOfJobId: job.id,
+      requestFingerprint: hash(`${job.id}:rerun:${crypto.randomUUID()}`),
+      expertDiff: job.expertDiff
     });
   }
   get(id: string): JobRecord | null {

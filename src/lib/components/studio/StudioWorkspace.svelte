@@ -335,7 +335,7 @@ async function submit(): Promise<void> {
     const response = await fetch('/api/jobs', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(createJobRequest(selectedEntry, currentGuided, normalized))
+      body: JSON.stringify(createJobRequest(selectedEntry, currentGuided, normalized, roleInputs))
     });
     const result = (await response.json()) as { job?: StudioJobDto; error?: { message?: string } };
     if (!response.ok || !result.job) {

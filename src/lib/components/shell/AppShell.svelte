@@ -13,13 +13,18 @@ import {
   moreNavigation,
   navigationGroups
 } from '$lib/navigation';
+import { dateLabel } from '$lib/features/library/presentation';
 import ThemeToggle from './ThemeToggle.svelte';
 
 interface Props {
   children: Snippet;
+  summary: {
+    activeJobs: number;
+    balance: { email: string | null; credits: number; fetchedAt: string } | null;
+  };
 }
 
-let { children }: Props = $props();
+let { children, summary = { activeJobs: 0, balance: null } }: Props = $props();
 let sidebarCollapsed = $state(false);
 let mobileMoreOpen = $state(false);
 let routeAnnouncement = $state('');
@@ -114,27 +119,27 @@ afterNavigate(() => {
       <a
         href="/jobs"
         class="sidebar-utility focus-ring flex min-h-10 items-center gap-3 rounded-[var(--radius)] px-2.5 text-muted-foreground no-underline hover:bg-background/70 hover:text-foreground"
-        title={sidebarCollapsed ? 'No active jobs' : undefined}
+        title={sidebarCollapsed ? `${summary.activeJobs} active jobs` : undefined}
       >
         <span class="relative">
           <AppIcon name="activity" size={18} />
-          <span class="absolute -top-1 -right-1 grid size-3.5 place-items-center rounded-full bg-muted text-[0.5625rem] font-bold text-muted-foreground">0</span>
+          <span class="absolute -top-1 -right-1 grid size-3.5 place-items-center rounded-full bg-muted text-[0.5625rem] font-bold text-muted-foreground">{Math.min(summary.activeJobs, 9)}{summary.activeJobs > 9 ? '+' : ''}</span>
         </span>
         <span class="sidebar-value-copy min-w-0">
-          <span class="block text-xs font-semibold text-foreground">No active jobs</span>
-          <span class="block text-[0.6875rem]">Queue is clear</span>
+          <span class="block text-xs font-semibold text-foreground">{summary.activeJobs} active {summary.activeJobs === 1 ? 'job' : 'jobs'}</span>
+          <span class="block text-[0.6875rem]">{summary.activeJobs ? 'Queue and generation work' : 'Queue is clear'}</span>
         </span>
       </a>
 
       <a
         href="/settings"
         class="sidebar-utility focus-ring mt-0.5 flex min-h-10 items-center gap-3 rounded-[var(--radius)] px-2.5 text-muted-foreground no-underline hover:bg-background/70 hover:text-foreground"
-        title={sidebarCollapsed ? 'Balance not connected' : undefined}
+        title={sidebarCollapsed ? (summary.balance ? `${summary.balance.credits} credits` : 'Balance unavailable') : undefined}
       >
         <AppIcon name="wallet" size={18} />
         <span class="sidebar-value-copy min-w-0">
-          <span class="block text-xs font-semibold text-foreground">Balance unavailable</span>
-          <span class="block text-[0.6875rem]">Connect Poyo to refresh</span>
+          <span class="block text-xs font-semibold text-foreground">{summary.balance ? `${summary.balance.credits.toLocaleString()} credits` : 'Balance unavailable'}</span>
+          <span class="block text-[0.6875rem]">{summary.balance ? `Refreshed ${dateLabel(summary.balance.fetchedAt)}` : 'Connect Poyo to refresh'}</span>
         </span>
       </a>
 
@@ -222,11 +227,11 @@ afterNavigate(() => {
         <div class="mt-4 border-t border-border pt-4">
           <div class="flex items-center justify-between gap-4 px-3 py-2 text-sm">
             <span class="text-muted-foreground">Active jobs</span>
-            <span class="font-semibold">0</span>
+            <span class="font-semibold">{summary.activeJobs}</span>
           </div>
           <div class="flex items-center justify-between gap-4 px-3 py-2 text-sm">
             <span class="text-muted-foreground">Poyo balance</span>
-            <span class="font-semibold">Not connected</span>
+            <span class="font-semibold">{summary.balance ? `${summary.balance.credits.toLocaleString()} credits` : 'Not connected'}</span>
           </div>
           <ThemeToggle class="mt-2 w-full justify-start" />
         </div>

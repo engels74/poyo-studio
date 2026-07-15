@@ -7,11 +7,25 @@ describe('job HTTP boundaries', () => {
     const routes = [
       'src/routes/api/jobs/+server.ts',
       'src/routes/api/jobs/[jobId]/refresh/+server.ts',
-      'src/routes/api/jobs/[jobId]/outputs/[outputId]/retry/+server.ts'
+      'src/routes/api/jobs/[jobId]/outputs/[outputId]/retry/+server.ts',
+      'src/routes/api/jobs/[jobId]/rerun/+server.ts',
+      'src/routes/api/library/[jobId]/favorite/+server.ts',
+      'src/routes/api/library/[jobId]/pin/+server.ts',
+      'src/routes/api/library/[jobId]/tags/+server.ts',
+      'src/routes/api/library/[jobId]/open-folder/+server.ts',
+      'src/routes/api/library/[jobId]/outputs/[outputId]/delete/+server.ts'
     ];
     for (const route of routes) {
       expect(await Bun.file(route).text()).toContain('readSameOriginJson');
     }
+  });
+
+  test('SEC-04 private media streaming supports HEAD and never serializes filesystem paths', async () => {
+    const route = await Bun.file('src/routes/api/media/[outputId]/+server.ts').text();
+    expect(route).toContain('safeLocalMediaPath');
+    expect(route).toContain('assertPrivateMediaRequest');
+    expect(route).toContain('export const HEAD');
+    expect(route).not.toContain('Response.json');
   });
 
   test('SEC-04 studio mutations apply bounded same-origin request checks', async () => {

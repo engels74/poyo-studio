@@ -26,7 +26,16 @@ export type FailureDomain =
   | 'registry';
 export type WorkType = 'poll' | 'download' | 'cleanup';
 
+export interface CreateJobInput {
+  role: string;
+  mediaKind: 'image' | 'video';
+  source: 'remote' | 'uploaded';
+  url: string;
+  metadata?: Record<string, unknown>;
+}
+
 export interface CreateJobRequest {
+  entryKey?: string;
   workflow: string;
   publicModelId: string;
   guidedRequest: Record<string, unknown>;
@@ -36,10 +45,14 @@ export interface CreateJobRequest {
   correlationId?: string;
   requestFingerprint?: string;
   retryOfJobId?: string;
+  expertDiff?: Array<{ key: string; value: unknown; status?: string }>;
+  inputs?: CreateJobInput[];
 }
 
 export interface JobRecord {
   id: string;
+  registryVersion: string | null;
+  entryKey: string | null;
   workflow: string;
   publicModelId: string;
   localPhase: LocalPhase;
@@ -58,8 +71,10 @@ export interface JobRecord {
   nextPollAt: string | null;
   lastPolledAt: string | null;
   createdAt: string;
+  startedAt: string | null;
   updatedAt: string;
   completedAt: string | null;
+  expertDiff: Array<{ key: string; value: unknown; status?: string }>;
 }
 
 export interface SubmissionClaim {
@@ -104,7 +119,12 @@ export interface OutputRecord {
   byteSize: number | null;
   checksum: string | null;
   signature: string | null;
+  aspectRatio: string | null;
   downloadState: 'pending' | 'downloading' | 'verified' | 'failed' | 'expired' | 'deleted';
+  favorite: boolean;
+  pinned: boolean;
+  verifiedAt: string | null;
+  deletedAt: string | null;
 }
 
 export interface JobSnapshot {

@@ -1,0 +1,187 @@
+<script lang="ts">
+import { goto, invalidateAll } from '$app/navigation';
+import type { JobDetailDto, LocalDeleteChoice } from '$lib/features/library/contracts';
+import { byteSizeLabel, dateTimeLabel, elapsedLabel } from '$lib/features/library/presentation';
+import AppIcon from '$lib/components/ui/AppIcon.svelte';
+import Badge from '$lib/components/ui/Badge.svelte';
+import LinkButton from '$lib/components/ui/LinkButton.svelte';
+import { untrack } from 'svelte';
+import MediaPreview from './MediaPreview.svelte';
+import StatusBadge from './StatusBadge.svelte';
+
+interface Props {
+  job: JobDetailDto;
+  context: 'jobs' | 'library';
+}
+
+let { job, context }: Props = $props();
+let pending = $state<string | null>(null);
+let feedback = $state('');
+let tags = $state(untrack(() => job.tags.join(', ')));
+let deleteChoices = $state<Record<string, LocalDeleteChoice>>({});
+
+async function post(path: string, body: Record<string, unknown> = {}): Promise<Response> {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => ({}))) as {
+      error?: { message?: string };
+      message?: string;
+    };
+    throw new Error(
+      payload.error?.message ?? payload.message ?? `Request failed (${response.status}).`
+    );
+  }
+  return response;
+}
+
+async function action(name: string, callback: () => Promise<void>): Promise<void> {
+  pending = name;
+  feedback = '';
+  try {
+    await callback();
+  } catch (error) {
+    feedback = error instanceof Error ? error.message : 'The action failed.';
+  } finally {
+    pending = null;
+  }
+}
+
+function refresh(): void {
+  void action('refresh', async () => {
+    await post(`/api/jobs/${job.id}/refresh`);
+    feedback = 'The authoritative Poyo status was refreshed.';
+    await invalidateAll();
+  });
+}
+
+function rerun(): void {
+  if (
+    !confirm('Create and submit a new paid job with these settings? This may spend Poyo credits.')
+  )
+    return;
+  void action('rerun', async () => {
+    const response = await post(`/api/jobs/${job.id}/rerun`, { acknowledgeNewPaidJob: true });
+    const result = (await response.json()) as { job: { id: string } };
+    await goto(`/jobs/${result.job.id}`);
+  });
+}
+
+function retryDownload(outputId: string): void {
+  void action(`retry-${outputId}`, async () => {
+    await post(`/api/jobs/${job.id}/outputs/${outputId}/retry`);
+    feedback = 'Download retry queued. The generation itself was not resubmitted.';
+    await invalidateAll();
+  });
+}
+
+function toggle(kind: 'favorite' | 'pin', value: boolean): void {
+  void action(kind, async () => {
+    await post(`/api/library/${job.id}/${kind}`, {
+      [kind === 'favorite' ? 'favorite' : 'pinned']: value
+    });
+    await invalidateAll();
+  });
+}
+
+function saveTags(): void {
+  void action('tags', async () => {
+    const response = await post(`/api/library/${job.id}/tags`, { tags: tags.split(',') });
+    const result = (await response.json()) as { tags: string[] };
+    tags = result.tags.join(', ');
+    feedback = 'Tags saved.';
+    await invalidateAll();
+  });
+}
+
+function openFolder(): void {
+  void action('folder', async () => {
+    await post(`/api/library/${job.id}/open-folder`);
+    feedback = 'Opened the containing folder.';
+  });
+}
+
+function removeOutput(outputId: string): void {
+  const choice = deleteChoices[outputId] ?? 'file';
+  const consequence =
+    choice === 'file'
+      ? 'the local file'
+      : choice === 'metadata'
+        ? 'the local output record (the file will remain on disk)'
+        : 'the local file and its metadata';
+  if (!confirm(`Permanently remove ${consequence}? This does not delete anything from Poyo.`))
+    return;
+  void action(`delete-${outputId}`, async () => {
+    await post(`/api/library/${job.id}/outputs/${outputId}/delete`, { choice });
+    feedback = 'Local deletion completed. No remote deletion was requested.';
+    await invalidateAll();
+  });
+}
+</script>
+
+<div class="route-shell">
+  <a href={context === 'jobs' ? '/jobs' : '/library'} class="focus-ring inline-flex items-center gap-1 rounded text-xs font-semibold text-muted-foreground hover:text-foreground">← Back to {context}</a>
+  <header class="mt-4 flex flex-wrap items-start justify-between gap-4 border-b border-border pb-5">
+    <div class="min-w-0">
+      <p class="eyebrow-label">{job.provider} · {job.workflow}</p>
+      <h1 class="mt-1 text-2xl font-semibold tracking-tight">{job.displayName}</h1>
+      <div class="mt-3 flex flex-wrap items-center gap-2"><StatusBadge localPhase={job.localPhase} remoteStatus={job.remoteStatus} attentionCode={job.attentionCode} /><Badge>{job.publicModelId}</Badge>{#if job.poyoTaskId}<Badge tone="info">Poyo task linked</Badge>{/if}</div>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <LinkButton href={`/studio/${job.modality}?fromJob=${job.id}`} variant="outline">Edit in studio</LinkButton>
+      {#if job.outputs.some((output) => output.localAvailable)}<button onclick={openFolder} disabled={pending !== null} class="focus-ring inline-flex min-h-9 items-center gap-2 rounded border border-border px-3 text-sm font-semibold"><AppIcon name="folder" size={15} /> Open folder</button>{/if}
+      {#if job.poyoTaskId}<button onclick={refresh} disabled={pending !== null} class="focus-ring inline-flex min-h-9 items-center gap-2 rounded border border-border px-3 text-sm font-semibold"><AppIcon name="refresh" size={15} /> Refresh status</button>{/if}
+      <button onclick={rerun} disabled={pending !== null || job.attentionCode === 'submission_unknown'} class="focus-ring min-h-9 rounded bg-primary px-3 text-sm font-semibold text-primary-foreground">Run again</button>
+    </div>
+  </header>
+
+  {#if job.attentionCode === 'submission_unknown'}<div class="mt-4 rounded border border-warning/40 bg-warning/10 p-4 text-sm"><strong>Submission outcome is unknown.</strong> Status checks are safe, but automatic or paid retry is blocked to prevent duplicate spend.</div>{/if}
+  {#if feedback}<p class="mt-4 rounded border border-border bg-muted px-4 py-3 text-sm" role="status">{feedback}</p>{/if}
+
+  <div class="mt-6 grid gap-8 xl:grid-cols-[minmax(0,1.45fr)_minmax(18rem,0.55fr)]">
+    <main>
+      <section aria-labelledby="outputs-heading">
+        <div class="flex items-end justify-between gap-3"><div><p class="eyebrow-label">Media</p><h2 id="outputs-heading" class="mt-1 text-base font-semibold">{job.outputs.length} {job.outputs.length === 1 ? 'output' : 'outputs'}</h2></div><span class="text-xs text-muted-foreground">{job.verifiedOutputCount} verified locally</span></div>
+        {#if job.outputs.length}
+          <div class="mt-4 grid gap-5 sm:grid-cols-2">
+            {#each job.outputs as output (output.outputId)}
+              <article class="overflow-hidden rounded-lg border border-border bg-card">
+                <MediaPreview mediaKind={output.mediaKind} src={output.mediaUrl} alt={`${job.displayName} output ${output.outputOrder + 1}`} class="aspect-[4/3]" controls={output.mediaKind === 'video'} />
+                <div class="p-4">
+                  <div class="flex flex-wrap items-center justify-between gap-2"><p class="text-sm font-semibold">Output {output.outputOrder + 1}</p><Badge tone={output.localAvailable ? 'success' : output.downloadState === 'failed' ? 'danger' : 'warning'}>{output.downloadState}</Badge></div>
+                  <dl class="mt-3 grid grid-cols-2 gap-3 text-xs"><div><dt class="text-muted-foreground">File</dt><dd class="mt-1 truncate font-medium">{output.fileName ?? 'No local file'}</dd></div><div><dt class="text-muted-foreground">Size</dt><dd class="mt-1 font-medium">{output.byteSize === null ? '—' : byteSizeLabel(output.byteSize)}</dd></div><div><dt class="text-muted-foreground">Remote</dt><dd class="mt-1 font-medium">{output.remoteHost ?? 'Unavailable'}</dd></div><div><dt class="text-muted-foreground">Checksum</dt><dd class="mt-1 truncate font-mono">{output.checksum?.slice(0, 12) ?? '—'}</dd></div></dl>
+                  <div class="mt-4 flex flex-wrap gap-2">
+                    {#if output.localAvailable}<a href={output.mediaUrl ?? '#'} download class="focus-ring rounded border border-border px-2.5 py-1.5 text-xs font-semibold">Download</a>{/if}
+                    {#if output.remoteAvailable && !output.localAvailable}<button onclick={() => retryDownload(output.outputId)} disabled={pending !== null} class="focus-ring rounded border border-border px-2.5 py-1.5 text-xs font-semibold">Download again</button>{/if}
+                    {#if output.remoteAvailable}<LinkButton href={`/studio/${job.modality}?sourceOutput=${output.outputId}`} variant="ghost">Use as input</LinkButton>{/if}
+                  </div>
+                  <details class="mt-4 border-t border-border pt-3"><summary class="cursor-pointer text-xs font-semibold">Local deletion</summary><p class="mt-2 text-xs leading-5 text-muted-foreground">Removing metadata can leave an untracked file. No option here deletes remote Poyo data.</p><div class="mt-2 flex gap-2"><select aria-label={`Deletion consequence for output ${output.outputOrder + 1}`} value={deleteChoices[output.outputId] ?? 'file'} onchange={(event) => (deleteChoices[output.outputId] = event.currentTarget.value as LocalDeleteChoice)} class="focus-ring min-w-0 flex-1 rounded border border-input bg-background px-2 text-xs"><option value="file">File only</option><option value="metadata">Metadata only</option><option value="both">File + metadata</option></select><button onclick={() => removeOutput(output.outputId)} disabled={pending !== null} class="focus-ring rounded border border-destructive/40 px-2.5 text-xs font-semibold text-destructive">Remove</button></div></details>
+                </div>
+              </article>
+            {/each}
+          </div>
+        {:else}<p class="mt-4 rounded bg-muted p-4 text-sm text-muted-foreground">No output records are available for this generation.</p>{/if}
+      </section>
+
+      <section aria-labelledby="history-heading" class="mt-8 border-t border-border pt-6">
+        <p class="eyebrow-label">Lifecycle</p><h2 id="history-heading" class="mt-1 text-base font-semibold">Status history</h2>
+        <ol class="mt-4 space-y-0 border-l border-border pl-5">
+          {#each job.history as event (event.eventId)}<li class="relative pb-5"><span class="absolute top-1 -left-[1.47rem] size-2 rounded-full bg-border"></span><div class="flex flex-wrap items-baseline justify-between gap-2"><p class="text-sm font-semibold">{event.eventType.replaceAll('.', ' ')}</p><time class="text-xs text-muted-foreground" datetime={event.observedAt}>{dateTimeLabel(event.observedAt)}</time></div><p class="mt-1 text-xs text-muted-foreground">{event.authority === 'poyo' ? 'Poyo observation' : 'Local event'} · {event.localPhase} · {event.remoteStatus}{event.progress !== null ? ` · ${Math.round(event.progress)}%` : ''}</p></li>{/each}
+        </ol>
+      </section>
+    </main>
+
+    <aside class="space-y-6">
+      <section class="border-b border-border pb-5"><p class="eyebrow-label">Summary</p><dl class="mt-3 grid grid-cols-2 gap-4 text-xs"><div><dt class="text-muted-foreground">Created</dt><dd class="mt-1 font-medium">{dateTimeLabel(job.createdAt)}</dd></div><div><dt class="text-muted-foreground">Elapsed</dt><dd class="mt-1 font-medium">{elapsedLabel(job.startedAt ?? job.createdAt, job.completedAt)}</dd></div><div><dt class="text-muted-foreground">Credits</dt><dd class="mt-1 font-medium">{job.actualCredits ?? job.estimatedCredits ?? 'Unknown'}</dd></div><div><dt class="text-muted-foreground">Last check</dt><dd class="mt-1 font-medium">{job.lastPolledAt ? dateTimeLabel(job.lastPolledAt) : 'Never'}</dd></div></dl></section>
+      <section class="border-b border-border pb-5"><p class="eyebrow-label">Organize</p><div class="mt-3 flex flex-wrap gap-2"><button onclick={() => toggle('favorite', !job.outputs.some((output) => output.favorite))} disabled={pending !== null} class="focus-ring inline-flex min-h-8 items-center gap-2 rounded border border-border px-3 text-xs font-semibold"><AppIcon name="heart" size={14} /> {job.outputs.some((output) => output.favorite) ? 'Unfavorite' : 'Favorite'}</button><button onclick={() => toggle('pin', !job.outputs.some((output) => output.pinned))} disabled={pending !== null} class="focus-ring min-h-8 rounded border border-border px-3 text-xs font-semibold">{job.outputs.some((output) => output.pinned) ? 'Unpin' : 'Pin'}</button></div><label class="mt-4 block text-xs font-semibold" for="job-tags">Tags, comma separated</label><div class="mt-2 flex gap-2"><input id="job-tags" bind:value={tags} class="focus-ring min-w-0 flex-1 rounded border border-input bg-background px-3 text-sm" /><button onclick={saveTags} disabled={pending !== null} class="focus-ring rounded border border-border px-3 text-xs font-semibold">Save</button></div></section>
+      <section class="border-b border-border pb-5"><p class="eyebrow-label">Prompt</p><p class="mt-3 whitespace-pre-wrap text-sm leading-6">{job.promptExcerpt ?? 'No prompt stored.'}</p></section>
+      {#if job.inputs.length}<section class="border-b border-border pb-5"><p class="eyebrow-label">Inputs</p><ul class="mt-3 space-y-3">{#each job.inputs as input}<li class="text-xs"><p class="font-semibold">{input.role} · {input.mediaKind}</p><p class="mt-1 break-all text-muted-foreground">{input.sourceLabel} · {input.availability}</p></li>{/each}</ul></section>{/if}
+      <details class="border-b border-border pb-5"><summary class="cursor-pointer text-xs font-semibold">Submitted configuration</summary><pre class="mt-3 max-h-80 overflow-auto rounded bg-muted p-3 text-[0.6875rem] leading-5">{JSON.stringify(job.guidedRequest, null, 2)}</pre></details>
+      <details class="border-b border-border pb-5"><summary class="cursor-pointer text-xs font-semibold">Normalized Poyo payload</summary><pre class="mt-3 max-h-80 overflow-auto rounded bg-muted p-3 text-[0.6875rem] leading-5">{JSON.stringify(job.normalizedPayload, null, 2)}</pre></details>
+      <p class="text-xs leading-5 text-muted-foreground">Local job <code>{job.id}</code>{#if job.poyoTaskId}<br />Poyo task <code>{job.poyoTaskId}</code>{/if}<br />Correlation <code>{job.correlationId}</code></p>
+    </aside>
+  </div>
+</div>

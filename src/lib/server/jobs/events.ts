@@ -5,6 +5,7 @@ const encoder = new TextEncoder();
 export function safeJobDto(job: JobRecord) {
   return {
     id: job.id,
+    entryKey: job.entryKey,
     workflow: job.workflow,
     publicModelId: job.publicModelId,
     localPhase: job.localPhase,
@@ -20,6 +21,7 @@ export function safeJobDto(job: JobRecord) {
     nextPollAt: job.nextPollAt,
     lastPolledAt: job.lastPolledAt,
     createdAt: job.createdAt,
+    startedAt: job.startedAt,
     updatedAt: job.updatedAt,
     completedAt: job.completedAt
   };
