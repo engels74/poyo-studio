@@ -1,13 +1,14 @@
 import { env } from '$env/dynamic/private';
-import { DATABASE_SCHEMA_VERSION } from './version';
-import { resolveAppPaths, ensureAppPaths } from './app-paths';
-import { openDatabase } from './database';
 import { StructuredLogger } from '../diagnostics/jsonl-logger';
+import { ManagedSourceRepository } from '../media/managed-sources';
+import { seedImageRegistry, seedVideoRegistry } from '../registry/repository';
 import { ApiKeyManager } from '../settings/api-key-manager';
 import { SecretMetadataRepository } from '../settings/secret-metadata-repository';
 import { createPreferredSecretStore } from '../settings/secret-store';
 import { SettingsRepository } from '../settings/settings-repository';
-import { seedImageRegistry, seedVideoRegistry } from '../registry/repository';
+import { ensureAppPaths, resolveAppPaths } from './app-paths';
+import { openDatabase } from './database';
+import { DATABASE_SCHEMA_VERSION } from './version';
 
 export interface PlatformServices {
   environment: Record<string, string | undefined>;
@@ -29,6 +30,7 @@ async function createPlatformServices(): Promise<PlatformServices> {
   const paths = resolveAppPaths({ environment: env });
   await ensureAppPaths(paths);
   const database = await openDatabase(paths.database);
+  await new ManagedSourceRepository(database, paths).adoptLegacyReferences();
   seedImageRegistry(database);
   seedVideoRegistry(database);
   const logger = new StructuredLogger({

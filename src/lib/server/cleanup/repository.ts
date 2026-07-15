@@ -5,26 +5,31 @@ import { cleanupHash, normalizeCleanupPolicy } from './policy';
 
 export const LOCAL_CLEANUP_POLICY_ID = 'local-default';
 
-export interface CleanupOutputRecord {
-  outputId: string;
-  jobId: string;
+export interface CleanupTargetRecord {
+  targetKind: 'output' | 'managed-source';
+  targetId: string;
+  outputId: string | null;
+  managedSourceId: string | null;
+  jobId: string | null;
+  jobIds: string[];
   mediaKind: 'image' | 'video';
   localPath: string;
   bytes: number;
   favorite: boolean;
   pinned: boolean;
+  activeReference: boolean;
   createdAt: string;
   tags: string[];
 }
 
-export interface CleanupActionSnapshot extends CleanupOutputRecord {
+export interface CleanupActionSnapshot extends CleanupTargetRecord {
   reasons: Array<'age' | 'storage-limit' | 'free-space'>;
   policyHash: string;
 }
 
 export interface CleanupClaim {
   actionId: string;
-  outputId: string;
+  targetId: string;
   actionKind: 'local_file' | 'local_metadata' | 'local_both';
   snapshot: CleanupActionSnapshot;
   owner: string;
@@ -44,6 +49,19 @@ type OutputRow = {
   tags_json: string;
 };
 
+type SourceRow = {
+  id: string;
+  media_kind: 'image' | 'video';
+  relative_path: string;
+  byte_size: number;
+  created_at: string;
+  favorite: number;
+  pinned: number;
+  active_reference: number;
+  job_ids_json: string;
+  tags_json: string;
+};
+
 type ActionRow = {
   id: string;
   target_id: string;
@@ -59,7 +77,7 @@ function actionKind(consequence: CleanupConsequence): CleanupClaim['actionKind']
       : 'local_both';
 }
 
-function parseTags(value: string): string[] {
+function parseStrings(value: string): string[] {
   try {
     const parsed = JSON.parse(value) as unknown;
     return Array.isArray(parsed)
@@ -68,6 +86,23 @@ function parseTags(value: string): string[] {
   } catch {
     return [];
   }
+}
+
+function parseSnapshot(value: string): CleanupActionSnapshot {
+  const snapshot = (JSON.parse(value) as { preview: CleanupActionSnapshot }).preview;
+  if (snapshot.targetKind) return snapshot;
+  const legacy = snapshot as CleanupActionSnapshot & { outputId?: string; jobId?: string };
+  if (!legacy.outputId) throw new Error('Cleanup action snapshot has no target.');
+  return {
+    ...legacy,
+    targetKind: 'output',
+    targetId: legacy.outputId,
+    outputId: legacy.outputId,
+    managedSourceId: null,
+    jobId: legacy.jobId ?? null,
+    jobIds: legacy.jobId ? [legacy.jobId] : [],
+    activeReference: false
+  };
 }
 
 export class CleanupRepository extends DatabaseRepository {
@@ -114,7 +149,7 @@ export class CleanupRepository extends DatabaseRepository {
     return policy;
   }
 
-  listOutputs(): CleanupOutputRecord[] {
+  listOutputs(): CleanupTargetRecord[] {
     return this.database
       .query<OutputRow, []>(
         `SELECT o.id,o.job_id,o.media_kind,o.local_path,o.byte_size,o.favorite,o.pinned,o.created_at,
@@ -125,16 +160,61 @@ export class CleanupRepository extends DatabaseRepository {
       )
       .all()
       .map((row) => ({
+        targetKind: 'output' as const,
+        targetId: row.id,
         outputId: row.id,
+        managedSourceId: null,
         jobId: row.job_id,
+        jobIds: [row.job_id],
         mediaKind: row.media_kind,
         localPath: row.local_path,
         bytes: row.byte_size ?? 0,
         favorite: row.favorite === 1,
         pinned: row.pinned === 1,
+        activeReference: false,
         createdAt: row.created_at,
-        tags: parseTags(row.tags_json)
+        tags: parseStrings(row.tags_json)
       }));
+  }
+
+  listTargets(consequence: CleanupConsequence): CleanupTargetRecord[] {
+    const outputs = this.listOutputs();
+    const sources = this.database
+      .query<SourceRow, []>(
+        `SELECT ms.id,ms.media_kind,ms.relative_path,ms.byte_size,ms.created_at,
+          EXISTS(SELECT 1 FROM job_inputs ji JOIN job_outputs o ON o.job_id=ji.job_id WHERE ji.managed_source_id=ms.id AND o.favorite=1) favorite,
+          EXISTS(SELECT 1 FROM job_inputs ji JOIN job_outputs o ON o.job_id=ji.job_id WHERE ji.managed_source_id=ms.id AND o.pinned=1) pinned,
+          EXISTS(SELECT 1 FROM job_inputs ji JOIN jobs j ON j.id=ji.job_id WHERE ji.managed_source_id=ms.id AND j.local_phase!='complete') active_reference,
+          COALESCE((SELECT json_group_array(job_id) FROM (SELECT DISTINCT ji.job_id FROM job_inputs ji WHERE ji.managed_source_id=ms.id ORDER BY ji.job_id)),'[]') job_ids_json,
+          COALESCE((SELECT json_group_array(normalized_name) FROM (SELECT DISTINCT t.normalized_name FROM job_inputs ji JOIN job_tags jt ON jt.job_id=ji.job_id JOIN tags t ON t.id=jt.tag_id WHERE ji.managed_source_id=ms.id ORDER BY t.normalized_name)),'[]') tags_json
+         FROM managed_sources ms WHERE ms.availability='available'
+         ORDER BY ms.created_at,ms.id`
+      )
+      .all()
+      .map((row) => {
+        const jobIds = parseStrings(row.job_ids_json);
+        return {
+          targetKind: 'managed-source' as const,
+          targetId: row.id,
+          outputId: null,
+          managedSourceId: row.id,
+          jobId: jobIds[0] ?? null,
+          jobIds,
+          mediaKind: row.media_kind,
+          localPath: row.relative_path,
+          bytes: row.byte_size,
+          favorite: row.favorite === 1,
+          pinned: row.pinned === 1,
+          activeReference: row.active_reference === 1 || consequence !== 'file',
+          createdAt: row.created_at,
+          tags: parseStrings(row.tags_json)
+        };
+      });
+    return [...outputs, ...sources].toSorted((a, b) =>
+      a.createdAt === b.createdAt
+        ? a.targetId.localeCompare(b.targetId)
+        : a.createdAt.localeCompare(b.createdAt)
+    );
   }
 
   persistPreview(
@@ -145,8 +225,9 @@ export class CleanupRepository extends DatabaseRepository {
   ): void {
     const now = this.now().toISOString();
     const candidateHash = cleanupHash(
-      snapshots.map(({ outputId, localPath, bytes, reasons }) => ({
-        outputId,
+      snapshots.map(({ targetKind, targetId, localPath, bytes, reasons }) => ({
+        targetKind,
+        targetId,
         localPath,
         bytes,
         reasons
@@ -169,7 +250,7 @@ export class CleanupRepository extends DatabaseRepository {
           now
         );
       for (const snapshot of snapshots) {
-        const id = `cleanup_${cleanupHash([token, snapshot.outputId]).slice(0, 32)}`;
+        const id = `cleanup_${cleanupHash([token, snapshot.targetKind, snapshot.targetId]).slice(0, 32)}`;
         this.database
           .query(
             `INSERT INTO cleanup_actions(id,policy_id,action_kind,target_id,preview_version,state,due_at,safe_result_json,created_at)
@@ -179,7 +260,7 @@ export class CleanupRepository extends DatabaseRepository {
             id,
             LOCAL_CLEANUP_POLICY_ID,
             actionKind(consequence),
-            snapshot.outputId,
+            snapshot.targetId,
             token,
             JSON.stringify({ preview: snapshot }),
             now
@@ -222,12 +303,16 @@ export class CleanupRepository extends DatabaseRepository {
       if (actions.length !== preview.candidate_count)
         throw new Error('Cleanup preview is incomplete.');
       for (const action of actions) {
-        const stored = JSON.parse(action.safe_result_json) as { preview: CleanupActionSnapshot };
-        const current = this.listOutputs().find((output) => output.outputId === action.target_id);
+        const stored = parseSnapshot(action.safe_result_json);
+        const current = this.listTargets(policy.consequence).find(
+          (target) =>
+            target.targetKind === stored.targetKind && target.targetId === action.target_id
+        );
         if (!current) throw new Error('A cleanup candidate is no longer available.');
         if (
-          current.localPath !== stored.preview.localPath ||
-          current.bytes !== stored.preview.bytes ||
+          current.localPath !== stored.localPath ||
+          current.bytes !== stored.bytes ||
+          current.activeReference ||
           (policy.exclusions.favorites && current.favorite) ||
           (policy.exclusions.pinned && current.pinned) ||
           current.tags.some((tag) => policy.exclusions.tags.includes(tag))
@@ -235,8 +320,15 @@ export class CleanupRepository extends DatabaseRepository {
           throw new Error('A cleanup candidate changed after preview.');
         }
       }
-      if (preview.applied_at) return actions.length;
       const now = this.now().toISOString();
+      if (preview.applied_at) {
+        return this.database
+          .query(
+            `UPDATE cleanup_actions SET state='scheduled',due_at=?,executed_at=NULL
+             WHERE preview_version=? AND state='cancelled'`
+          )
+          .run(now, token).changes;
+      }
       this.database
         .query(
           `UPDATE cleanup_actions SET state='scheduled',due_at=?
@@ -275,21 +367,22 @@ export class CleanupRepository extends DatabaseRepository {
           .get(now);
         if (!action) return null;
         const candidateAction = action;
-        snapshot = (
-          JSON.parse(candidateAction.safe_result_json) as {
-            preview: CleanupActionSnapshot;
-          }
-        ).preview;
+        snapshot = parseSnapshot(candidateAction.safe_result_json);
         const policy = this.getEnabledPolicy();
-        const current = this.listOutputs().find(
-          (output) => output.outputId === candidateAction.target_id
-        );
+        const current = policy
+          ? this.listTargets(policy.consequence).find(
+              (target) =>
+                target.targetKind === snapshot.targetKind &&
+                target.targetId === candidateAction.target_id
+            )
+          : undefined;
         const stale =
           !policy ||
           cleanupHash(policy) !== snapshot.policyHash ||
           !current ||
           current.localPath !== snapshot.localPath ||
           current.bytes !== snapshot.bytes ||
+          current.activeReference ||
           (policy.exclusions.favorites && current.favorite) ||
           (policy.exclusions.pinned && current.pinned) ||
           current.tags.some((tag) => policy.exclusions.tags.includes(tag));
@@ -356,7 +449,7 @@ export class CleanupRepository extends DatabaseRepository {
         .run(action.id, attempt, now);
       return {
         actionId: action.id,
-        outputId: action.target_id,
+        targetId: action.target_id,
         actionKind: action.action_kind,
         snapshot,
         owner,
@@ -418,6 +511,27 @@ export class CleanupRepository extends DatabaseRepository {
         )
         .run(now, outputId).changes === 1
     );
+  }
+
+  markManagedSourceFileRemoved(sourceId: string, availability: 'missing' | 'deleted'): boolean {
+    const now = this.now().toISOString();
+    return this.transaction(() => {
+      const changed =
+        this.database
+          .query(
+            `UPDATE managed_sources SET availability=?,last_verified_at=NULL,
+              missing_at=CASE WHEN ?='missing' THEN COALESCE(missing_at,?) ELSE missing_at END,
+              deleted_at=CASE WHEN ?='deleted' THEN ? ELSE deleted_at END
+             WHERE id=? AND availability='available'`
+          )
+          .run(availability, availability, now, availability, now, sourceId).changes === 1;
+      if (changed) {
+        this.database
+          .query('UPDATE job_inputs SET availability=? WHERE managed_source_id=?')
+          .run(availability, sourceId);
+      }
+      return changed;
+    });
   }
 
   actionCounts(): Record<string, number> {

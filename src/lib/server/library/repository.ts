@@ -1,6 +1,5 @@
 import type { Database } from 'bun:sqlite';
 import { basename } from 'node:path';
-import { modelCatalogue } from '../../features/registry/catalogue';
 import type {
   CursorPage,
   DownloadAttemptDto,
@@ -18,9 +17,11 @@ import type {
   SafeMediaSummary,
   StorageStatisticsDto
 } from '../../features/library/contracts';
+import { modelCatalogue } from '../../features/registry/catalogue';
 import { IMAGE_REGISTRY_ENTRIES } from '../../features/registry/image-registry';
 import { VIDEO_REGISTRY_ENTRIES } from '../../features/registry/video-registry';
-import { resolvePathWithin, type AppPaths } from '../platform/app-paths';
+import { ManagedSourceRepository } from '../media/managed-sources';
+import { type AppPaths, resolvePathWithin } from '../platform/app-paths';
 import { DatabaseRepository } from '../platform/repository';
 
 type Binding = string | number | null;
@@ -95,6 +96,11 @@ type InputRow = {
   upload_url: string | null;
   metadata_json: string;
   availability: string;
+  managed_source_id: string | null;
+  managed_source_name: string | null;
+  managed_source_bytes: number | null;
+  managed_source_checksum: string | null;
+  managed_source_availability: 'available' | 'missing' | 'deleted' | null;
 };
 
 type OutputRow = {
@@ -522,24 +528,37 @@ export class LibraryRepository extends DatabaseRepository {
     }
     const inputs: JobInputDto[] = this.database
       .query<InputRow, [string]>(
-        'SELECT * FROM job_inputs WHERE job_id=? ORDER BY role,input_order'
+        `SELECT ji.*,ms.original_name managed_source_name,ms.byte_size managed_source_bytes,
+          ms.checksum managed_source_checksum,ms.availability managed_source_availability
+         FROM job_inputs ji LEFT JOIN managed_sources ms ON ms.id=ji.managed_source_id
+         WHERE ji.job_id=? ORDER BY ji.role,ji.input_order`
       )
       .all(id)
       .map((input) => ({
         role: input.role,
         inputOrder: input.input_order,
         mediaKind: input.media_kind,
-        sourceKind: input.local_reference
-          ? 'local'
-          : input.source_url
-            ? 'remote'
-            : input.upload_url
-              ? 'uploaded'
-              : 'unknown',
-        sourceLabel: input.local_reference
-          ? basename(input.local_reference)
-          : safeUrlLabel(input.source_url ?? input.upload_url),
-        availability: input.availability,
+        sourceKind:
+          input.managed_source_id || input.local_reference
+            ? 'local'
+            : input.source_url
+              ? 'remote'
+              : input.upload_url
+                ? 'uploaded'
+                : 'unknown',
+        sourceLabel:
+          input.managed_source_name ??
+          (input.local_reference
+            ? basename(input.local_reference)
+            : safeUrlLabel(input.source_url ?? input.upload_url)),
+        availability: input.managed_source_availability ?? input.availability,
+        managedSourceId: input.managed_source_id,
+        byteSize: input.managed_source_bytes,
+        checksum: input.managed_source_checksum,
+        localConsequence:
+          input.managed_source_availability === 'available'
+            ? 'retained'
+            : (input.managed_source_availability ?? 'not-managed'),
         metadata: JSON.parse(input.metadata_json)
       }));
     const history: JobHistoryDto[] = this.database
@@ -690,10 +709,24 @@ export class LibraryRepository extends DatabaseRepository {
     });
   }
 
-  async storageStatistics(paths: Pick<AppPaths, 'media'>): Promise<StorageStatisticsDto> {
-    const row = this.database
+  async storageStatistics(
+    paths: Pick<AppPaths, 'media' | 'uploads'>
+  ): Promise<StorageStatisticsDto> {
+    await new ManagedSourceRepository(this.database, paths).reconcileAll();
+    const outputs = this.database
       .query<{ indexed_bytes: number; verified: number; missing: number }, []>(
-        `SELECT COALESCE(SUM(CASE WHEN download_state='verified' THEN COALESCE(byte_size,0) ELSE 0 END),0) indexed_bytes, COALESCE(SUM(download_state='verified'),0) verified, COALESCE(SUM(download_state IN ('deleted','failed','expired')),0) missing FROM job_outputs`
+        `SELECT COALESCE(SUM(CASE WHEN download_state='verified' THEN COALESCE(byte_size,0) ELSE 0 END),0) indexed_bytes,
+          COALESCE(SUM(download_state='verified'),0) verified,
+          COALESCE(SUM(download_state IN ('deleted','failed','expired')),0) missing
+         FROM job_outputs`
+      )
+      .get();
+    const sources = this.database
+      .query<{ indexed_bytes: number; available: number; missing: number }, []>(
+        `SELECT COALESCE(SUM(CASE WHEN availability='available' THEN byte_size ELSE 0 END),0) indexed_bytes,
+          COALESCE(SUM(availability='available'),0) available,
+          COALESCE(SUM(availability IN ('missing','deleted')),0) missing
+         FROM managed_sources`
       )
       .get();
     let capacityBytes: number | null = null;
@@ -704,9 +737,13 @@ export class LibraryRepository extends DatabaseRepository {
       freeBytes = Number(stats.bavail) * Number(stats.bsize);
     } catch {}
     return {
-      indexedBytes: row?.indexed_bytes ?? 0,
-      verifiedFiles: row?.verified ?? 0,
-      missingOrDeletedFiles: row?.missing ?? 0,
+      indexedBytes: (outputs?.indexed_bytes ?? 0) + (sources?.indexed_bytes ?? 0),
+      verifiedFiles: (outputs?.verified ?? 0) + (sources?.available ?? 0),
+      missingOrDeletedFiles: (outputs?.missing ?? 0) + (sources?.missing ?? 0),
+      generatedBytes: outputs?.indexed_bytes ?? 0,
+      managedSourceBytes: sources?.indexed_bytes ?? 0,
+      managedSourceFiles: sources?.available ?? 0,
+      missingOrDeletedSources: sources?.missing ?? 0,
       capacityBytes,
       freeBytes
     };

@@ -1,15 +1,19 @@
-import { createPoyoClient } from '$lib/server/poyo/factory';
-import { intakeLocalSource, removeLocalSource } from '$lib/server/media/source-intake';
-import { getPlatformServices } from '$lib/server/platform/runtime';
 import { jobHttpError } from '$lib/server/jobs/http';
+import { ManagedSourceRepository } from '$lib/server/media/managed-sources';
+import { intakeLocalSource } from '$lib/server/media/source-intake';
+import { getPlatformServices } from '$lib/server/platform/runtime';
+import { createPoyoClient } from '$lib/server/poyo/factory';
 import type { RequestHandler } from './$types';
 
 export const POST: RequestHandler = async ({ request }) => {
-  let localPath: string | undefined;
+  let sourceId: string | undefined;
+  let managedSources: ManagedSourceRepository | undefined;
   try {
     const platform = await getPlatformServices();
     const source = await intakeLocalSource(request, platform.paths);
-    localPath = source.localPath;
+    sourceId = source.id;
+    managedSources = new ManagedSourceRepository(platform.database, platform.paths);
+    await managedSources.register(source);
     const client = await createPoyoClient({
       apiKeyManager: platform.apiKey,
       logger: platform.logger,
@@ -43,7 +47,9 @@ export const POST: RequestHandler = async ({ request }) => {
       { status: 201 }
     );
   } catch (error) {
-    if (localPath) await removeLocalSource(localPath);
+    if (sourceId && managedSources) {
+      await managedSources.discardUnreferenced(sourceId).catch(() => undefined);
+    }
     return jobHttpError(error);
   }
 };

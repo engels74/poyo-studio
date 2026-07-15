@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { JobFiltersDto, LibraryFiltersDto } from '../../../src/lib/features/library/contracts';
 import { LibraryRepository } from '../../../src/lib/server/library/repository';
@@ -136,5 +136,67 @@ describe('server-side jobs and grouped library repository', () => {
       downloadState: 'deleted',
       localAvailable: false
     });
+  });
+
+  test('accounts managed sources once and exposes missing-file history without local paths', async () => {
+    const { fixture, job } = await completedGeneration('managed-source');
+    const sourceId = crypto.randomUUID();
+    const relativePath = `2026-07/${sourceId}.png`;
+    const localPath = join(fixture.paths.uploads, relativePath);
+    await mkdir(join(fixture.paths.uploads, '2026-07'), { recursive: true });
+    await writeFile(localPath, new Uint8Array(8).fill(1));
+    fixture.database
+      .query(
+        `INSERT INTO managed_sources(id,original_name,media_kind,mime_type,byte_size,checksum,signature,relative_path,availability,created_at,last_verified_at)
+         VALUES (?,?,?,?,?,?,?,?, 'available',?,?)`
+      )
+      .run(
+        sourceId,
+        'safe-source.png',
+        'image',
+        'image/png',
+        8,
+        'source-checksum',
+        '89504e47',
+        relativePath,
+        '2026-07-15T12:00:00.000Z',
+        '2026-07-15T12:00:00.000Z'
+      );
+    fixture.database
+      .query(
+        `INSERT INTO job_inputs(job_id,role,input_order,media_kind,upload_url,metadata_json,availability,managed_source_id)
+         VALUES (?, 'source-image', 0, 'image', 'https://poyo.test/source.png', '{}', 'available', ?)`
+      )
+      .run(job.id, sourceId);
+    const repository = new LibraryRepository(fixture.database);
+    expect(await repository.storageStatistics(fixture.paths)).toMatchObject({
+      indexedBytes: 12,
+      verifiedFiles: 2,
+      generatedBytes: 4,
+      managedSourceBytes: 8,
+      managedSourceFiles: 1,
+      missingOrDeletedSources: 0
+    });
+
+    await unlink(localPath);
+    expect(await repository.storageStatistics(fixture.paths)).toMatchObject({
+      indexedBytes: 4,
+      verifiedFiles: 1,
+      missingOrDeletedFiles: 1,
+      managedSourceBytes: 0,
+      managedSourceFiles: 0,
+      missingOrDeletedSources: 1
+    });
+    const detail = await repository.getJobDetail(job.id);
+    expect(detail?.inputs[0]).toMatchObject({
+      managedSourceId: sourceId,
+      sourceKind: 'local',
+      sourceLabel: 'safe-source.png',
+      availability: 'missing',
+      localConsequence: 'missing',
+      byteSize: 8,
+      checksum: 'source-checksum'
+    });
+    expect(detail?.inputs[0]).not.toHaveProperty('localPath');
   });
 });

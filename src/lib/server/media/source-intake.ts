@@ -1,4 +1,4 @@
-import { lstat, mkdir, readdir, rename, unlink } from 'node:fs/promises';
+import { mkdir, rename, unlink } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import type { AppPaths } from '../platform/app-paths';
 import { resolvePathWithin } from '../platform/app-paths';
@@ -26,6 +26,9 @@ export interface LocalSourceIntake {
   mediaKind: 'image' | 'video';
   mimeType: string;
   sizeBytes: number;
+  checksum: string;
+  signature: string;
+  createdAt: string;
   localPath: string;
 }
 
@@ -70,17 +73,23 @@ function safeOriginalName(value: string): string {
   return name && name !== '.' && name !== '..' ? name.slice(0, 255) : 'source';
 }
 
-async function writeStreamed(file: File, destination: string): Promise<void> {
+async function writeStreamed(file: File, destination: string): Promise<string> {
   const writer = Bun.file(destination).writer();
   const reader = file.stream().getReader();
+  const hasher = new Bun.CryptoHasher('sha256');
+  let written = 0;
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
+      hasher.update(value);
+      written += value.byteLength;
       writer.write(value);
     }
     writer.flush();
     writer.end();
+    if (written !== file.size) throw new Error('The local source copy is incomplete.');
+    return hasher.digest('hex');
   } catch (error) {
     writer.end();
     throw error;
@@ -116,13 +125,15 @@ export async function intakeLocalSource(
     throw new Error('The local source signature does not match its type.');
 
   const id = crypto.randomUUID();
-  const bucket = new Date().toISOString().slice(0, 7);
+  const createdAt = new Date().toISOString();
+  const bucket = createdAt.slice(0, 7);
   const directory = resolvePathWithin(paths.uploads, bucket);
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const destination = resolvePathWithin(paths.uploads, join(bucket, `${id}${extension}`));
   const temporary = resolvePathWithin(paths.temporary, `${id}.part`);
+  let checksum: string;
   try {
-    await writeStreamed(file, temporary);
+    checksum = await writeStreamed(file, temporary);
     await rename(temporary, destination);
   } catch (error) {
     await unlink(temporary).catch(() => undefined);
@@ -134,26 +145,9 @@ export async function intakeLocalSource(
     mediaKind: requestedKind,
     mimeType: type,
     sizeBytes: file.size,
+    checksum,
+    signature: Array.from(header, (byte) => byte.toString(16).padStart(2, '0')).join(''),
+    createdAt,
     localPath: destination
   };
-}
-
-export function removeLocalSource(path: string): Promise<void> {
-  return unlink(path).catch(() => undefined);
-}
-
-export async function resolveLocalSourceReference(paths: AppPaths, id: string): Promise<string> {
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
-    throw new Error('The managed local source identifier is not valid.');
-  }
-  const buckets = await readdir(paths.uploads, { withFileTypes: true }).catch(() => []);
-  for (const bucket of buckets) {
-    if (!bucket.isDirectory() || !/^\d{4}-\d{2}$/.test(bucket.name)) continue;
-    for (const extension of Object.values(extensions)) {
-      const candidate = resolvePathWithin(paths.uploads, join(bucket.name, `${id}${extension}`));
-      const details = await lstat(candidate).catch(() => null);
-      if (details?.isFile() && !details.isSymbolicLink()) return candidate;
-    }
-  }
-  throw new Error('The managed local source is no longer available.');
 }

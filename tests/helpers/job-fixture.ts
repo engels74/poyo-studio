@@ -1,6 +1,6 @@
 import { join } from 'node:path';
-import { openDatabase } from '../../src/lib/server/platform/database';
 import { JobRepository } from '../../src/lib/server/jobs/repository';
+import { openDatabase } from '../../src/lib/server/platform/database';
 import { createTemporaryDirectory } from './temporary-directory';
 
 export async function createJobFixture(now = new Date('2026-07-15T12:00:00Z')) {
@@ -11,7 +11,11 @@ export async function createJobFixture(now = new Date('2026-07-15T12:00:00Z')) {
   return {
     database,
     repository,
-    paths: { media: join(temporary.path, 'media'), temporary: join(temporary.path, 'tmp') },
+    paths: {
+      media: join(temporary.path, 'media'),
+      uploads: join(temporary.path, 'uploads'),
+      temporary: join(temporary.path, 'tmp')
+    },
     setNow(value: Date) {
       current = value;
     },

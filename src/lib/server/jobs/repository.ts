@@ -281,19 +281,37 @@ export class JobRepository extends DatabaseRepository {
         );
       for (const [inputOrder, input] of (request.inputs ?? []).entries()) {
         if (input.mediaKind !== 'image' && input.mediaKind !== 'video') continue;
+        const managedSource = input.managedSourceId
+          ? this.database
+              .query<{ media_kind: 'image' | 'video'; availability: string }, [string]>(
+                'SELECT media_kind,availability FROM managed_sources WHERE id=?'
+              )
+              .get(input.managedSourceId)
+          : null;
+        if (input.managedSourceId && !managedSource) {
+          throw new Error('Managed local source was not found.');
+        }
+        if (
+          managedSource &&
+          (managedSource.availability !== 'available' ||
+            managedSource.media_kind !== input.mediaKind)
+        ) {
+          throw new Error('Managed local source is not available for this input role.');
+        }
         this.database
           .query(
-            `INSERT INTO job_inputs(job_id,role,input_order,media_kind,local_reference,source_url,upload_url,metadata_json,availability) VALUES (?,?,?,?,?,?,?,?,'available')`
+            `INSERT INTO job_inputs(job_id,role,input_order,media_kind,local_reference,source_url,upload_url,metadata_json,availability,managed_source_id)
+             VALUES (?,?,?,?,NULL,?,?,?,'available',?)`
           )
           .run(
             id,
             input.role,
             inputOrder,
             input.mediaKind,
-            input.source === 'uploaded' ? (input.localReference ?? null) : null,
             input.source === 'remote' ? input.url : null,
             input.source === 'uploaded' ? input.url : null,
-            JSON.stringify(input.metadata ?? {})
+            JSON.stringify(input.metadata ?? {}),
+            input.source === 'uploaded' ? (input.managedSourceId ?? null) : null
           );
       }
       this.database

@@ -68,7 +68,7 @@ describe('operations diagnostics', () => {
         connectivity: { status: 'ok [REDACTED]' },
         remoteCleanup: { available: false, verifiedAt: '2026-07-15' },
         health: {
-          database: { schemaVersion: 2 },
+          database: { schemaVersion: 3 },
           apiKey: {
             source: 'local',
             status: 'configured',

@@ -148,7 +148,24 @@ describe('durable job repository invariants', () => {
   test('UPLOAD-04 persists a managed local source reference beside its remote upload URL', async () => {
     const fixture = await createJobFixture();
     cleanups.push(fixture.cleanup);
-    const localReference = '/private/studio/uploads/2026-07/source-id.png';
+    const managedSourceId = crypto.randomUUID();
+    fixture.database
+      .query(
+        `INSERT INTO managed_sources(id,original_name,media_kind,mime_type,byte_size,checksum,signature,relative_path,availability,created_at,last_verified_at)
+         VALUES (?,?,?,?,?,?,?,?, 'available',?,?)`
+      )
+      .run(
+        managedSourceId,
+        'source.png',
+        'image',
+        'image/png',
+        8,
+        'checksum',
+        '89504e47',
+        `2026-07/${managedSourceId}.png`,
+        '2026-07-15T12:00:00.000Z',
+        '2026-07-15T12:00:00.000Z'
+      );
     const job = fixture.repository.create({
       workflow: 'image-to-image',
       publicModelId: 'provider/model',
@@ -163,16 +180,25 @@ describe('durable job repository invariants', () => {
           mediaKind: 'image',
           source: 'uploaded',
           url: 'https://poyo.test/source.png',
-          localReference
+          managedSourceId
         }
       ]
     });
     expect(
       fixture.database
-        .query<{ local_reference: string | null; upload_url: string | null }, [string]>(
-          'SELECT local_reference,upload_url FROM job_inputs WHERE job_id=?'
-        )
+        .query<
+          {
+            managed_source_id: string | null;
+            local_reference: string | null;
+            upload_url: string | null;
+          },
+          [string]
+        >('SELECT managed_source_id,local_reference,upload_url FROM job_inputs WHERE job_id=?')
         .get(job.id)
-    ).toEqual({ local_reference: localReference, upload_url: 'https://poyo.test/source.png' });
+    ).toEqual({
+      managed_source_id: managedSourceId,
+      local_reference: null,
+      upload_url: 'https://poyo.test/source.png'
+    });
   });
 });

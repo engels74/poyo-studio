@@ -22,7 +22,7 @@ export interface CleanupStorageSnapshot {
 
 export interface CleanupServiceOptions {
   repository: CleanupRepository;
-  paths: Pick<AppPaths, 'media'>;
+  paths: Pick<AppPaths, 'media' | 'uploads'>;
   now?: () => Date;
   storage?: () => Promise<CleanupStorageSnapshot>;
   removeFile?: (root: string, path: string) => Promise<'removed' | 'already-missing'>;
@@ -57,13 +57,14 @@ async function secureRemove(
 }
 
 function isProtected(
-  output: ReturnType<CleanupRepository['listOutputs']>[number],
+  target: ReturnType<CleanupRepository['listTargets']>[number],
   policy: LocalCleanupPolicy
 ): boolean {
   return (
-    (policy.exclusions.favorites && output.favorite) ||
-    (policy.exclusions.pinned && output.pinned) ||
-    output.tags.some((tag) => policy.exclusions.tags.includes(tag))
+    target.activeReference ||
+    (policy.exclusions.favorites && target.favorite) ||
+    (policy.exclusions.pinned && target.pinned) ||
+    target.tags.some((tag) => policy.exclusions.tags.includes(tag))
   );
 }
 
@@ -103,29 +104,32 @@ export class CleanupService {
     assertConsequence(consequenceInput);
     const consequence = consequenceInput;
     const policy = this.policy();
-    const outputs = this.options.repository.listOutputs();
-    const eligible = outputs.filter((output) => !isProtected(output, policy));
+    const targets = this.options.repository.listTargets(consequence);
+    const eligible = targets.filter((target) => !isProtected(target, policy));
     const selected = new Map<
       string,
-      { output: (typeof outputs)[number]; reasons: CleanupActionSnapshot['reasons'] }
+      { target: (typeof targets)[number]; reasons: CleanupActionSnapshot['reasons'] }
     >();
 
     if (policy.mode === 'age') {
       const cutoff = this.now().getTime() - (policy.olderThanDays ?? 0) * 86_400_000;
-      for (const output of eligible) {
-        if (new Date(output.createdAt).getTime() < cutoff) {
-          selected.set(output.outputId, { output, reasons: ['age'] });
+      for (const target of eligible) {
+        if (new Date(target.createdAt).getTime() < cutoff) {
+          selected.set(`${target.targetKind}:${target.targetId}`, { target, reasons: ['age'] });
         }
       }
     }
 
     if (policy.mode === 'total-size') {
-      const total = outputs.reduce((sum, output) => sum + output.bytes, 0);
+      const total = targets.reduce((sum, target) => sum + target.bytes, 0);
       let remaining = Math.max(0, total - (policy.maxBytes ?? total));
-      for (const output of eligible) {
+      for (const target of eligible) {
         if (remaining <= 0) break;
-        selected.set(output.outputId, { output, reasons: ['storage-limit'] });
-        remaining -= output.bytes;
+        selected.set(`${target.targetKind}:${target.targetId}`, {
+          target,
+          reasons: ['storage-limit']
+        });
+        remaining -= target.bytes;
       }
     }
 
@@ -135,27 +139,31 @@ export class CleanupService {
         throw new CleanupValidationError('Free disk space could not be measured safely.');
       }
       let remaining = Math.max(0, (policy.minFreeBytes ?? storage.freeBytes) - storage.freeBytes);
-      for (const output of eligible) {
+      for (const target of eligible) {
         if (remaining <= 0) break;
-        selected.set(output.outputId, { output, reasons: ['free-space'] });
-        remaining -= output.bytes;
+        selected.set(`${target.targetKind}:${target.targetId}`, {
+          target,
+          reasons: ['free-space']
+        });
+        remaining -= target.bytes;
       }
     }
 
     const policyHash = cleanupHash(policy);
     const snapshots: CleanupActionSnapshot[] = [...selected.values()].map(
-      ({ output, reasons }) => ({
-        ...output,
+      ({ target, reasons }) => ({
+        ...target,
         reasons,
         policyHash
       })
     );
     const token = cleanupHash({
-      version: 1,
+      version: 2,
       policyHash,
       consequence,
-      candidates: snapshots.map(({ outputId, localPath, bytes, reasons }) => ({
-        outputId,
+      candidates: snapshots.map(({ targetKind, targetId, localPath, bytes, reasons }) => ({
+        targetKind,
+        targetId,
         localPath,
         bytes,
         reasons
@@ -163,8 +171,12 @@ export class CleanupService {
     });
     this.options.repository.persistPreview(token, policyHash, consequence, snapshots);
     const candidates: CleanupCandidateDto[] = snapshots.map((snapshot) => ({
+      targetKind: snapshot.targetKind,
+      targetId: snapshot.targetId,
       outputId: snapshot.outputId,
+      managedSourceId: snapshot.managedSourceId,
       jobId: snapshot.jobId,
+      jobIds: snapshot.jobIds,
       fileName: basename(snapshot.localPath),
       mediaKind: snapshot.mediaKind,
       bytes: snapshot.bytes,
@@ -194,16 +206,31 @@ export class CleanupService {
     const removeFile = this.options.removeFile ?? secureRemove;
     try {
       let file: 'removed' | 'already-missing' | 'retained' = 'retained';
-      let metadata: 'removed' | 'already-missing' | 'retained' = 'retained';
-      if (claim.actionKind === 'local_file' || claim.actionKind === 'local_both') {
-        file = await removeFile(this.options.paths.media, claim.snapshot.localPath);
+      let metadata: 'removed' | 'already-missing' | 'retained' | 'retained-for-history' =
+        'retained';
+      if (claim.snapshot.targetKind === 'managed-source' && claim.actionKind !== 'local_file') {
+        throw new Error('Managed source metadata is retained for generation history.');
       }
-      if (claim.actionKind === 'local_metadata' || claim.actionKind === 'local_both') {
-        metadata = this.options.repository.removeOutputMetadata(claim.outputId)
+      if (claim.actionKind === 'local_file' || claim.actionKind === 'local_both') {
+        file = await removeFile(
+          claim.snapshot.targetKind === 'managed-source'
+            ? this.options.paths.uploads
+            : this.options.paths.media,
+          claim.snapshot.localPath
+        );
+      }
+      if (claim.snapshot.targetKind === 'managed-source') {
+        metadata = 'retained-for-history';
+        this.options.repository.markManagedSourceFileRemoved(
+          claim.targetId,
+          file === 'already-missing' ? 'missing' : 'deleted'
+        );
+      } else if (claim.actionKind === 'local_metadata' || claim.actionKind === 'local_both') {
+        metadata = this.options.repository.removeOutputMetadata(claim.targetId)
           ? 'removed'
           : 'already-missing';
       } else {
-        metadata = this.options.repository.markOutputFileRemoved(claim.outputId)
+        metadata = this.options.repository.markOutputFileRemoved(claim.targetId)
           ? 'retained'
           : 'already-missing';
       }

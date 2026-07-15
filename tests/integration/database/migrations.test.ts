@@ -1,13 +1,13 @@
-import { afterEach, describe, expect, test } from 'bun:test';
 import { Database } from 'bun:sqlite';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
+import type { Migration } from '../../../migrations';
 import {
   databaseHealth,
   migrateDatabase,
   migrationChecksum,
   openDatabase
 } from '../../../src/lib/server/platform/database';
-import type { Migration } from '../../../migrations';
 import { DATABASE_SCHEMA_VERSION } from '../../../src/lib/server/platform/version';
 import { SettingsRepository } from '../../../src/lib/server/settings/settings-repository';
 import { createTemporaryDirectory } from '../../helpers/temporary-directory';
@@ -37,6 +37,7 @@ const expectedTables = [
   'job_outputs',
   'job_tags',
   'jobs',
+  'managed_sources',
   'model_preferences',
   'presets',
   'registry_audits',
@@ -69,9 +70,21 @@ describe('database migrations', () => {
         .all();
       const journal = database.query<{ journal_mode: string }, []>('PRAGMA journal_mode').get();
       const health = databaseHealth(database);
+      const inputColumns = database
+        .query<{ name: string }, []>('PRAGMA table_info(job_inputs)')
+        .all()
+        .map((column) => column.name);
+      const sourceForeignKey = database
+        .query<{ table: string; from: string; to: string }, []>(
+          'PRAGMA foreign_key_list(job_inputs)'
+        )
+        .all()
+        .find((foreignKey) => foreignKey.from === 'managed_source_id');
 
       expect(tables).toEqual(expectedTables);
       expect(indexes.length).toBeGreaterThanOrEqual(17);
+      expect(inputColumns).toContain('managed_source_id');
+      expect(sourceForeignKey).toMatchObject({ table: 'managed_sources', to: 'id' });
       expect(journal?.journal_mode).toBe('wal');
       expect(health).toEqual({
         quickCheck: 'ok',
@@ -94,7 +107,7 @@ describe('database migrations', () => {
       const migrations = reopened
         .query<{ count: number }, []>('SELECT COUNT(*) AS count FROM schema_migrations')
         .get();
-      expect(migrations?.count).toBe(2);
+      expect(migrations?.count).toBe(3);
       expect(new SettingsRepository(reopened).get<{ mode: string }>('theme')?.value.mode).toBe(
         'dark'
       );

@@ -17,8 +17,12 @@ export interface LocalCleanupPolicy {
 }
 
 export interface CleanupCandidateDto {
-  outputId: string;
-  jobId: string;
+  targetKind: 'output' | 'managed-source';
+  targetId: string;
+  outputId: string | null;
+  managedSourceId: string | null;
+  jobId: string | null;
+  jobIds: string[];
   fileName: string;
   mediaKind: 'image' | 'video';
   bytes: number;

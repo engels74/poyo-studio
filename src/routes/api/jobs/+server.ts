@@ -1,25 +1,25 @@
+import { safeJobDto } from '$lib/server/jobs/events';
+import { jobHttpError } from '$lib/server/jobs/http';
+import { getJobRuntime } from '$lib/server/jobs/runtime';
+import type { CreateJobRequest } from '$lib/server/jobs/types';
+import { ManagedSourceRepository } from '$lib/server/media/managed-sources';
 import { readSameOriginJson } from '$lib/server/platform/request-security';
 import { getPlatformServices } from '$lib/server/platform/runtime';
-import { getJobRuntime } from '$lib/server/jobs/runtime';
-import { jobHttpError } from '$lib/server/jobs/http';
-import { safeJobDto } from '$lib/server/jobs/events';
-import type { CreateJobRequest } from '$lib/server/jobs/types';
-import { resolveLocalSourceReference } from '$lib/server/media/source-intake';
 import type { RequestHandler } from './$types';
 
 export const POST: RequestHandler = async ({ request }) => {
   try {
     const input = await readSameOriginJson<CreateJobRequest>(request);
     const platform = await getPlatformServices();
+    const managedSources = new ManagedSourceRepository(platform.database, platform.paths);
     const inputs = await Promise.all(
-      (input.inputs ?? []).map(async ({ localReference: _ignored, ...source }) => ({
+      (input.inputs ?? []).map(async ({ managedSourceId: _ignored, localSourceId, ...source }) => ({
         ...source,
-        ...(source.source === 'uploaded' && source.localSourceId
+        ...(source.source === 'uploaded' && localSourceId
           ? {
-              localReference: await resolveLocalSourceReference(
-                platform.paths,
-                source.localSourceId
-              )
+              managedSourceId: (
+                await managedSources.resolveAvailable(localSourceId, source.mediaKind)
+              ).id
             }
           : {})
       }))

@@ -92,6 +92,10 @@ export interface JobInputDto {
   sourceKind: 'local' | 'remote' | 'uploaded' | 'unknown';
   sourceLabel: string;
   availability: string;
+  managedSourceId: string | null;
+  byteSize: number | null;
+  checksum: string | null;
+  localConsequence: 'retained' | 'missing' | 'deleted' | 'not-managed';
   metadata: Record<string, unknown>;
 }
 
@@ -175,6 +179,10 @@ export interface StorageStatisticsDto {
   indexedBytes: number;
   verifiedFiles: number;
   missingOrDeletedFiles: number;
+  generatedBytes: number;
+  managedSourceBytes: number;
+  managedSourceFiles: number;
+  missingOrDeletedSources: number;
   capacityBytes: number | null;
   freeBytes: number | null;
 }

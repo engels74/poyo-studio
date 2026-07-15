@@ -88,6 +88,10 @@ function diagnostics(): OperationsDiagnosticsDto {
       indexedBytes: 2048,
       verifiedFiles: 1,
       missingOrDeletedFiles: 0,
+      generatedBytes: 2048,
+      managedSourceBytes: 0,
+      managedSourceFiles: 0,
+      missingOrDeletedSources: 0,
       capacityBytes: 4096,
       freeBytes: 2048
     },

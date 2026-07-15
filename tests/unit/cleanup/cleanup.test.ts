@@ -17,7 +17,10 @@ afterEach(async () => Promise.all(cleanups.splice(0).map((cleanup) => cleanup())
 async function fixture() {
   const setup = await createJobFixture(new Date('2026-07-15T12:00:00.000Z'));
   cleanups.push(setup.cleanup);
-  await mkdir(setup.paths.media, { recursive: true });
+  await Promise.all([
+    mkdir(setup.paths.media, { recursive: true }),
+    mkdir(setup.paths.uploads, { recursive: true })
+  ]);
   let order = 0;
   async function output(
     options: {
@@ -58,7 +61,36 @@ async function fixture() {
     if (options.tag) new LibraryRepository(setup.database).replaceTags(job.id, [options.tag]);
     return { id, job, path, bytes };
   }
-  return { ...setup, output };
+  async function source(options: { ageDays?: number; bytes?: number } = {}) {
+    const id = crypto.randomUUID();
+    const relativePath = `2026-01/${id}.png`;
+    const path = join(setup.paths.uploads, relativePath);
+    const bytes = options.bytes ?? 8;
+    await mkdir(join(setup.paths.uploads, '2026-01'), { recursive: true });
+    await writeFile(path, new Uint8Array(bytes).fill(1));
+    const createdAt = new Date(
+      Date.parse('2026-07-15T12:00:00.000Z') - (options.ageDays ?? 100) * 86_400_000
+    ).toISOString();
+    setup.database
+      .query(
+        `INSERT INTO managed_sources(id,original_name,media_kind,mime_type,byte_size,checksum,signature,relative_path,availability,created_at,last_verified_at)
+         VALUES (?,?,?,?,?,?,?,?, 'available',?,?)`
+      )
+      .run(
+        id,
+        'source.png',
+        'image',
+        'image/png',
+        bytes,
+        'checksum',
+        '89504e47',
+        relativePath,
+        createdAt,
+        createdAt
+      );
+    return { id, path, relativePath, bytes };
+  }
+  return { ...setup, output, source };
 }
 
 describe('local cleanup policy, preview and durable execution', () => {
@@ -390,6 +422,155 @@ describe('local cleanup policy, preview and durable execution', () => {
     expect(await runtime.runOnce()).toBe(1);
     expect(await Bun.file(item.path).exists()).toBe(false);
     expect(runtime.diagnostics().lastError).toBeNull();
+  });
+
+  test('managed sources are shared, excluded while any referencing job is active, and retain history metadata', async () => {
+    const setup = await fixture();
+    const source = await setup.source();
+    const createReference = (suffix: string) =>
+      setup.repository.create({
+        workflow: 'image-to-image',
+        publicModelId: 'provider/model',
+        guidedRequest: { prompt: suffix },
+        normalizedPayload: {
+          model: 'provider/model',
+          input: { prompt: suffix, image_url: 'https://poyo.test/source.png' }
+        },
+        inputs: [
+          {
+            role: 'source-image',
+            mediaKind: 'image',
+            source: 'uploaded',
+            url: 'https://poyo.test/source.png',
+            managedSourceId: source.id
+          }
+        ]
+      });
+    const first = createReference('first');
+    const second = createReference('second');
+    setup.database.query("UPDATE jobs SET local_phase='complete' WHERE id=?").run(first.id);
+    const repository = new CleanupRepository(setup.database);
+    const service = new CleanupService({ repository, paths: setup.paths });
+    service.setPolicy({
+      mode: 'age',
+      consequence: 'file',
+      olderThanDays: 1,
+      exclusions: { favorites: true, pinned: true, tags: [] }
+    });
+
+    expect((await service.preview('file')).candidates).toHaveLength(0);
+    setup.database.query("UPDATE jobs SET local_phase='complete' WHERE id=?").run(second.id);
+    const preview = await service.preview('file');
+    expect(preview.candidates).toEqual([
+      expect.objectContaining({
+        targetKind: 'managed-source',
+        managedSourceId: source.id,
+        outputId: null,
+        jobIds: [first.id, second.id].toSorted()
+      })
+    ]);
+    expect((await service.preview('metadata')).candidates).toHaveLength(0);
+    service.apply(preview.token, true);
+    expect(await new CleanupRuntime({ repository, service }).runOnce()).toBe(1);
+    expect(await Bun.file(source.path).exists()).toBe(false);
+    expect(
+      setup.database
+        .query<{ availability: string }, [string]>(
+          'SELECT availability FROM managed_sources WHERE id=?'
+        )
+        .get(source.id)?.availability
+    ).toBe('deleted');
+    expect(
+      setup.database
+        .query<{ count: number }, [string]>(
+          "SELECT COUNT(*) count FROM job_inputs WHERE managed_source_id=? AND availability='deleted'"
+        )
+        .get(source.id)?.count
+    ).toBe(2);
+  });
+
+  test('managed source cleanup survives an expired claim without duplicate deletion', async () => {
+    const setup = await fixture();
+    const source = await setup.source();
+    let current = new Date('2026-07-15T12:00:00.000Z');
+    const before = new CleanupRepository(setup.database, () => current);
+    const beforeService = new CleanupService({
+      repository: before,
+      paths: setup.paths,
+      now: () => current
+    });
+    beforeService.setPolicy({
+      mode: 'age',
+      consequence: 'file',
+      olderThanDays: 1,
+      exclusions: { favorites: true, pinned: true, tags: [] }
+    });
+    expect(await beforeService.scheduleEnabledPolicy()).toBe(1);
+    expect(before.claimNext('crashed-source-worker', 1_000)?.targetId).toBe(source.id);
+
+    current = new Date('2026-07-15T12:00:02.000Z');
+    const after = new CleanupRepository(setup.database, () => current);
+    const afterService = new CleanupService({
+      repository: after,
+      paths: setup.paths,
+      now: () => current
+    });
+    expect(
+      await new CleanupRuntime({
+        repository: after,
+        service: afterService,
+        owner: 'restart-source-worker'
+      }).runOnce()
+    ).toBe(1);
+    expect(await Bun.file(source.path).exists()).toBe(false);
+    expect(after.actionCounts()).toEqual({ complete: 1 });
+    expect(
+      setup.database
+        .query<{ count: number }, []>('SELECT COUNT(*) count FROM cleanup_actions')
+        .get()?.count
+    ).toBe(1);
+  });
+
+  test('a new active reference cancels already scheduled managed source cleanup', async () => {
+    const setup = await fixture();
+    const source = await setup.source();
+    const repository = new CleanupRepository(setup.database);
+    const service = new CleanupService({ repository, paths: setup.paths });
+    service.setPolicy({
+      mode: 'age',
+      consequence: 'file',
+      olderThanDays: 1,
+      exclusions: { favorites: true, pinned: true, tags: [] }
+    });
+    const preview = await service.preview('file');
+    service.apply(preview.token, true);
+    const active = setup.repository.create({
+      workflow: 'image-to-image',
+      publicModelId: 'provider/model',
+      guidedRequest: { prompt: 'active reference' },
+      normalizedPayload: {
+        model: 'provider/model',
+        input: { prompt: 'active reference', image_url: 'https://poyo.test/source.png' }
+      },
+      inputs: [
+        {
+          role: 'source-image',
+          mediaKind: 'image',
+          source: 'uploaded',
+          url: 'https://poyo.test/source.png',
+          managedSourceId: source.id
+        }
+      ]
+    });
+
+    expect(await new CleanupRuntime({ repository, service }).runOnce()).toBe(0);
+    expect(await Bun.file(source.path).exists()).toBe(true);
+    expect(repository.actionCounts()).toEqual({ cancelled: 1 });
+
+    setup.database.query("UPDATE jobs SET local_phase='complete' WHERE id=?").run(active.id);
+    expect(await new CleanupRuntime({ repository, service }).runOnce()).toBe(1);
+    expect(await Bun.file(source.path).exists()).toBe(false);
+    expect(repository.actionCounts()).toEqual({ complete: 1 });
   });
 
   test('rejects symlink deletion and never creates a remote cleanup schedule', async () => {

@@ -32,7 +32,7 @@ export interface CreateJobInput {
   source: 'remote' | 'uploaded';
   url: string;
   localSourceId?: string;
-  localReference?: string;
+  managedSourceId?: string;
   metadata?: Record<string, unknown>;
 }
 
