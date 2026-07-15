@@ -36,6 +36,10 @@ export interface StudioRoleInput {
   localSourceId?: string;
   sizeBytes?: number;
   expiresAt?: string;
+  width?: number;
+  height?: number;
+  durationSeconds?: number;
+  metadataProbe?: 'measured' | 'unavailable';
 }
 
 export interface StudioLoadData {

@@ -215,7 +215,13 @@ export function createJobRequest(
         metadata: {
           name: input.name,
           ...(input.sizeBytes === undefined ? {} : { sizeBytes: input.sizeBytes }),
-          ...(input.expiresAt === undefined ? {} : { expiresAt: input.expiresAt })
+          ...(input.expiresAt === undefined ? {} : { expiresAt: input.expiresAt }),
+          ...(input.width === undefined ? {} : { width: input.width }),
+          ...(input.height === undefined ? {} : { height: input.height }),
+          ...(input.durationSeconds === undefined
+            ? {}
+            : { durationSeconds: input.durationSeconds }),
+          ...(input.metadataProbe === undefined ? {} : { metadataProbe: input.metadataProbe })
         }
       })),
     ...(prompt ? { prompt } : {})

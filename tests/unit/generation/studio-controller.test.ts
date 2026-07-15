@@ -123,4 +123,42 @@ describe('registry-driven studio controller', () => {
     if (!role) throw new Error('Missing reference role.');
     expect(mediaAccept(role)).toBe('image/jpeg,image/png,image/gif,image/webp');
   });
+
+  test('STUDIO-06 persists browser-probed media metadata with the submitted input record', () => {
+    const entry = imageEntry('flux-dev:image-edit');
+    const roleInputs = {
+      reference: [
+        {
+          id: 'reference',
+          role: 'reference',
+          source: 'uploaded' as const,
+          url: 'https://assets.test/reference.png',
+          name: 'reference.png',
+          mediaKind: 'image' as const,
+          localSourceId: 'source-1',
+          sizeBytes: 42,
+          width: 1024,
+          height: 768,
+          metadataProbe: 'measured' as const
+        }
+      ]
+    };
+    const guided = valuesWithRoleInputs(
+      entry,
+      { ...initialGuidedValues(entry), prompt: 'Reframe the source' },
+      roleInputs
+    );
+    const preview = normalizeRegistryRequest(entry.key, guided);
+
+    expect(createJobRequest(entry, guided, preview, roleInputs).inputs[0]).toMatchObject({
+      localSourceId: 'source-1',
+      metadata: {
+        name: 'reference.png',
+        sizeBytes: 42,
+        width: 1024,
+        height: 768,
+        metadataProbe: 'measured'
+      }
+    });
+  });
 });

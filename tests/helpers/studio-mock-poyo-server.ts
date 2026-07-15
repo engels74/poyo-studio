@@ -14,6 +14,7 @@ interface MockTask {
   outcome: MockTaskOutcome;
   released: boolean;
   polls: number;
+  outputCount: number;
 }
 
 const createdTime = '2026-07-15T12:00:00.000Z';
@@ -67,8 +68,13 @@ export async function startStudioMockPoyoServer(): Promise<{
       }
 
       if (url.pathname === '/api/generate/submit' && request.method === 'POST') {
-        const body = json as { model?: unknown };
+        const body = json as { model?: unknown; input?: { n?: unknown } };
         const model = typeof body?.model === 'string' ? body.model : 'unknown';
+        const requestedOutputCount = Number(body.input?.n);
+        const outputCount =
+          Number.isSafeInteger(requestedOutputCount) && requestedOutputCount >= 1
+            ? Math.min(4, requestedOutputCount)
+            : 1;
         const mediaKind = /grok|hailuo|kling|video|veo|wan-2\.[126]|seedance|omni/i.test(model)
           ? 'video'
           : 'image';
@@ -79,7 +85,8 @@ export async function startStudioMockPoyoServer(): Promise<{
           mediaKind,
           outcome: outcomes.shift() ?? 'success',
           released: false,
-          polls: 0
+          polls: 0,
+          outputCount
         });
         return Response.json({
           code: 200,
@@ -130,16 +137,14 @@ export async function startStudioMockPoyoServer(): Promise<{
             task_id: task.id,
             status: 'finished',
             credits_amount: task.mediaKind === 'video' ? 12 : 3,
-            files: [
-              {
-                file_url: `${url.origin}/media/${task.id}.${extension}`,
-                file_type: task.mediaKind,
-                format: extension,
-                content_type: task.mediaKind === 'video' ? 'video/mp4' : 'image/png',
-                file_name: `${task.id}.${extension}`,
-                file_size: bytes.byteLength
-              }
-            ],
+            files: Array.from({ length: task.outputCount }, (_, index) => ({
+              file_url: `${url.origin}/media/${task.id}-${index + 1}.${extension}`,
+              file_type: task.mediaKind,
+              format: extension,
+              content_type: task.mediaKind === 'video' ? 'video/mp4' : 'image/png',
+              file_name: `${task.id}-${index + 1}.${extension}`,
+              file_size: bytes.byteLength
+            })),
             created_time: createdTime,
             progress: 100
           }

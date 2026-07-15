@@ -25,6 +25,12 @@ import {
   visibleFields,
   workflowLabel
 } from '$lib/features/generation/studio-controller';
+import {
+  mediaMetadataLabel,
+  probeBrowserMedia,
+  validateLocalFileSelection,
+  type BrowserMediaMetadata
+} from '$lib/features/generation/media-preflight';
 import AppIcon from '$lib/components/ui/AppIcon.svelte';
 import Badge from '$lib/components/ui/Badge.svelte';
 import Button from '$lib/components/ui/Button.svelte';
@@ -37,6 +43,19 @@ interface Props {
 }
 
 type MobileStep = 'setup' | 'prompt' | 'inputs' | 'output' | 'review';
+type UploadPhase = 'preflight' | 'local' | 'poyo' | 'complete' | 'error';
+
+interface UploadProgressState {
+  phase: UploadPhase;
+  percent: number | null;
+  message: string;
+}
+
+interface SourceUploadResult {
+  source?: { id: string; name: string; mediaKind: 'image' | 'video'; sizeBytes: number };
+  upload?: { url: string; expiresAt: string };
+  error?: { message?: string };
+}
 
 let { data }: Props = $props();
 
@@ -91,6 +110,7 @@ let favorites = $state(
 let remoteDrafts = $state<Record<string, string>>({});
 let uploadingRole = $state<string | null>(null);
 let uploadError = $state<Record<string, string>>({});
+let uploadProgress = $state<Record<string, UploadProgressState>>({});
 let inspectorWidth = $state(380);
 let inspectorCollapsed = $state(false);
 let setupOpen = $state(false);
@@ -261,20 +281,57 @@ function addRemote(role: string): void {
 async function uploadFiles(role: string, files: FileList | null): Promise<void> {
   const definition = selectedEntry.inputRoles.find((item) => item.role === role);
   if (!definition || !files?.length || definition.mediaKind === 'audio') return;
+  const selectedFiles = Array.from(files);
+  const selectionIssues = validateLocalFileSelection(
+    definition,
+    (roleInputs[role] ?? []).length,
+    selectedFiles
+  );
+  if (selectionIssues.length) {
+    uploadError[role] = selectionIssues.join(' ');
+    uploadProgress[role] = { phase: 'error', percent: null, message: 'Local preflight failed.' };
+    return;
+  }
   uploadingRole = role;
   uploadError[role] = '';
+  uploadProgress[role] = {
+    phase: 'preflight',
+    percent: null,
+    message: 'Measuring dimensions and duration in this browser…'
+  };
+  const totalBytes = selectedFiles.reduce((total, file) => total + file.size, 0);
+  let completedBytes = 0;
   try {
-    for (const file of files) {
+    for (const [index, file] of selectedFiles.entries()) {
+      const metadata = await probeBrowserMedia(file, definition.mediaKind);
       const form = new FormData();
       form.append('file', file);
       form.append('mediaKind', definition.mediaKind);
-      const response = await fetch('/api/sources', { method: 'POST', body: form });
-      const result = (await response.json()) as {
-        source?: { id: string; name: string; mediaKind: 'image' | 'video'; sizeBytes: number };
-        upload?: { url: string; expiresAt: string };
-        error?: { message?: string };
-      };
-      if (!response.ok || !result.source || !result.upload)
+      const response = await uploadLocalSource(
+        form,
+        (loaded, requestTotal) => {
+          const fileFraction = requestTotal > 0 ? Math.min(1, loaded / requestTotal) : 0;
+          const transferred = completedBytes + file.size * fileFraction;
+          const percent = totalBytes > 0 ? Math.round((transferred / totalBytes) * 100) : null;
+          uploadProgress[role] = {
+            phase: 'local',
+            percent,
+            message: `Sending file ${index + 1} of ${selectedFiles.length} to the local server.`
+          };
+        },
+        () => {
+          const percent =
+            totalBytes > 0 ? Math.round(((completedBytes + file.size) / totalBytes) * 100) : null;
+          uploadProgress[role] = {
+            phase: 'poyo',
+            percent,
+            message:
+              'Local transfer complete. The server is validating and uploading to Poyo without byte-level progress.'
+          };
+        }
+      );
+      const result = response.body;
+      if (response.status < 200 || response.status >= 300 || !result.source || !result.upload)
         throw new Error(result.error?.message ?? 'Local source upload failed.');
       addRoleInput(role, {
         id: result.source.id,
@@ -285,18 +342,89 @@ async function uploadFiles(role: string, files: FileList | null): Promise<void> 
         name: result.source.name,
         mediaKind: result.source.mediaKind,
         sizeBytes: result.source.sizeBytes,
-        expiresAt: result.upload.expiresAt
+        expiresAt: result.upload.expiresAt,
+        ...(metadata
+          ? {
+              width: metadata.width,
+              height: metadata.height,
+              ...(metadata.durationSeconds === undefined
+                ? {}
+                : { durationSeconds: metadata.durationSeconds }),
+              metadataProbe: 'measured' as const
+            }
+          : { metadataProbe: 'unavailable' as const })
       });
+      applyObservedDuration(role, metadata);
+      completedBytes += file.size;
     }
+    uploadProgress[role] = {
+      phase: 'complete',
+      percent: 100,
+      message: 'Local transfer and Poyo upload completed.'
+    };
   } catch (error) {
     uploadError[role] = error instanceof Error ? error.message : 'Local source upload failed.';
+    uploadProgress[role] = { phase: 'error', percent: null, message: 'Upload stopped.' };
   } finally {
     uploadingRole = null;
   }
 }
 
+function uploadLocalSource(
+  form: FormData,
+  onProgress: (loaded: number, total: number) => void,
+  onLocalComplete: () => void
+): Promise<{ status: number; body: SourceUploadResult }> {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open('POST', '/api/sources');
+    request.responseType = 'json';
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(event.loaded, event.total);
+    };
+    request.upload.onload = onLocalComplete;
+    request.onerror = () =>
+      reject(new Error('The browser could not reach the local upload route.'));
+    request.onabort = () => reject(new Error('The local upload was cancelled.'));
+    request.onload = () => {
+      const body =
+        request.response && typeof request.response === 'object'
+          ? (request.response as SourceUploadResult)
+          : ({} as SourceUploadResult);
+      resolve({ status: request.status, body });
+    };
+    request.send(form);
+  });
+}
+
+function observedDurationField(role: string): string | null {
+  return role === 'source-video'
+    ? 'sourceVideoDuration'
+    : role === 'reference-video'
+      ? 'referenceVideoDuration'
+      : null;
+}
+
+function applyObservedDuration(role: string, metadata: BrowserMediaMetadata | null): void {
+  if (metadata?.durationSeconds === undefined) return;
+  const fieldKey = observedDurationField(role);
+  if (!fieldKey) return;
+  const field = selectedEntry.fields.find((candidate) => candidate.key === fieldKey);
+  if (!field) return;
+  const observed =
+    field.kind === 'integer'
+      ? Math.ceil(metadata.durationSeconds)
+      : Number(metadata.durationSeconds.toFixed(3));
+  updateGuided(fieldKey, observed);
+}
+
 function removeRoleInput(role: string, id: string): void {
-  roleInputs[role] = (roleInputs[role] ?? []).filter((item) => item.id !== id);
+  const remaining = (roleInputs[role] ?? []).filter((item) => item.id !== id);
+  roleInputs[role] = remaining;
+  if (!remaining.length) {
+    const fieldKey = observedDurationField(role);
+    if (fieldKey) delete guided[fieldKey];
+  }
   dirty = true;
   previewRevision += 1;
 }
@@ -595,7 +723,16 @@ function showMobileSection(section: MobileStep, mobile: boolean): boolean {
                       {#each roleInputs[role.role] ?? [] as input, index (input.id)}
                         <li class="flex items-center gap-2 rounded bg-background px-2.5 py-2 text-xs">
                           <span class="grid size-5 shrink-0 place-items-center rounded bg-stage text-stage-foreground">{index + 1}</span>
-                          <span class="min-w-0 flex-1 truncate">{input.name}</span>
+                          <span class="min-w-0 flex-1">
+                            <span class="block truncate">{input.name}</span>
+                            {#if input.width && input.height}
+                              <span class="mt-0.5 block text-[0.6875rem] text-muted-foreground">
+                                {mediaMetadataLabel({ width: input.width, height: input.height, ...(input.durationSeconds === undefined ? {} : { durationSeconds: input.durationSeconds }) })}
+                              </span>
+                            {:else if input.metadataProbe === 'unavailable'}
+                              <span class="mt-0.5 block text-[0.6875rem] leading-4 text-warning">Browser metadata unavailable; verify model dimensions and duration manually.</span>
+                            {/if}
+                          </span>
                           <Badge tone={input.source === 'uploaded' ? 'success' : 'neutral'}>{input.source}</Badge>
                           <button type="button" class="focus-ring rounded px-1 text-muted-foreground hover:text-destructive" aria-label={`Remove ${input.name}`} onclick={() => removeRoleInput(role.role, input.id)}>Remove</button>
                         </li>
@@ -631,11 +768,23 @@ function showMobileSection(section: MobileStep, mobile: boolean): boolean {
                       <button type="button" class="focus-ring min-h-9 rounded-[var(--radius)] border border-border bg-background px-2.5 text-xs font-semibold" onclick={() => addRemote(role.role)}>Add URL</button>
                     </div>
                   </div>
+                  {#if uploadProgress[role.role]}
+                    <div class="mt-2 rounded bg-background px-2.5 py-2" role="status" aria-live="polite">
+                      <div class="flex items-center justify-between gap-3 text-[0.6875rem] font-semibold">
+                        <span>Local browser upload</span>
+                        {#if uploadProgress[role.role]?.percent !== null}<span>{uploadProgress[role.role]?.percent}%</span>{/if}
+                      </div>
+                      {#if uploadProgress[role.role]?.percent !== null}
+                        <progress class="mt-1.5 h-1.5 w-full accent-primary" max="100" value={uploadProgress[role.role]?.percent ?? 0}>{uploadProgress[role.role]?.percent}%</progress>
+                      {/if}
+                      <p class="mt-1 text-[0.6875rem] leading-4 text-muted-foreground">{uploadProgress[role.role]?.message}</p>
+                    </div>
+                  {/if}
                   {#if uploadError[role.role]}<p class="mt-2 text-xs leading-5 text-destructive">{uploadError[role.role]}</p>{/if}
                 </div>
               {/each}
             </div>
-            <p class="mt-3 text-xs leading-5 text-muted-foreground">Moving a local original later may limit reuse. Generated outputs are downloaded separately.</p>
+            <p class="mt-3 text-xs leading-5 text-muted-foreground">Dimensions and duration are measured by this browser when its media decoder supports the file. The server independently rechecks bytes, type and signature, but cannot probe visual metadata before Poyo upload.</p>
           {:else}
             <p class="mt-2 text-sm text-muted-foreground">No source media is required for this workflow.</p>
           {/if}

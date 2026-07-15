@@ -14,6 +14,18 @@ import { getPlatformServices } from '../platform/runtime';
 import { PresetRepository } from '../presets/repository';
 import { ModelPreferenceRepository } from '../registry/preferences-repository';
 
+type StudioRegistryEntry =
+  | (typeof IMAGE_REGISTRY_ENTRIES)[number]
+  | (typeof VIDEO_REGISTRY_ENTRIES)[number];
+
+function compatibleGuidedValues(
+  entry: StudioRegistryEntry,
+  values: Record<string, unknown>
+): Record<string, unknown> {
+  const keys = new Set(entry.fields.map((field) => field.key));
+  return Object.fromEntries(Object.entries(values).filter(([key]) => keys.has(key)));
+}
+
 export async function loadStudioData(
   modality: 'image' | 'video',
   options: {
@@ -30,7 +42,8 @@ export async function loadStudioData(
   let preset = options.presetId
     ? new PresetRepository(platform.database).get(options.presetId)
     : null;
-  if (!preset && options.fromJobId) {
+  let copiedValues: PresetValues | null = null;
+  if (options.fromJobId) {
     const job = platform.database
       .query<
         {
@@ -46,10 +59,7 @@ export async function loadStudioData(
         'SELECT id,entry_key,workflow,guided_request_json,expert_diff_json,created_at FROM jobs WHERE id=?'
       )
       .get(options.fromJobId);
-    const entry = job?.entry_key
-      ? entries.find((candidate) => candidate.key === job.entry_key)
-      : null;
-    if (job && entry) {
+    if (job) {
       const inputRoles = platform.database
         .query<{ role: string; source_url: string | null; upload_url: string | null }, [string]>(
           'SELECT role,source_url,upload_url FROM job_inputs WHERE job_id=? ORDER BY role,input_order'
@@ -73,31 +83,60 @@ export async function loadStudioData(
           ? (JSON.parse(job.expert_diff_json) as Array<{ key: string; value: unknown }>)
           : []
       ).map(({ key, value }) => ({ key, value }));
-      preset = transientPreset(entry.key, job.workflow, `Copy of ${entry.displayName}`, {
+      copiedValues = {
         version: 1,
         modality,
         guided: JSON.parse(job.guided_request_json),
         expertOverrides,
         inputRoles
-      });
+      };
+      const entry = job.entry_key
+        ? entries.find((candidate) => candidate.key === job.entry_key)
+        : null;
+      if (!preset && entry)
+        preset = transientPreset(
+          entry.key,
+          job.workflow,
+          `Copy of ${entry.displayName}`,
+          copiedValues
+        );
     }
   }
-  if (!preset && options.sourceOutputId) {
+  if (options.sourceOutputId) {
     const output = platform.database
-      .query<{ remote_url: string | null; media_kind: 'image' | 'video' }, [string]>(
-        'SELECT remote_url,media_kind FROM job_outputs WHERE id=?'
-      )
+      .query<
+        { job_id: string; remote_url: string | null; media_kind: 'image' | 'video' },
+        [string]
+      >('SELECT job_id,remote_url,media_kind FROM job_outputs WHERE id=?')
       .get(options.sourceOutputId);
-    const entry = output ? studioReuseEntry(modality, output.media_kind) : undefined;
+    const sourceMatchesJob = !options.fromJobId || output?.job_id === options.fromJobId;
+    const currentEntry = preset
+      ? entries.find((candidate) => candidate.key === preset?.entryKey)
+      : undefined;
+    const entry =
+      output && currentEntry?.inputRoles.some((role) => role.mediaKind === output.media_kind)
+        ? currentEntry
+        : output
+          ? studioReuseEntry(modality, output.media_kind)
+          : undefined;
     const role = entry?.inputRoles.find((candidate) => candidate.mediaKind === output?.media_kind);
-    if (entry && role && output?.remote_url)
+    if (entry && role && output?.remote_url && sourceMatchesJob) {
+      const sourceValues = preset?.values ?? copiedValues;
+      const sameWorkflow = preset?.entryKey === entry.key;
+      const inputRoles = sameWorkflow
+        ? structuredClone(sourceValues?.inputRoles ?? []).filter(
+            (input) => input.role !== role.role
+          )
+        : [];
+      inputRoles.push({ role: role.role, source: 'remote', urls: [output.remote_url] });
       preset = transientPreset(entry.key, entry.workflow, `Remix in ${entry.displayName}`, {
         version: 1,
         modality,
-        guided: {},
-        expertOverrides: [],
-        inputRoles: [{ role: role.role, source: 'remote', urls: [output.remote_url] }]
+        guided: compatibleGuidedValues(entry, sourceValues?.guided ?? {}),
+        expertOverrides: sameWorkflow ? structuredClone(sourceValues?.expertOverrides ?? []) : [],
+        inputRoles
       });
+    }
   }
   return {
     modality,

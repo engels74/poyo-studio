@@ -39,7 +39,24 @@ async function chooseImageEditWorkflow(page: Page): Promise<void> {
     .fill('Transform the retained source into a quiet cyanotype');
   await inspector.getByLabel('Add local file').setInputFiles('tests/fixtures/media/tiny.png');
   await inspector.getByText('tiny.png').waitFor();
+  await inspector.getByText('1 × 1 px').waitFor();
+  await inspector.getByText('Local transfer and Poyo upload completed.').waitFor();
   await inspector.getByText('Request validated locally.').waitFor();
+}
+
+async function createMultiOutputImage(page: Page): Promise<void> {
+  const inspector = page.locator('#parameter-inspector');
+  await inspector.getByLabel('Creative intent').selectOption('text-to-image');
+  await inspector.getByLabel('Audited model').selectOption('gpt-4o-image:text-to-image');
+  await inspector
+    .getByRole('textbox', { name: /^Prompt/ })
+    .fill('Two cobalt paper sculptures for a related-output comparison');
+  await inspector.getByLabel('N', { exact: true }).fill('2');
+  await inspector.getByText('Request validated locally.').waitFor();
+  await inspector.getByRole('button', { name: 'Generate image' }).click();
+  await page.getByRole('heading', { name: 'Generation verified locally' }).waitFor({
+    timeout: 15_000
+  });
 }
 
 async function assertPrimaryRoutesAccessible(page: Page, baseUrl: string): Promise<void> {
@@ -94,7 +111,9 @@ test('E2E-01..15 production studios, recovery, library, settings and accessibili
     await inspector.getByRole('button', { name: 'Save preset', exact: true }).first().click();
     await inspector.getByText('Saved preset “Northern observatory”.').waitFor();
 
-    const imageGenerate = inspector.getByRole('button', { name: 'Generate image' });
+    const imageGenerate = inspector.getByRole('button', {
+      name: 'Generate image'
+    });
     await imageGenerate.dblclick();
     await waitUntil(
       () =>
@@ -130,12 +149,27 @@ test('E2E-01..15 production studios, recovery, library, settings and accessibili
     const database = new Database(harness.databasePath, { readonly: true });
     try {
       const input = database
-        .query<{ local_reference: string | null; upload_url: string | null }, []>(
-          'SELECT local_reference,upload_url FROM job_inputs ORDER BY rowid DESC LIMIT 1'
+        .query<
+          {
+            local_reference: string | null;
+            managed_source_id: string | null;
+            relative_path: string | null;
+            upload_url: string | null;
+          },
+          []
+        >(
+          `SELECT ji.local_reference,ji.managed_source_id,ms.relative_path,ji.upload_url
+           FROM job_inputs ji LEFT JOIN managed_sources ms ON ms.id=ji.managed_source_id
+           ORDER BY ji.rowid DESC LIMIT 1`
         )
         .get();
-      expect(input?.local_reference).toStartWith(`${harness.appData}/uploads/`);
-      expect(input?.local_reference && (await Bun.file(input.local_reference).exists())).toBe(true);
+      expect(input?.local_reference).toBeNull();
+      expect(input?.managed_source_id).toBeTruthy();
+      expect(input?.relative_path).toBeTruthy();
+      expect(
+        input?.relative_path &&
+          (await Bun.file(`${harness.appData}/uploads/${input.relative_path}`).exists())
+      ).toBe(true);
       expect(input?.upload_url).toContain('/media/source.png');
     } finally {
       database.close();
@@ -165,16 +199,19 @@ test('E2E-01..15 production studios, recovery, library, settings and accessibili
       harness.mock.requests.filter((request) => request.pathname === '/api/generate/submit')
     ).toHaveLength(3);
 
+    await page.goto(`${harness.url}/studio/image`);
+    await createMultiOutputImage(page);
+
     await page.goto(`${harness.url}/jobs`);
     await page.getByRole('heading', { name: 'Generation history' }).waitFor();
     expect(await page.getByText('Flux Schnell', { exact: true }).count()).toBeGreaterThan(0);
     expect(await page.getByText(/Grok Imagine Video/).count()).toBeGreaterThan(0);
     await page.getByRole('link', { name: 'Completed' }).click();
-    expect(await page.getByText('3 tracked jobs').count()).toBe(1);
+    expect(await page.getByText('4 tracked jobs').count()).toBe(1);
 
     await page.goto(`${harness.url}/library`);
     await page.getByRole('heading', { name: 'Generation groups' }).waitFor();
-    expect(await page.getByText('3 grouped generations').count()).toBe(1);
+    expect(await page.getByText('4 grouped generations').count()).toBe(1);
     await page.getByRole('link', { name: 'List view' }).click();
     await page.waitForURL(/view=list/);
     expect(await page.getByRole('link', { name: 'List view' }).getAttribute('aria-current')).toBe(
@@ -186,6 +223,48 @@ test('E2E-01..15 production studios, recovery, library, settings and accessibili
     await page.getByRole('link', { name: /Favorites/ }).click();
     await page.waitForURL(/favorite=true/);
     expect(await page.getByText('1 grouped generation').count()).toBe(1);
+
+    await page.goto(`${harness.url}/library`);
+    const comparisonGroup = page.locator('article').filter({
+      hasText: 'Two cobalt paper sculptures for a related-output comparison'
+    });
+    await comparisonGroup.getByRole('link', { name: 'GPT-4o Image', exact: true }).click();
+    await page.getByRole('heading', { name: 'Compare related outputs' }).waitFor();
+    expect(
+      await page.getByRole('combobox', { name: 'Output A', exact: true }).inputValue()
+    ).not.toBe(await page.getByRole('combobox', { name: 'Output B', exact: true }).inputValue());
+    await page
+      .getByRole('button', {
+        name: /Open full-screen media viewer for .* comparison output A/
+      })
+      .click();
+    const viewer = page.getByRole('dialog', { name: /comparison output A/ });
+    await viewer.waitFor();
+    await viewer.getByRole('button', { name: 'Zoom in' }).click();
+    await viewer.getByText('Zoom 125 percent.').waitFor();
+    expect(await seriousAccessibilityViolations(page)).toEqual([]);
+    await page.keyboard.press('Escape');
+    await page.getByRole('link', { name: 'Remix image' }).first().waitFor();
+    await page.getByRole('link', { name: 'Animate in Video Studio' }).first().click();
+    const remixedVideoInspector = page.locator('#parameter-inspector');
+    expect(await remixedVideoInspector.getByRole('textbox', { name: /^Prompt/ }).inputValue()).toBe(
+      'Two cobalt paper sculptures for a related-output comparison'
+    );
+    await remixedVideoInspector.getByText('127.0.0.1').waitFor();
+
+    await page.goto(`${harness.url}/studio/video`);
+    const videoEditInspector = page.locator('#parameter-inspector');
+    await videoEditInspector.getByLabel('Creative intent').selectOption('video-edit');
+    await videoEditInspector.getByLabel('Audited model').selectOption('happy-horse:video-edit');
+    await videoEditInspector
+      .getByRole('textbox', { name: /^Prompt/ })
+      .fill('Regrade the source video with cool evening light');
+    await videoEditInspector
+      .locator('input[type="file"][accept^="video/"]')
+      .setInputFiles('tests/fixtures/media/tiny.mp4');
+    await videoEditInspector.getByText('16 × 16 px · 0.20 s').waitFor();
+    await videoEditInspector.getByText('Local transfer and Poyo upload completed.').waitFor();
+    await videoEditInspector.getByText('sourceVideoDuration is below minimum.').waitFor();
 
     await page.goto(`${harness.url}/presets`);
     await page.getByRole('heading', { name: 'Saved presets' }).waitFor();
@@ -252,12 +331,13 @@ test('E2E-01..15 production studios, recovery, library, settings and accessibili
     await page.setViewportSize({ width: 1440, height: 900 });
     await assertPrimaryRoutesAccessible(page, harness.url);
 
-    expect(
-      browserRequests.every((requestUrl) => {
-        const url = new URL(requestUrl);
-        return url.hostname === '127.0.0.1' && url.port === new URL(harness.url).port;
-      })
-    ).toBe(true);
+    const applicationPort = new URL(harness.url).port;
+    const unexpectedBrowserRequests = browserRequests.filter((requestUrl) => {
+      const url = new URL(requestUrl);
+      if (!['http:', 'https:'].includes(url.protocol)) return false;
+      return url.hostname !== '127.0.0.1' || url.port !== applicationPort;
+    });
+    expect(unexpectedBrowserRequests).toEqual([]);
     const unexpectedConsoleErrors = issues.consoleErrors.filter(
       (message) =>
         !message.includes('ERR_INCOMPLETE_CHUNKED_ENCODING') &&

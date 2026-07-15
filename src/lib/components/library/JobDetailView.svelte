@@ -19,6 +19,15 @@ let pending = $state<string | null>(null);
 let feedback = $state('');
 let tags = $state(untrack(() => job.tags.join(', ')));
 let deleteChoices = $state<Record<string, LocalDeleteChoice>>({});
+const initialComparison = untrack(() => job.outputs.slice(0, 2).map((output) => output.outputId));
+let comparisonLeftId = $state(initialComparison[0] ?? '');
+let comparisonRightId = $state(initialComparison[1] ?? initialComparison[0] ?? '');
+let comparisonLeft = $derived(
+  job.outputs.find((output) => output.outputId === comparisonLeftId) ?? job.outputs[0]
+);
+let comparisonRight = $derived(
+  job.outputs.find((output) => output.outputId === comparisonRightId) ?? job.outputs[1]
+);
 
 async function post(path: string, body: Record<string, unknown> = {}): Promise<Response> {
   const response = await fetch(path, {
@@ -146,17 +155,60 @@ function removeOutput(outputId: string): void {
       <section aria-labelledby="outputs-heading">
         <div class="flex items-end justify-between gap-3"><div><p class="eyebrow-label">Media</p><h2 id="outputs-heading" class="mt-1 text-base font-semibold">{job.outputs.length} {job.outputs.length === 1 ? 'output' : 'outputs'}</h2></div><span class="text-xs text-muted-foreground">{job.verifiedOutputCount} verified locally</span></div>
         {#if job.outputs.length}
+          {#if job.outputs.length > 1}
+            <section class="mt-4 rounded-lg border border-border bg-muted/40 p-4" aria-labelledby="comparison-heading">
+              <div class="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <p class="eyebrow-label">Same generation</p>
+                  <h3 id="comparison-heading" class="mt-1 text-sm font-semibold">Compare related outputs</h3>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                  <label class="grid gap-1 text-xs font-semibold">
+                    Output A
+                    <select bind:value={comparisonLeftId} class="focus-ring h-8 rounded border border-input bg-background px-2 text-xs">
+                      {#each job.outputs as output (output.outputId)}<option value={output.outputId}>Output {output.outputOrder + 1}</option>{/each}
+                    </select>
+                  </label>
+                  <label class="grid gap-1 text-xs font-semibold">
+                    Output B
+                    <select bind:value={comparisonRightId} class="focus-ring h-8 rounded border border-input bg-background px-2 text-xs">
+                      {#each job.outputs as output (output.outputId)}<option value={output.outputId}>Output {output.outputOrder + 1}</option>{/each}
+                    </select>
+                  </label>
+                </div>
+              </div>
+              <div class="mt-4 grid gap-3 sm:grid-cols-2">
+                {#if comparisonLeft}
+                  <div>
+                    <p class="mb-2 text-xs font-semibold">A · Output {comparisonLeft.outputOrder + 1}</p>
+                    <MediaPreview mediaKind={comparisonLeft.mediaKind} src={comparisonLeft.mediaUrl} alt={`${job.displayName} comparison output A`} class="aspect-[4/3] rounded" controls={comparisonLeft.mediaKind === 'video'} viewable />
+                  </div>
+                {/if}
+                {#if comparisonRight}
+                  <div>
+                    <p class="mb-2 text-xs font-semibold">B · Output {comparisonRight.outputOrder + 1}</p>
+                    <MediaPreview mediaKind={comparisonRight.mediaKind} src={comparisonRight.mediaUrl} alt={`${job.displayName} comparison output B`} class="aspect-[4/3] rounded" controls={comparisonRight.mediaKind === 'video'} viewable />
+                  </div>
+                {/if}
+              </div>
+            </section>
+          {/if}
           <div class="mt-4 grid gap-5 sm:grid-cols-2">
             {#each job.outputs as output (output.outputId)}
               <article class="overflow-hidden rounded-lg border border-border bg-card">
-                <MediaPreview mediaKind={output.mediaKind} src={output.mediaUrl} alt={`${job.displayName} output ${output.outputOrder + 1}`} class="aspect-[4/3]" controls={output.mediaKind === 'video'} />
+                <MediaPreview mediaKind={output.mediaKind} src={output.mediaUrl} alt={`${job.displayName} output ${output.outputOrder + 1}`} class="aspect-[4/3]" controls={output.mediaKind === 'video'} viewable />
                 <div class="p-4">
                   <div class="flex flex-wrap items-center justify-between gap-2"><p class="text-sm font-semibold">Output {output.outputOrder + 1}</p><Badge tone={output.localAvailable ? 'success' : output.downloadState === 'failed' ? 'danger' : 'warning'}>{output.downloadState}</Badge></div>
                   <dl class="mt-3 grid grid-cols-2 gap-3 text-xs"><div><dt class="text-muted-foreground">File</dt><dd class="mt-1 truncate font-medium">{output.fileName ?? 'No local file'}</dd></div><div><dt class="text-muted-foreground">Size</dt><dd class="mt-1 font-medium">{output.byteSize === null ? '—' : byteSizeLabel(output.byteSize)}</dd></div><div><dt class="text-muted-foreground">Remote</dt><dd class="mt-1 font-medium">{output.remoteHost ?? 'Unavailable'}</dd></div><div><dt class="text-muted-foreground">Checksum</dt><dd class="mt-1 truncate font-mono">{output.checksum?.slice(0, 12) ?? '—'}</dd></div></dl>
                   <div class="mt-4 flex flex-wrap gap-2">
                     {#if output.localAvailable}<a href={output.mediaUrl ?? '#'} download class="focus-ring rounded border border-border px-2.5 py-1.5 text-xs font-semibold">Download</a>{/if}
                     {#if output.remoteAvailable && !output.localAvailable}<button onclick={() => retryDownload(output.outputId)} disabled={pending !== null} class="focus-ring rounded border border-border px-2.5 py-1.5 text-xs font-semibold">Download again</button>{/if}
-                    {#if output.remoteAvailable}<LinkButton href={`/studio/${job.modality}?sourceOutput=${output.outputId}`} variant="ghost">Use as input</LinkButton>{/if}
+                    {#if output.remoteAvailable && output.mediaKind === 'image'}
+                      <LinkButton href={`/studio/image?fromJob=${job.id}&sourceOutput=${output.outputId}`} variant="ghost">Remix image</LinkButton>
+                      <LinkButton href={`/studio/video?fromJob=${job.id}&sourceOutput=${output.outputId}`} variant="ghost">Animate in Video Studio</LinkButton>
+                    {:else if output.remoteAvailable}
+                      <LinkButton href={`/studio/video?fromJob=${job.id}&sourceOutput=${output.outputId}`} variant="ghost">Remix video</LinkButton>
+                    {/if}
                   </div>
                   <details class="mt-4 border-t border-border pt-3"><summary class="cursor-pointer text-xs font-semibold">Local deletion</summary><p class="mt-2 text-xs leading-5 text-muted-foreground">Removing metadata can leave an untracked file. No option here deletes remote Poyo data.</p><div class="mt-2 flex gap-2"><select aria-label={`Deletion consequence for output ${output.outputOrder + 1}`} value={deleteChoices[output.outputId] ?? 'file'} onchange={(event) => (deleteChoices[output.outputId] = event.currentTarget.value as LocalDeleteChoice)} class="focus-ring min-w-0 flex-1 rounded border border-input bg-background px-2 text-xs"><option value="file">File only</option><option value="metadata">Metadata only</option><option value="both">File + metadata</option></select><button onclick={() => removeOutput(output.outputId)} disabled={pending !== null} class="focus-ring rounded border border-destructive/40 px-2.5 text-xs font-semibold text-destructive">Remove</button></div></details>
                 </div>
