@@ -1,5 +1,7 @@
 <script lang="ts">
 import type { Snippet } from 'svelte';
+import AppShell from '$lib/components/shell/AppShell.svelte';
+import '../app.css';
 
 interface Props {
   children: Snippet;
@@ -8,6 +10,6 @@ interface Props {
 let { children }: Props = $props();
 </script>
 
-<div class="min-h-screen bg-stone-50 text-stone-950">
+<AppShell>
   {@render children()}
-</div>
+</AppShell>

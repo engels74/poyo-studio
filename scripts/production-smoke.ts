@@ -1,6 +1,17 @@
 const host = '127.0.0.1';
 const startupTimeoutMs = 15_000;
 const requestTimeoutMs = 1_000;
+const routeChecks = [
+  ['/', 'Dashboard'],
+  ['/studio/image', 'Image Studio'],
+  ['/studio/video', 'Video Studio'],
+  ['/jobs', 'Jobs'],
+  ['/library', 'Library'],
+  ['/models', 'Models'],
+  ['/presets', 'Presets'],
+  ['/settings', 'Settings'],
+  ['/settings/diagnostics', 'Diagnostics']
+] as const;
 
 function reserveLoopbackPort(): number {
   const reservation = Bun.serve({
@@ -102,13 +113,28 @@ try {
     });
   }
 
-  const body = await response.text();
-  if (!body.includes('Poyo Local Studio')) {
-    throw new Error('Production server response did not contain the application marker.');
+  for (const [pathname, marker] of routeChecks) {
+    const routeResponse =
+      pathname === '/'
+        ? response
+        : await fetch(new URL(pathname, url), {
+            signal: AbortSignal.timeout(requestTimeoutMs)
+          });
+
+    if (!routeResponse.ok) {
+      throw new Error(`Production route ${pathname} responded with HTTP ${routeResponse.status}.`);
+    }
+
+    const body = await routeResponse.text();
+    if (!body.includes('Poyo Local Studio') || !body.includes(marker)) {
+      throw new Error(`Production route ${pathname} did not contain its application markers.`);
+    }
   }
 
   inspectListener(server.pid, port);
-  console.log(`Production smoke passed: ${url} responded on the loopback listener.`);
+  console.log(
+    `Production smoke passed: ${routeChecks.length} routes responded on the loopback listener ${url}.`
+  );
 } catch (error) {
   failure = error;
 } finally {

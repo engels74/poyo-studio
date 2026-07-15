@@ -37,5 +37,8 @@
     "typescript": "5.9.3",
     "unocss": "66.7.5",
     "vite": "8.1.4"
+  },
+  "dependencies": {
+    "bits-ui": "2.18.1"
   }
 }
