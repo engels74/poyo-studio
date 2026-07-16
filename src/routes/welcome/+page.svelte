@@ -142,10 +142,12 @@ function saveDirectory(): void {
     outputLocation = result.outputLocation;
     directoryCheck = result.result;
     await markStep({ location: true });
+    next();
+    // Set the confirmation after advancing: goToStep() clears `message`, so setting it earlier
+    // would wipe the success feedback before it renders.
     message = outputLocation.requiresRestart
       ? 'Saved. New generations use this folder after the next restart; existing media stays available.'
       : 'Output folder saved.';
-    next();
   });
 }
 
@@ -221,8 +223,9 @@ function saveTheme(): void {
     });
     settings = result.settings;
     await markStep({ theme: true });
-    message = 'Appearance saved.';
     next();
+    // Set the confirmation after advancing so goToStep() does not clear it before it renders.
+    message = 'Appearance saved.';
   });
 }
 
