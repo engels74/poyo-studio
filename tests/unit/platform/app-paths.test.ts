@@ -40,6 +40,25 @@ describe('application paths', () => {
     expect(configured.source).toBe('environment');
   });
 
+  test('treats a whitespace-only PLS_MEDIA_DIR as unset and trims a real override', () => {
+    // Whitespace is not a real override: media falls back to the default under the root, matching
+    // the trim()-based "environment managed" check used by the output-location endpoints.
+    const blank = resolveAppPaths({
+      environment: { PLS_APP_DATA_DIR: '/srv/poyo', PLS_MEDIA_DIR: '   ' },
+      platform: 'linux',
+      homeDirectory: '/home/studio'
+    });
+    expect(blank.media).toBe('/srv/poyo/media');
+    expect(blank.defaultMedia).toBe('/srv/poyo/media');
+
+    const custom = resolveAppPaths({
+      environment: { PLS_APP_DATA_DIR: '/srv/poyo', PLS_MEDIA_DIR: '  /mnt/media  ' },
+      platform: 'linux',
+      homeDirectory: '/home/studio'
+    });
+    expect(custom.media).toBe('/mnt/media');
+  });
+
   test('creates private local directories and keeps paths inside configured roots', async () => {
     const temporary = await createTemporaryDirectory('poyo-paths-');
     cleanups.push(temporary.cleanup);

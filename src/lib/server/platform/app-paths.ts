@@ -69,8 +69,11 @@ export function resolveAppPaths(options: ResolveAppPathsOptions = {}): AppPaths 
     ? requireSafePath(configuredRoot, 'PLS_APP_DATA_DIR')
     : platformRoot(platform, environment, home);
 
-  const media = environment.PLS_MEDIA_DIR
-    ? requireSafePath(environment.PLS_MEDIA_DIR, 'PLS_MEDIA_DIR')
+  // Match the trim()-based check the output-location endpoints use for "environment managed": a
+  // whitespace-only PLS_MEDIA_DIR is not a real override, so it must not resolve a media path.
+  const mediaOverride = environment.PLS_MEDIA_DIR?.trim();
+  const media = mediaOverride
+    ? requireSafePath(mediaOverride, 'PLS_MEDIA_DIR')
     : join(root, 'media');
 
   return {
