@@ -85,6 +85,18 @@ describe('storage preferences', () => {
     expect(stored.outputDirectory).toBe('/vol/media');
     expect(stored.previousRoots).toEqual(['/old']);
   });
+
+  test('fails closed on corrupt paths: rejects non-absolute and normalizes the rest', async () => {
+    const settings = await repository();
+    settings.set('storage', {
+      outputDirectory: 'relative/media',
+      previousRoots: ['/abs/ok', 'also/relative', '../escape', '/nested/../ok']
+    });
+    const stored = readStoragePreferences(settings);
+    expect(stored.outputDirectory).toBeNull();
+    // Absolute roots survive and are normalized (`..` collapsed); relative ones are dropped.
+    expect(stored.previousRoots).toEqual(['/abs/ok', '/ok']);
+  });
 });
 
 describe('resolveEffectiveMedia', () => {

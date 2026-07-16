@@ -345,8 +345,13 @@ async function loadOutputs(jobId: string): Promise<void> {
       actualCredits?: number | null;
     };
     // A newer job may have become active while this request was in flight; a late response for a
-    // superseded job must not paint its media (or error) under the current job's header.
-    if (activeJob?.id !== jobId) return;
+    // superseded job must not paint its media (or error) under the current job's header. Clear the
+    // once-per-job marker so returning to this job re-fetches instead of staying stuck on a blank
+    // result stage.
+    if (activeJob?.id !== jobId) {
+      if (fetchedOutputsFor === jobId) fetchedOutputsFor = '';
+      return;
+    }
     // The charge is known from the job record regardless of whether the files are still viewable,
     // so surface it even when the media itself can't be loaded.
     if (response.ok) completedCredits = result.actualCredits ?? null;
@@ -361,6 +366,7 @@ async function loadOutputs(jobId: string): Promise<void> {
   } catch {
     if (activeJob?.id === jobId)
       outputsError = 'The generated media could not be loaded. Open the job to review it.';
+    else if (fetchedOutputsFor === jobId) fetchedOutputsFor = '';
   } finally {
     if (activeJob?.id === jobId) loadingOutputs = false;
   }
@@ -374,6 +380,7 @@ $effect(() => {
     outputs = null;
     outputsError = '';
     completedCredits = null;
+    loadingOutputs = false;
     fetchedOutputsFor = '';
     return;
   }

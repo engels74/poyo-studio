@@ -1,3 +1,4 @@
+import { isAbsolute, resolve } from 'node:path';
 import type {
   OnboardingStateDto,
   OnboardingStepsDto,
@@ -29,22 +30,34 @@ const DEFAULT_STEPS: OnboardingStepsDto = {
   defaults: false
 };
 
+/**
+ * Accept a persisted media path only when it is safe to apply: a non-empty, null-byte-free,
+ * absolute path, normalized (like the write-side `validateOutputDirectory`) so a corrupt or
+ * hand-edited value can never redirect where media is written or defeat later path matching.
+ */
+function safeStoredPath(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.includes('\0') || !isAbsolute(trimmed)) return null;
+  return resolve(trimmed);
+}
+
 function cleanStrings(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   const seen = new Set<string>();
   for (const entry of value) {
-    if (typeof entry === 'string' && entry.trim()) seen.add(entry.trim());
+    const safe = safeStoredPath(entry);
+    if (safe) seen.add(safe);
   }
   return [...seen];
 }
 
 export function readStoragePreferences(settings: SettingsRepository): StoragePreferences {
   const stored = settings.get<Partial<StoragePreferences>>(STORAGE_KEY)?.value;
-  const outputDirectory =
-    typeof stored?.outputDirectory === 'string' && stored.outputDirectory.trim()
-      ? stored.outputDirectory.trim()
-      : null;
-  return { outputDirectory, previousRoots: cleanStrings(stored?.previousRoots) };
+  return {
+    outputDirectory: safeStoredPath(stored?.outputDirectory),
+    previousRoots: cleanStrings(stored?.previousRoots)
+  };
 }
 
 /**
