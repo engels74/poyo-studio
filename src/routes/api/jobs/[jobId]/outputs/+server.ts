@@ -12,7 +12,10 @@ export const GET: RequestHandler = async ({ params, setHeaders }) => {
   setHeaders({ 'cache-control': 'no-store' });
   const platform = await getPlatformServices();
   const detail = await new LibraryRepository(platform.database).getJobDetail(params.jobId);
-  if (!detail) return new Response('Job not found.', { status: 404 });
+  // Return JSON (matching the success shape and the sibling api/jobs job_not_found response) so the
+  // studio's loadOutputs(), which always `await response.json()`s, can read a not-found error rather
+  // than hitting a parse failure that erases the 404 context.
+  if (!detail) return Response.json({ error: { code: 'job_not_found' } }, { status: 404 });
   const outputs: StudioOutputDto[] = detail.outputs.map((output) => ({
     outputId: output.outputId,
     mediaKind: output.mediaKind,
