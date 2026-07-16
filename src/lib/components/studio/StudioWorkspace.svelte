@@ -347,7 +347,9 @@ async function loadOutputs(jobId: string): Promise<void> {
     // A newer job may have become active while this request was in flight; a late response for a
     // superseded job must not paint its media (or error) under the current job's header.
     if (activeJob?.id !== jobId) return;
-    if (response.ok && result.outputs) {
+    // Treat "no viewable output" (e.g. files deleted or moved after completion) as an error rather
+    // than a blank success, so the result stage shows guidance instead of an empty preview.
+    if (response.ok && result.outputs?.some((output) => output.mediaUrl)) {
       outputs = result.outputs;
       completedCredits = result.actualCredits ?? null;
       selectedOutput = 0;

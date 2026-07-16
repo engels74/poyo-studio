@@ -7,6 +7,8 @@ export interface AppPaths {
   root: string;
   database: string;
   media: string;
+  /** The platform-default media directory, independent of any custom output-location override. */
+  defaultMedia?: string;
   /**
    * Roots that may contain readable generated media. Always includes the active `media`
    * directory; also includes historical directories after the output location changes, so
@@ -77,6 +79,7 @@ export function resolveAppPaths(options: ResolveAppPathsOptions = {}): AppPaths 
       ? requireSafePath(environment.PLS_DATABASE_PATH, 'PLS_DATABASE_PATH')
       : join(root, 'data', 'poyo-studio.sqlite'),
     media,
+    defaultMedia: media,
     mediaReadRoots: [media],
     uploads: join(root, 'uploads'),
     thumbnails: join(root, 'thumbnails'),

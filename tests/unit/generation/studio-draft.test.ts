@@ -71,6 +71,22 @@ describe('studio draft persistence', () => {
     expect(readStudioDraft('image')).toBeNull();
   });
 
+  test('rejects a missing sizeMode', () => {
+    localStorage.setItem(
+      'poyo-studio-draft:image',
+      JSON.stringify({ version: 1, entryKey: 'seedream-5-0-pro', values })
+    );
+    expect(readStudioDraft('image')).toBeNull();
+  });
+
+  test('rejects an invalid sizeMode', () => {
+    localStorage.setItem(
+      'poyo-studio-draft:image',
+      JSON.stringify({ ...draft, sizeMode: 'bogus' })
+    );
+    expect(readStudioDraft('image')).toBeNull();
+  });
+
   test('rejects malformed JSON', () => {
     localStorage.setItem('poyo-studio-draft:image', '{not json');
     expect(readStudioDraft('image')).toBeNull();

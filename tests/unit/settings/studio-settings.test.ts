@@ -137,6 +137,23 @@ describe('outputLocationDto', () => {
     expect(dto.requiresRestart).toBe(false);
   });
 
+  test('reports a pending revert to the default when a custom directory is cleared', () => {
+    // A custom dir is still active this session, but the preference was reset -> the next restart
+    // reverts to the default, so the DTO must surface the pending change rather than look immediate.
+    const dto = outputLocationDto(
+      { ...paths('/custom'), defaultMedia: '/root/media' },
+      { outputDirectory: null, previousRoots: ['/custom'] },
+      false
+    );
+    expect(dto).toEqual({
+      configured: false,
+      environmentManaged: false,
+      active: '/custom',
+      pending: '/root/media',
+      requiresRestart: true
+    });
+  });
+
   test('environment managed reports no local configuration', () => {
     const dto = outputLocationDto(
       paths('/env/media'),

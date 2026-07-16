@@ -16,6 +16,8 @@ export interface StudioDraft {
 
 const MAX_BYTES = 200_000;
 
+const SIZE_MODES: readonly SizeMode[] = ['resolution', 'aspect-ratio', 'custom'];
+
 function storageKey(modality: 'image' | 'video'): string {
   return `poyo-studio-draft:${modality}`;
 }
@@ -29,6 +31,7 @@ export function readStudioDraft(modality: 'image' | 'video'): StudioDraft | null
       parsed?.version !== 1 ||
       typeof parsed.entryKey !== 'string' ||
       !parsed.entryKey ||
+      !SIZE_MODES.includes(parsed.sizeMode as SizeMode) ||
       !parsed.values ||
       typeof parsed.values !== 'object'
     ) {

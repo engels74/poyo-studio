@@ -33,10 +33,13 @@ let onboarding = $state<OnboardingStateDto>(initial.onboarding);
 
 // Resume at the first incomplete stage so a reload does not restart the flow.
 function firstIncompleteStep(state: OnboardingStateDto): Step {
-  if (!state.steps.location) return 'location';
-  if (!state.steps.connection) return 'apiKey';
-  if (!state.steps.theme) return 'theme';
-  // All steps are done: resume on the final screen rather than restarting the flow at the intro.
+  const { location, connection, theme } = state.steps;
+  // A brand-new install (nothing done yet) starts on the intro; a reload mid-flow resumes at the
+  // first incomplete step, and a fully-complete state resumes on the final screen.
+  if (!location && !connection && !theme) return 'intro';
+  if (!location) return 'location';
+  if (!connection) return 'apiKey';
+  if (!theme) return 'theme';
   return 'done';
 }
 

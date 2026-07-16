@@ -98,10 +98,13 @@ export function outputLocationDto(
   storage: StoragePreferences,
   mediaFromEnvironment: boolean
 ): OutputLocationDto {
-  const pending =
-    !mediaFromEnvironment && storage.outputDirectory && storage.outputDirectory !== paths.media
-      ? storage.outputDirectory
-      : null;
+  // The media that will be active after the next restart: the environment/custom directory when
+  // set, otherwise the platform default. Clearing a custom directory (reset) therefore still
+  // reports a pending change back to the default until the next restart applies it.
+  const target = mediaFromEnvironment
+    ? paths.media
+    : (storage.outputDirectory ?? paths.defaultMedia ?? paths.media);
+  const pending = target !== paths.media ? target : null;
   return {
     configured: Boolean(storage.outputDirectory),
     environmentManaged: mediaFromEnvironment,
