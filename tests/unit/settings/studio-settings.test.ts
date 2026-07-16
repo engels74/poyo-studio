@@ -88,14 +88,16 @@ describe('resolveEffectiveMedia', () => {
     expect(effective.environmentManaged).toBe(false);
   });
 
-  test('environment media wins over a stored directory but historical roots stay readable', () => {
+  test('environment media wins but the configured custom and historical roots stay readable', () => {
     const effective = resolveEffectiveMedia(
       paths('/env/media'),
       { outputDirectory: '/custom', previousRoots: ['/old'] },
       true
     );
     expect(effective.media).toBe('/env/media');
-    expect(effective.mediaReadRoots).toEqual(['/env/media', '/old']);
+    // The custom directory may already hold media downloaded before PLS_MEDIA_DIR was set, so it
+    // must remain readable alongside the historical roots even though the env dir owns writes.
+    expect(effective.mediaReadRoots).toEqual(['/env/media', '/custom', '/old']);
     expect(effective.environmentManaged).toBe(true);
   });
 

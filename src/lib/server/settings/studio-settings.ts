@@ -87,9 +87,13 @@ export function resolveEffectiveMedia(
     );
     return { media, mediaReadRoots: roots, environmentManaged: false };
   }
-  const roots = [defaultMedia, ...historical].filter(
-    (root, index, all) => all.indexOf(root) === index
-  );
+  // Keep a still-configured custom directory readable even when the environment manages writes:
+  // media may already have been downloaded there before PLS_MEDIA_DIR was introduced.
+  const roots = [
+    defaultMedia,
+    ...(storage.outputDirectory ? [storage.outputDirectory] : []),
+    ...historical
+  ].filter((root, index, all) => all.indexOf(root) === index);
   return { media: defaultMedia, mediaReadRoots: roots, environmentManaged: mediaFromEnvironment };
 }
 
