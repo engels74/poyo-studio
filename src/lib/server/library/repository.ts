@@ -701,13 +701,17 @@ export class LibraryRepository extends DatabaseRepository {
           // Not under this root; try the next historical media root.
         }
       }
-      if (resolved) {
-        await Bun.file(resolved)
-          .delete()
-          .catch((error) => {
-            if ((error as { code?: string }).code !== 'ENOENT') throw error;
-          });
-      }
+      // If the file is under no known root, fail loudly rather than marking the output deleted
+      // while its file is orphaned on disk (which would report a success that did not happen).
+      if (!resolved)
+        throw new Error(
+          'The output file is outside the known media locations and cannot be removed.'
+        );
+      await Bun.file(resolved)
+        .delete()
+        .catch((error) => {
+          if ((error as { code?: string }).code !== 'ENOENT') throw error;
+        });
     }
     const timestamp = this.now().toISOString();
     this.transaction(() => {

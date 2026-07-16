@@ -47,6 +47,11 @@ let errorMessage = $state('');
 
 let directoryInput = $state('');
 let directoryCheck = $state<DirectoryCheck | null>(null);
+// Invalidate a prior directory check when the input changes so Save can't act on a stale "ok".
+$effect(() => {
+  directoryInput;
+  directoryCheck = null;
+});
 
 let apiKeyInput = $state('');
 let connectivityLabel = $state('');

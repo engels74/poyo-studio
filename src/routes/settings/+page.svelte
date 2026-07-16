@@ -26,6 +26,11 @@ let directoryInput = $state('');
 let directoryCheck = $state<{ ok: boolean; message: string; freeBytes: number | null } | null>(
   null
 );
+// Invalidate a prior directory check when the input changes so Save can't act on a stale "ok".
+$effect(() => {
+  directoryInput;
+  directoryCheck = null;
+});
 let draft = $state(settingsDraft(initial.settings));
 let connectivity = $state(initial.connectivity);
 let account = $state(initial.balance?.email ?? null);

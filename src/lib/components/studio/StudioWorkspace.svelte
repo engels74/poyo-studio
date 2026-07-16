@@ -318,7 +318,9 @@ $effect(() => {
   try {
     overrides = parseExpertOverrides(expertText);
   } catch {
-    overrides = [];
+    // Expert text is temporarily invalid (mid-edit): skip persisting rather than clobbering the
+    // stored draft's overrides with an empty set and losing the user's work on navigation/reload.
+    return;
   }
   writeStudioDraft(data.modality, {
     version: 1,
