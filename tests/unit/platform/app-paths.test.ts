@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { lstat } from 'node:fs/promises';
+import { chmod, lstat, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   ensureAppPaths,
+  ensureDirectoryExists,
   resolveAppPaths,
   resolvePathWithin
 } from '../../../src/lib/server/platform/app-paths';
@@ -77,5 +78,17 @@ describe('application paths', () => {
     if (process.platform !== 'win32') {
       expect((await lstat(paths.root)).mode & 0o077).toBe(0);
     }
+  });
+
+  test('ensureDirectoryExists keeps an existing user folder’s permissions instead of forcing 0o700', async () => {
+    if (process.platform === 'win32') return;
+    const temporary = await createTemporaryDirectory('poyo-writable-');
+    cleanups.push(temporary.cleanup);
+    const target = join(temporary.path, 'user-media');
+    await mkdir(target, { recursive: true });
+    await chmod(target, 0o755);
+    await ensureDirectoryExists(target);
+    // A user-chosen output folder must retain its own permissions (unlike the app's private dirs).
+    expect((await lstat(target)).mode & 0o777).toBe(0o755);
   });
 });

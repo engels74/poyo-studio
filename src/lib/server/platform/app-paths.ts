@@ -121,6 +121,21 @@ export async function ensurePrivateDirectory(path: string): Promise<void> {
   await chmod(path, 0o700);
 }
 
+/**
+ * Ensure a user-chosen directory exists and is a real (non-symlink) directory, creating it and any
+ * missing parents when absent. Unlike {@link ensurePrivateDirectory} it never chmods an existing
+ * directory, so a user's selected output folder keeps its own permissions.
+ */
+export async function ensureDirectoryExists(path: string): Promise<void> {
+  await mkdir(path, { recursive: true, mode: 0o700 });
+  if (process.platform === 'win32') return;
+
+  const info = await lstat(path);
+  if (!info.isDirectory() || info.isSymbolicLink()) {
+    throw new Error(`Expected a directory at ${path}.`);
+  }
+}
+
 export async function ensureAppPaths(paths: AppPaths): Promise<void> {
   await Promise.all([
     ensurePrivateDirectory(paths.root),

@@ -410,7 +410,7 @@ const stepTitles: Record<Step, string> = {
         Setup is complete. You can revisit any of these choices from Settings at any time.
       </p>
       <dl class="mt-4 grid gap-3 text-sm sm:grid-cols-3">
-        <div><dt class="text-muted-foreground">Output</dt><dd class="mt-1 font-semibold">{outputLocation.configured ? 'Custom folder' : 'Default'}</dd></div>
+        <div><dt class="text-muted-foreground">Output</dt><dd class="mt-1 font-semibold">{outputLocation.environmentManaged ? 'Environment managed' : outputLocation.configured ? 'Custom folder' : 'Default'}</dd></div>
         <div><dt class="text-muted-foreground">API key</dt><dd class="mt-1 font-semibold">{settings.apiKey.status === 'configured' ? 'Connected' : 'Not set'}</dd></div>
         <div><dt class="text-muted-foreground">Appearance</dt><dd class="mt-1 font-semibold capitalize">{settings.theme.defaultMode}</dd></div>
       </dl>

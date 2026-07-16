@@ -7,7 +7,7 @@ import { SecretMetadataRepository } from '../settings/secret-metadata-repository
 import { createPreferredSecretStore } from '../settings/secret-store';
 import { SettingsRepository } from '../settings/settings-repository';
 import { readStoragePreferences, resolveEffectiveMedia } from '../settings/studio-settings';
-import { ensureAppPaths, ensurePrivateDirectory, resolveAppPaths } from './app-paths';
+import { ensureAppPaths, ensureDirectoryExists, resolveAppPaths } from './app-paths';
 import { openDatabase } from './database';
 import { DATABASE_SCHEMA_VERSION } from './version';
 
@@ -69,7 +69,9 @@ async function createPlatformServices(): Promise<PlatformServices> {
   };
   if (paths.media !== basePaths.media) {
     try {
-      await ensurePrivateDirectory(paths.media);
+      // A user-chosen output folder is ensured to exist without forcing 0o700 on it — its own
+      // permissions are the user's to set, and avoiding chmod prevents a spurious EPERM fallback.
+      await ensureDirectoryExists(paths.media);
     } catch {
       // The chosen directory is currently unavailable (e.g. an unmounted volume). Fall back to
       // the platform default for this session rather than failing to boot; the preference is
