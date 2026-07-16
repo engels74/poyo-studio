@@ -7,6 +7,12 @@ export interface AppPaths {
   root: string;
   database: string;
   media: string;
+  /**
+   * Roots that may contain readable generated media. Always includes the active `media`
+   * directory; also includes historical directories after the output location changes, so
+   * previously downloaded outputs stay servable. Defaults to `[media]`.
+   */
+  mediaReadRoots?: string[];
   uploads: string;
   thumbnails: string;
   logs: string;
@@ -61,14 +67,17 @@ export function resolveAppPaths(options: ResolveAppPathsOptions = {}): AppPaths 
     ? requireSafePath(configuredRoot, 'PLS_APP_DATA_DIR')
     : platformRoot(platform, environment, home);
 
+  const media = environment.PLS_MEDIA_DIR
+    ? requireSafePath(environment.PLS_MEDIA_DIR, 'PLS_MEDIA_DIR')
+    : join(root, 'media');
+
   return {
     root,
     database: environment.PLS_DATABASE_PATH
       ? requireSafePath(environment.PLS_DATABASE_PATH, 'PLS_DATABASE_PATH')
       : join(root, 'data', 'poyo-studio.sqlite'),
-    media: environment.PLS_MEDIA_DIR
-      ? requireSafePath(environment.PLS_MEDIA_DIR, 'PLS_MEDIA_DIR')
-      : join(root, 'media'),
+    media,
+    mediaReadRoots: [media],
     uploads: join(root, 'uploads'),
     thumbnails: join(root, 'thumbnails'),
     logs: environment.PLS_LOG_DIR
@@ -95,7 +104,7 @@ export function resolvePathWithin(root: string, candidate: string): string {
   return resolvedCandidate;
 }
 
-async function ensurePrivateDirectory(path: string): Promise<void> {
+export async function ensurePrivateDirectory(path: string): Promise<void> {
   await mkdir(path, { recursive: true, mode: 0o700 });
   if (process.platform === 'win32') return;
 

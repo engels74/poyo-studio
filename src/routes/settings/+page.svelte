@@ -1,6 +1,6 @@
 <script lang="ts">
 import { untrack } from 'svelte';
-import { invalidateAll } from '$app/navigation';
+import { goto, invalidateAll } from '$app/navigation';
 import SettingsNavigation from '$lib/components/settings/SettingsNavigation.svelte';
 import ThemeToggle from '$lib/components/shell/ThemeToggle.svelte';
 import AppIcon from '$lib/components/ui/AppIcon.svelte';
@@ -21,6 +21,11 @@ import type { PageData } from './$types';
 let { data }: { data: PageData } = $props();
 const initial = untrack(() => data);
 let settings = $state<SettingsDto>(initial.settings);
+let outputLocation = $state(initial.outputLocation);
+let directoryInput = $state('');
+let directoryCheck = $state<{ ok: boolean; message: string; freeBytes: number | null } | null>(
+  null
+);
 let draft = $state(settingsDraft(initial.settings));
 let connectivity = $state(initial.connectivity);
 let account = $state(initial.balance?.email ?? null);
@@ -65,6 +70,53 @@ function adopt(next: SettingsDto): void {
   settings = next;
   draft = settingsDraft(next);
   consequence = next.localCleanup.consequence;
+}
+
+function checkOutputDirectory(): void {
+  if (!directoryInput.trim()) return;
+  void run('check-dir', async () => {
+    const result = await request<{ result: typeof directoryCheck }>(
+      '/api/settings/output-location',
+      'POST',
+      { directory: directoryInput }
+    );
+    directoryCheck = result.result;
+  });
+}
+
+function saveOutputDirectory(): void {
+  void run('save-dir', async () => {
+    const result = await request<{
+      result: typeof directoryCheck;
+      outputLocation: typeof outputLocation;
+    }>('/api/settings/output-location', 'PUT', { directory: directoryInput });
+    outputLocation = result.outputLocation;
+    directoryCheck = result.result;
+    message = outputLocation.requiresRestart
+      ? 'Saved. New outputs use this folder after the next restart; existing media stays available.'
+      : 'Output folder updated.';
+  });
+}
+
+function resetOutputDirectory(): void {
+  void run('reset-dir', async () => {
+    const result = await request<{ outputLocation: typeof outputLocation }>(
+      '/api/settings/output-location',
+      'DELETE',
+      {}
+    );
+    outputLocation = result.outputLocation;
+    directoryInput = '';
+    directoryCheck = null;
+    message = 'Reverted to the default output location. It applies after the next restart.';
+  });
+}
+
+function rerunSetup(): void {
+  void run('rerun', async () => {
+    await request('/api/onboarding', 'PUT', { reopen: true });
+    await goto('/welcome');
+  });
 }
 
 function applyBrowserTheme(): void {
@@ -189,6 +241,11 @@ function applyCleanup(): void {
       <p class="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
         Environment configuration is authoritative. Secrets and filesystem operations remain on the loopback server.
       </p>
+      <div class="mt-3">
+        <button onclick={rerunSetup} disabled={pending !== null} class="focus-ring inline-flex min-h-8 items-center gap-1.5 rounded border border-border px-3 text-xs font-semibold disabled:opacity-50">
+          <AppIcon name="sparkles" size={14} /> Re-run first-run setup
+        </button>
+      </div>
 
       {#if message}<p class="mt-4 rounded border border-success/30 bg-success/10 px-4 py-3 text-sm" role="status">{message}</p>{/if}
       {#if errorMessage}<p class="mt-4 rounded border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert">{errorMessage}</p>{/if}
@@ -213,6 +270,25 @@ function applyCleanup(): void {
         <section id="storage" class="py-6" aria-labelledby="storage-heading">
           <div class="flex flex-wrap items-start justify-between gap-4"><div><h3 id="storage-heading" class="section-heading">Storage and downloads</h3><p class="mt-2 text-sm leading-6 text-muted-foreground">Paths are resolved by the local server. Media remains indefinitely unless an explicit cleanup policy is saved and confirmed.</p></div><Badge tone="neutral">{settings.storage.source === 'environment' ? 'Environment paths' : 'Platform defaults'}</Badge></div>
           <dl class="mt-4 grid gap-3 text-xs sm:grid-cols-2"><div><dt class="text-muted-foreground">Indexed media</dt><dd class="mt-1 font-semibold">{byteSizeLabel(data.storage.indexedBytes)} · {data.storage.verifiedFiles} verified files</dd></div><div><dt class="text-muted-foreground">Disk free</dt><dd class="mt-1 font-semibold">{data.storage.freeBytes === null ? 'Unavailable' : byteSizeLabel(data.storage.freeBytes)}</dd></div>{#each [['Media', settings.storage.media], ['Uploads', settings.storage.uploads], ['Database', settings.storage.database], ['Logs', settings.storage.logs]] as [label, path]}<div><dt class="text-muted-foreground">{label}</dt><dd class="mt-1 break-all font-mono text-[0.6875rem]">{path}</dd></div>{/each}</dl>
+          <div class="mt-5 border-t border-border pt-4">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <h4 class="text-xs font-semibold">Output location</h4>
+              {#if outputLocation.environmentManaged}<Badge tone="neutral">Environment managed</Badge>{:else if outputLocation.configured}<Badge tone="info">Custom folder</Badge>{/if}
+            </div>
+            <p class="mt-1 text-xs leading-5 text-muted-foreground">Generated media is written here. Existing outputs stay readable when the location changes; a change applies to new outputs after the next restart.</p>
+            <p class="mt-2 break-all rounded bg-muted px-3 py-2 font-mono text-[0.6875rem]">{outputLocation.active}{#if outputLocation.pending} → {outputLocation.pending} <span class="text-warning">(after restart)</span>{/if}</p>
+            {#if outputLocation.environmentManaged}
+              <p class="mt-2 text-xs text-muted-foreground">Controlled by the <span class="font-mono">PLS_MEDIA_DIR</span> environment variable.</p>
+            {:else}
+              <div class="mt-2 flex flex-col gap-2 sm:flex-row">
+                <input bind:value={directoryInput} spellcheck="false" autocomplete="off" placeholder="/absolute/path/to/folder" aria-label="Custom output folder" class="focus-ring h-9 min-w-0 flex-1 rounded border border-input bg-background px-3 font-mono text-xs" />
+                <button onclick={checkOutputDirectory} disabled={pending !== null || !directoryInput.trim()} class="focus-ring min-h-9 rounded border border-border px-3 text-xs font-semibold disabled:opacity-50">Check</button>
+                <button onclick={saveOutputDirectory} disabled={pending !== null || !directoryCheck?.ok} class="focus-ring min-h-9 rounded bg-primary px-3 text-xs font-semibold text-primary-foreground disabled:opacity-50">Save</button>
+                {#if outputLocation.configured}<button onclick={resetOutputDirectory} disabled={pending !== null} class="focus-ring min-h-9 rounded border border-border px-3 text-xs font-semibold">Reset to default</button>{/if}
+              </div>
+              {#if directoryCheck}<p class="mt-1.5 text-xs {directoryCheck.ok ? 'text-success' : 'text-destructive'}" role="status">{directoryCheck.message}</p>{/if}
+            {/if}
+          </div>
           <label class="mt-5 flex items-start gap-3 text-sm"><input type="checkbox" bind:checked={draft.automaticDownloads} class="focus-ring mt-0.5 size-4" /><span><strong>Download successful outputs automatically</strong><span class="mt-1 block text-xs leading-5 text-muted-foreground">Recommended because remote retention is not documented.</span></span></label>
         </section>
 

@@ -1,0 +1,206 @@
+import { afterEach, describe, expect, test } from 'bun:test';
+import type { AppPaths } from '../../../src/lib/server/platform/app-paths';
+import { openDatabase } from '../../../src/lib/server/platform/database';
+import { SettingsRepository } from '../../../src/lib/server/settings/settings-repository';
+import {
+  computeOnboardingState,
+  outputLocationDto,
+  readOnboarding,
+  readStoragePreferences,
+  resolveEffectiveMedia,
+  saveOutputDirectory,
+  updateOnboarding
+} from '../../../src/lib/server/settings/studio-settings';
+import { createTemporaryDirectory } from '../../helpers/temporary-directory';
+import { join } from 'node:path';
+
+const cleanups: Array<() => Promise<void> | void> = [];
+afterEach(async () => {
+  for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+});
+
+async function repository(): Promise<SettingsRepository> {
+  const dir = await createTemporaryDirectory('studio-settings');
+  const database = await openDatabase(join(dir.path, 'studio.sqlite'));
+  cleanups.push(() => dir.cleanup());
+  cleanups.push(() => database.close());
+  return new SettingsRepository(database);
+}
+
+function paths(media: string): AppPaths {
+  return {
+    root: '/root',
+    database: '/root/data/db.sqlite',
+    media,
+    uploads: '/root/uploads',
+    thumbnails: '/root/thumbnails',
+    logs: '/root/logs',
+    secrets: '/root/secrets',
+    temporary: '/root/tmp',
+    source: 'platform-default'
+  };
+}
+
+describe('storage preferences', () => {
+  test('defaults to no custom directory', async () => {
+    const settings = await repository();
+    expect(readStoragePreferences(settings)).toEqual({ outputDirectory: null, previousRoots: [] });
+  });
+
+  test('saving a directory retains the previous active root for read access', async () => {
+    const settings = await repository();
+    saveOutputDirectory(settings, '/volumes/work/media', '/root/media');
+    const stored = readStoragePreferences(settings);
+    expect(stored.outputDirectory).toBe('/volumes/work/media');
+    expect(stored.previousRoots).toContain('/root/media');
+  });
+
+  test('changing the directory again keeps every historical root and drops the new one from history', async () => {
+    const settings = await repository();
+    saveOutputDirectory(settings, '/a', '/root/media');
+    saveOutputDirectory(settings, '/b', '/a');
+    const stored = readStoragePreferences(settings);
+    expect(stored.outputDirectory).toBe('/b');
+    expect(stored.previousRoots).toContain('/root/media');
+    expect(stored.previousRoots).toContain('/a');
+    expect(stored.previousRoots).not.toContain('/b');
+  });
+
+  test('clearing reverts future output to default but keeps prior roots readable', async () => {
+    const settings = await repository();
+    saveOutputDirectory(settings, '/a', '/root/media');
+    saveOutputDirectory(settings, null, '/a');
+    const stored = readStoragePreferences(settings);
+    expect(stored.outputDirectory).toBeNull();
+    expect(stored.previousRoots).toContain('/a');
+  });
+});
+
+describe('resolveEffectiveMedia', () => {
+  test('uses the custom directory when set and env is not managing media', () => {
+    const effective = resolveEffectiveMedia(
+      paths('/root/media'),
+      { outputDirectory: '/custom', previousRoots: ['/old'] },
+      false
+    );
+    expect(effective.media).toBe('/custom');
+    expect(effective.mediaReadRoots).toEqual(['/custom', '/root/media', '/old']);
+    expect(effective.environmentManaged).toBe(false);
+  });
+
+  test('environment media wins over a stored directory but historical roots stay readable', () => {
+    const effective = resolveEffectiveMedia(
+      paths('/env/media'),
+      { outputDirectory: '/custom', previousRoots: ['/old'] },
+      true
+    );
+    expect(effective.media).toBe('/env/media');
+    expect(effective.mediaReadRoots).toEqual(['/env/media', '/old']);
+    expect(effective.environmentManaged).toBe(true);
+  });
+
+  test('falls back to the default media directory when nothing is configured', () => {
+    const effective = resolveEffectiveMedia(
+      paths('/root/media'),
+      { outputDirectory: null, previousRoots: [] },
+      false
+    );
+    expect(effective.media).toBe('/root/media');
+    expect(effective.mediaReadRoots).toEqual(['/root/media']);
+  });
+});
+
+describe('outputLocationDto', () => {
+  test('flags a pending directory that will apply after restart', () => {
+    // Active media is still the default; the stored directory differs -> restart required.
+    const dto = outputLocationDto(
+      paths('/root/media'),
+      { outputDirectory: '/custom', previousRoots: [] },
+      false
+    );
+    expect(dto).toEqual({
+      configured: true,
+      environmentManaged: false,
+      active: '/root/media',
+      pending: '/custom',
+      requiresRestart: true
+    });
+  });
+
+  test('no pending change once the directory is active', () => {
+    const dto = outputLocationDto(
+      paths('/custom'),
+      { outputDirectory: '/custom', previousRoots: [] },
+      false
+    );
+    expect(dto.pending).toBeNull();
+    expect(dto.requiresRestart).toBe(false);
+  });
+
+  test('environment managed reports no local configuration', () => {
+    const dto = outputLocationDto(
+      paths('/env/media'),
+      { outputDirectory: null, previousRoots: [] },
+      true
+    );
+    expect(dto.environmentManaged).toBe(true);
+    expect(dto.configured).toBe(false);
+  });
+});
+
+describe('onboarding state', () => {
+  test('a brand-new install with no key or history is incomplete', () => {
+    const state = computeOnboardingState(null, { apiKeyConfigured: false, hasHistory: false });
+    expect(state.completed).toBe(false);
+    expect(state.inferred).toBe(false);
+  });
+
+  test('an existing install with a configured key is inferred complete', () => {
+    const state = computeOnboardingState(null, { apiKeyConfigured: true, hasHistory: false });
+    expect(state.completed).toBe(true);
+    expect(state.inferred).toBe(true);
+  });
+
+  test('an existing install with prior jobs/media is inferred complete', () => {
+    const state = computeOnboardingState(null, { apiKeyConfigured: false, hasHistory: true });
+    expect(state.completed).toBe(true);
+    expect(state.inferred).toBe(true);
+  });
+
+  test('an explicit completion marker is not treated as inferred', () => {
+    const state = computeOnboardingState(
+      {
+        version: 1,
+        completedAt: '2026-01-01T00:00:00.000Z',
+        dismissedAt: null,
+        steps: { location: true, connection: true, theme: true, defaults: true }
+      },
+      { apiKeyConfigured: false, hasHistory: false }
+    );
+    expect(state.completed).toBe(true);
+    expect(state.inferred).toBe(false);
+  });
+
+  test('update records completion and reopen clears it', async () => {
+    const settings = await repository();
+    const completed = updateOnboarding(settings, { complete: true, steps: { location: true } });
+    expect(completed.completedAt).not.toBeNull();
+    expect(completed.steps.location).toBe(true);
+    expect(readOnboarding(settings)?.completedAt).not.toBeNull();
+
+    const reopened = updateOnboarding(settings, { reopen: true });
+    expect(reopened.completedAt).toBeNull();
+    expect(reopened.dismissedAt).toBeNull();
+  });
+
+  test('dismiss marks completion without a completedAt', async () => {
+    const settings = await repository();
+    const dismissed = updateOnboarding(settings, { dismiss: true });
+    expect(dismissed.dismissedAt).not.toBeNull();
+    const state = computeOnboardingState(readOnboarding(settings), {
+      apiKeyConfigured: false,
+      hasHistory: false
+    });
+    expect(state.completed).toBe(true);
+  });
+});
