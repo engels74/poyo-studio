@@ -34,6 +34,11 @@ import {
   visibleFields,
   workflowLabel
 } from '$lib/features/generation/studio-controller';
+import {
+  clearStudioDraft,
+  readStudioDraft,
+  writeStudioDraft
+} from '$lib/features/generation/studio-draft';
 import type {
   ExpertOverride,
   FieldDefinition,
@@ -128,6 +133,8 @@ let presetDescription = $state(initialData.preset?.description ?? '');
 let presetMessage = $state(initialData.preset ? `Loaded preset “${initialData.preset.name}”.` : '');
 let lastEventId = -1;
 let recoverySequence = 0;
+let hydrated = $state(false);
+let restoredMessage = $state('');
 
 const pendingActionStorageKey = `poyo-studio-pending-action:${initialData.modality}`;
 interface PendingAction {
@@ -288,6 +295,25 @@ $effect(() => {
   expertText;
   const timer = window.setTimeout(() => void requestPreview(), 260);
   return () => window.clearTimeout(timer);
+});
+
+// Persist a secrets-free draft so in-app navigation and reloads restore the studio setup.
+// Guarded by `hydrated` so the initial default state never overwrites a stored draft before
+// onMount has had a chance to restore it.
+$effect(() => {
+  if (!hydrated) return;
+  let overrides: ExpertOverride[] = [];
+  try {
+    overrides = parseExpertOverrides(expertText);
+  } catch {
+    overrides = [];
+  }
+  writeStudioDraft(data.modality, {
+    version: 1,
+    entryKey,
+    sizeMode,
+    values: presetValues(data.modality, guided, overrides, roleInputs)
+  });
 });
 
 function addRoleInput(role: string, input: StudioRoleInput): void {
@@ -581,6 +607,8 @@ function resetDraft(): void {
   submissionLocked = false;
   dirty = false;
   sizeMode = inferSizeMode(selectedEntry, guided);
+  restoredMessage = '';
+  clearStudioDraft(data.modality);
   previewRevision += 1;
 }
 
@@ -729,6 +757,39 @@ function abandonPendingAction(): void {
 }
 
 onMount(() => {
+  // Restore the last studio draft unless an explicit preset/job URL or an unresolved paid
+  // action is driving the initial state. Preserve only what is still valid for the model.
+  if (!initialData.preset && !readPendingAction()) {
+    const draft = readStudioDraft(data.modality);
+    if (draft) {
+      const entry = data.entries.find((item) => item.key === draft.entryKey);
+      if (entry) {
+        entryKey = entry.key;
+        guided = initialGuidedValues(entry, draft.values);
+        roleInputs = initialRoleInputs(entry, draft.values);
+        const overrides = filterRetiredExpertOverrides(entry, draft.values.expertOverrides ?? []);
+        expertText = overrides.length
+          ? JSON.stringify(
+              Object.fromEntries(overrides.map((item) => [item.key, item.value])),
+              null,
+              2
+            )
+          : '';
+        sizeMode = sizeModes(entry).includes(draft.sizeMode)
+          ? draft.sizeMode
+          : inferSizeMode(entry, guided);
+        dirty = true;
+        previewRevision += 1;
+        restoredMessage = Object.keys(roleInputs).length
+          ? 'Restored your last setup. Locally selected files may need to be added again.'
+          : 'Restored your last setup.';
+      } else {
+        clearStudioDraft(data.modality);
+        restoredMessage = 'Your last model is unavailable, so the studio reset to defaults.';
+      }
+    }
+  }
+  hydrated = true;
   void reconcilePendingAction();
   const events = new EventSource('/api/events/jobs');
   events.onopen = () => (connection = 'connected');
@@ -1038,6 +1099,7 @@ function showMobileSection(section: MobileStep, mobile: boolean): boolean {
         </div>
       {/if}
       {#if presetMessage}<p class="mb-2 text-xs leading-5 text-muted-foreground">{presetMessage}</p>{/if}
+      {#if restoredMessage}<p class="mb-2 text-xs leading-5 text-muted-foreground">{restoredMessage}</p>{/if}
       {#if previewIssues.length}
         <div class="mb-2" role="alert">
           {#each previewIssues.slice(0, 2) as issue (issue)}<p class="text-xs leading-5 text-destructive">{issue}</p>{/each}
