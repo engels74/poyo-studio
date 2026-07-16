@@ -7,7 +7,12 @@ import {
   moreNavigation,
   navigationGroups
 } from '../../src/lib/navigation';
-import { isThemePreference, nextThemePreference, resolveTheme } from '../../src/lib/theme';
+import {
+  injectThemeDefault,
+  isThemePreference,
+  nextThemePreference,
+  resolveTheme
+} from '../../src/lib/theme';
 
 const requiredRoutes = [
   '/',
@@ -78,6 +83,27 @@ describe('theme and accessibility foundations', () => {
     expect(nextThemePreference('light')).toBe('dark');
     expect(nextThemePreference('dark')).toBe('system');
     expect(nextThemePreference('system')).toBe('light');
+  });
+
+  test('injects the pre-hydration theme default resiliently onto the html tag', () => {
+    // Plain tag as it currently ships in app.html.
+    expect(injectThemeDefault('<!doctype html>\n<html lang="en-GB">\n  <head>', 'dark')).toBe(
+      '<!doctype html>\n<html lang="en-GB" data-theme-default="dark">\n  <head>'
+    );
+
+    // Resilient to markup drift: an added attribute must not silently skip the injection.
+    expect(injectThemeDefault('<html lang="en-US" class="app">', 'system')).toBe(
+      '<html lang="en-US" class="app" data-theme-default="system">'
+    );
+    expect(injectThemeDefault('<html>', 'light')).toBe('<html data-theme-default="light">');
+
+    // Idempotent: never double-inject if the attribute is already present.
+    const injected = '<html lang="en-GB" data-theme-default="light">';
+    expect(injectThemeDefault(injected, 'dark')).toBe(injected);
+
+    // No <html> tag (a later stream chunk) is returned untouched, and the doctype is not matched.
+    expect(injectThemeDefault('<div>body chunk</div>', 'dark')).toBe('<div>body chunk</div>');
+    expect(injectThemeDefault('<!doctype html>', 'dark')).toBe('<!doctype html>');
   });
 
   test('includes skip links, one route heading and a polite route announcer', async () => {
