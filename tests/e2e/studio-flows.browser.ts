@@ -329,7 +329,7 @@ async function createMultiOutputImage(page: Page): Promise<void> {
   await inspector.getByLabel('N', { exact: true }).fill('2');
   await inspector.getByText('Request validated locally.').waitFor();
   await inspector.getByRole('button', { name: 'Generate image' }).click();
-  await page.getByRole('heading', { name: 'Generation verified locally' }).waitFor({
+  await page.getByRole('heading', { name: 'Generated image result' }).waitFor({
     timeout: 15_000
   });
 }
@@ -1213,7 +1213,7 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
           .length === 1,
       'Image submission did not reach the mock server exactly once.'
     );
-    await page.getByRole('heading', { name: 'Generation verified locally' }).waitFor({
+    await page.getByRole('heading', { name: 'Generated image result' }).waitFor({
       timeout: 15_000
     });
     expect(
@@ -1232,7 +1232,7 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
       .locator('#parameter-inspector')
       .getByRole('button', { name: 'Generate image' })
       .click();
-    await page.getByRole('heading', { name: 'Generation verified locally' }).waitFor({
+    await page.getByRole('heading', { name: 'Generated image result' }).waitFor({
       timeout: 15_000
     });
     expect(
@@ -1283,7 +1283,7 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     await harness.startApp();
     await page.getByText('Live updates connected').waitFor({ timeout: 12_000 });
     harness.mock.releaseHeldTasks();
-    await page.getByRole('heading', { name: 'Generation verified locally' }).waitFor({
+    await page.getByRole('heading', { name: 'Generated video result' }).waitFor({
       timeout: 15_000
     });
     expect(harness.mock.tasks.size).toBe(3);

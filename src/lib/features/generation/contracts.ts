@@ -57,6 +57,16 @@ export interface StudioPreviewError {
   issues?: string[];
 }
 
+export interface StudioOutputDto {
+  outputId: string;
+  mediaKind: 'image' | 'video';
+  mediaUrl: string | null;
+  aspectRatio: string | null;
+  fileName: string | null;
+  downloadState: string;
+  localAvailable: boolean;
+}
+
 export interface StudioJobDto {
   id: string;
   workflow: string;

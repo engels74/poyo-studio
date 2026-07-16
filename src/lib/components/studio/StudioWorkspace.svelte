@@ -9,6 +9,7 @@ import type {
   StudioEntry,
   StudioJobDto,
   StudioLoadData,
+  StudioOutputDto,
   StudioRoleInput
 } from '$lib/features/generation/contracts';
 import {
@@ -135,6 +136,11 @@ let lastEventId = -1;
 let recoverySequence = 0;
 let hydrated = $state(false);
 let restoredMessage = $state('');
+let outputs = $state<StudioOutputDto[] | null>(null);
+let outputsError = $state('');
+let loadingOutputs = $state(false);
+let selectedOutput = $state(0);
+let fetchedOutputsFor = '';
 
 const pendingActionStorageKey = `poyo-studio-pending-action:${initialData.modality}`;
 interface PendingAction {
@@ -314,6 +320,45 @@ $effect(() => {
     sizeMode,
     values: presetValues(data.modality, guided, overrides, roleInputs)
   });
+});
+
+async function loadOutputs(jobId: string): Promise<void> {
+  loadingOutputs = true;
+  outputsError = '';
+  try {
+    const response = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/outputs`);
+    const result = (await response.json()) as { outputs?: StudioOutputDto[] };
+    if (response.ok && result.outputs) {
+      outputs = result.outputs;
+      selectedOutput = 0;
+    } else {
+      outputsError = 'The generated media could not be loaded. Open the job to review it.';
+    }
+  } catch {
+    outputsError = 'The generated media could not be loaded. Open the job to review it.';
+  } finally {
+    loadingOutputs = false;
+  }
+}
+
+// Load verified outputs into the result stage once a job completes. A plain (non-reactive)
+// guard fetches exactly once per job and avoids an effect loop.
+$effect(() => {
+  const job = activeJob;
+  if (!job) {
+    outputs = null;
+    outputsError = '';
+    fetchedOutputsFor = '';
+    return;
+  }
+  if (
+    job.localPhase === 'complete' &&
+    job.remoteStatus !== 'failed' &&
+    fetchedOutputsFor !== job.id
+  ) {
+    fetchedOutputsFor = job.id;
+    void loadOutputs(job.id);
+  }
 });
 
 function addRoleInput(role: string, input: StudioRoleInput): void {
@@ -778,7 +823,8 @@ onMount(() => {
         sizeMode = sizeModes(entry).includes(draft.sizeMode)
           ? draft.sizeMode
           : inferSizeMode(entry, guided);
-        dirty = true;
+        // Treat the restored draft as the baseline, not an unsaved edit, so switching model
+        // afterwards does not prompt to discard "changes" the user did not just make.
         previewRevision += 1;
         restoredMessage = Object.keys(roleInputs).length
           ? 'Restored your last setup. Locally selected files may need to be added again.'
@@ -1167,7 +1213,41 @@ function showMobileSection(section: MobileStep, mobile: boolean): boolean {
     </div>
 
     <div class="media-stage grid place-items-center px-5 py-10 text-center">
-      {#if activeJob}
+      {#if activeJob && activeJob.localPhase === 'complete' && activeJob.remoteStatus !== 'failed' && outputs?.some((output) => output.mediaUrl)}
+        {@const shown = outputs.filter((output) => output.mediaUrl)}
+        {@const current = shown[Math.min(selectedOutput, shown.length - 1)]}
+        {#if current && current.mediaUrl}
+          <div class="flex w-full max-w-4xl flex-col items-center gap-4">
+            <h2 id={`${data.modality}-stage-heading`} class="sr-only">Generated {data.modality} result</h2>
+            {#if current.mediaKind === 'video'}
+              <!-- svelte-ignore a11y_media_has_caption -->
+              <video src={current.mediaUrl} controls class="max-h-[68vh] max-w-full rounded-[var(--radius)] shadow-[var(--shadow-sm)]"></video>
+            {:else}
+              <img src={current.mediaUrl} alt={`Generated ${data.modality} for ${activeJob.publicModelId}`} class="max-h-[68vh] w-auto max-w-full rounded-[var(--radius)] object-contain shadow-[var(--shadow-sm)]" />
+            {/if}
+            {#if shown.length > 1}
+              <div class="flex flex-wrap justify-center gap-2" aria-label="Generated outputs">
+                {#each shown as output, index (output.outputId)}
+                  <button type="button" class="focus-ring size-14 overflow-hidden rounded border" class:border-primary={index === selectedOutput} class:border-stage-border={index !== selectedOutput} aria-label={`Show output ${index + 1} of ${shown.length}`} aria-pressed={index === selectedOutput} onclick={() => (selectedOutput = index)}>
+                    {#if output.mediaKind === 'video'}
+                      <!-- svelte-ignore a11y_media_has_caption -->
+                      <video src={output.mediaUrl ?? ''} muted class="size-full object-cover"></video>
+                    {:else}
+                      <img src={output.mediaUrl ?? ''} alt="" class="size-full object-cover" />
+                    {/if}
+                  </button>
+                {/each}
+              </div>
+            {/if}
+            <div class="flex flex-wrap items-center justify-center gap-2">
+              <LinkButton href={`/jobs?selected=${activeJob.id}`} variant="outline" class="border-stage-border bg-stage-elevated text-stage-foreground hover:bg-stage-border">View job</LinkButton>
+              <a href={current.mediaUrl} target="_blank" rel="noopener" class="focus-ring inline-flex min-h-9 items-center gap-2 rounded-[var(--radius)] border border-stage-border bg-stage-elevated px-3.5 text-sm font-semibold text-stage-foreground hover:bg-stage-border">Open</a>
+              <a href={current.mediaUrl} download={current.fileName ?? ''} class="focus-ring inline-flex min-h-9 items-center gap-2 rounded-[var(--radius)] border border-stage-border bg-stage-elevated px-3.5 text-sm font-semibold text-stage-foreground hover:bg-stage-border">Download</a>
+              <Button variant="ghost" class="text-stage-muted hover:bg-stage-elevated hover:text-stage-foreground" onclick={() => (activeJob = null)}>Remix</Button>
+            </div>
+          </div>
+        {/if}
+      {:else if activeJob}
         <div class="max-w-xl">
           <div class="mx-auto grid size-12 place-items-center rounded-lg bg-stage-elevated text-stage-foreground">
             <AppIcon name={activeJob.remoteStatus === 'failed' ? 'pending' : activeJob.localPhase === 'complete' ? 'success' : activeJob.failureDomain !== 'none' ? 'pending' : 'activity'} size={23} />
@@ -1179,12 +1259,14 @@ function showMobileSection(section: MobileStep, mobile: boolean): boolean {
               : activeJob.remoteStatus === 'failed'
                 ? 'Poyo generation failed'
                 : activeJob.localPhase === 'complete'
-                ? 'Generation verified locally'
-                : activeJob.localPhase === 'requires_attention'
-                  ? 'Job needs attention'
-                  : activeJob.remoteStatus === 'running'
-                    ? 'Poyo is generating'
-                    : 'Job submitted and persisted'}
+                  ? 'Generation verified locally'
+                  : activeJob.localPhase === 'requires_attention'
+                    ? 'Job needs attention'
+                    : activeJob.localPhase === 'downloading'
+                      ? 'Downloading and verifying'
+                      : activeJob.remoteStatus === 'running'
+                        ? 'Poyo is generating'
+                        : 'Job submitted and persisted'}
           </h2>
           <p class="mx-auto mt-2 max-w-md text-sm leading-6 text-stage-muted">
             {submissionUnknown
@@ -1192,10 +1274,16 @@ function showMobileSection(section: MobileStep, mobile: boolean): boolean {
               : activeJob.remoteStatus === 'failed'
                 ? 'Poyo authoritatively reported that the remote generation failed. No local download was attempted.'
                 : activeJob.failureDomain === 'poll'
-                ? `Status check delayed. Last successful check ${activeJob.lastPolledAt ?? 'is not available'}.`
-                : activeJob.localPhase === 'complete'
-                  ? 'The Poyo task finished and its downloaded outputs passed local verification.'
-                  : `Real state: ${activeJob.localPhase.replaceAll('_', ' ')} · ${activeJob.remoteStatus.replaceAll('_', ' ')}.`}
+                  ? `Status check delayed. Last successful check ${activeJob.lastPolledAt ?? 'is not available'}.`
+                  : activeJob.localPhase === 'complete'
+                    ? outputsError
+                      ? outputsError
+                      : loadingOutputs
+                        ? 'Loading the generated media…'
+                        : 'The Poyo task finished and its downloaded outputs passed local verification.'
+                    : activeJob.localPhase === 'downloading'
+                      ? 'Poyo finished. The output is downloading and being verified locally before it appears here.'
+                      : `Real state: ${activeJob.localPhase.replaceAll('_', ' ')} · ${activeJob.remoteStatus.replaceAll('_', ' ')}.`}
           </p>
           {#if activeJob.progress !== null}
             <div class="mx-auto mt-5 max-w-sm text-left">
