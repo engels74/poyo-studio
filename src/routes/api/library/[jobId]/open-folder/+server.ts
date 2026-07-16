@@ -14,7 +14,10 @@ export const POST: RequestHandler = async ({ request, params }) => {
       )
       .get(params.jobId);
     if (!output?.local_path) throw new Error('No local output folder is available.');
-    await openContainingFolder(platform.paths.media, output.local_path);
+    await openContainingFolder(
+      platform.paths.mediaReadRoots ?? [platform.paths.media],
+      output.local_path
+    );
     return Response.json({ opened: true });
   } catch (error) {
     return jobHttpError(error);

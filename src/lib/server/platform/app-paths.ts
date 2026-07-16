@@ -7,6 +7,14 @@ export interface AppPaths {
   root: string;
   database: string;
   media: string;
+  /** The platform-default media directory, independent of any custom output-location override. */
+  defaultMedia?: string;
+  /**
+   * Roots that may contain readable generated media. Always includes the active `media`
+   * directory; also includes historical directories after the output location changes, so
+   * previously downloaded outputs stay servable. Defaults to `[media]`.
+   */
+  mediaReadRoots?: string[];
   uploads: string;
   thumbnails: string;
   logs: string;
@@ -61,14 +69,23 @@ export function resolveAppPaths(options: ResolveAppPathsOptions = {}): AppPaths 
     ? requireSafePath(configuredRoot, 'PLS_APP_DATA_DIR')
     : platformRoot(platform, environment, home);
 
+  // Match the trim()-based check the output-location endpoints use for "environment managed": a
+  // whitespace-only PLS_MEDIA_DIR is not a real override, so it must not resolve a media path.
+  const mediaOverride = environment.PLS_MEDIA_DIR?.trim();
+  // The platform default stays fixed at <root>/media regardless of any PLS_MEDIA_DIR override, so an
+  // install that later adds the override can still expose its previous default directory as a read
+  // root and keep older outputs readable (see resolveEffectiveMedia).
+  const defaultMedia = join(root, 'media');
+  const media = mediaOverride ? requireSafePath(mediaOverride, 'PLS_MEDIA_DIR') : defaultMedia;
+
   return {
     root,
     database: environment.PLS_DATABASE_PATH
       ? requireSafePath(environment.PLS_DATABASE_PATH, 'PLS_DATABASE_PATH')
       : join(root, 'data', 'poyo-studio.sqlite'),
-    media: environment.PLS_MEDIA_DIR
-      ? requireSafePath(environment.PLS_MEDIA_DIR, 'PLS_MEDIA_DIR')
-      : join(root, 'media'),
+    media,
+    defaultMedia,
+    mediaReadRoots: [media],
     uploads: join(root, 'uploads'),
     thumbnails: join(root, 'thumbnails'),
     logs: environment.PLS_LOG_DIR
@@ -95,7 +112,7 @@ export function resolvePathWithin(root: string, candidate: string): string {
   return resolvedCandidate;
 }
 
-async function ensurePrivateDirectory(path: string): Promise<void> {
+export async function ensurePrivateDirectory(path: string): Promise<void> {
   await mkdir(path, { recursive: true, mode: 0o700 });
   if (process.platform === 'win32') return;
 
@@ -106,11 +123,37 @@ async function ensurePrivateDirectory(path: string): Promise<void> {
   await chmod(path, 0o700);
 }
 
+/**
+ * Ensure a user-chosen directory exists and is a real (non-symlink) directory, creating it and any
+ * missing parents when absent. Unlike {@link ensurePrivateDirectory} it never chmods an existing
+ * directory, so a user's selected output folder keeps its own permissions.
+ */
+export async function ensureDirectoryExists(path: string): Promise<void> {
+  await mkdir(path, { recursive: true, mode: 0o700 });
+
+  // The non-symlink guarantee is portable — lstat detects symlinks/junctions on win32 too (it stats
+  // the link itself without following it) — and this function never chmods, so unlike
+  // ensurePrivateDirectory there is no POSIX-only step to skip. Enforce the check on every platform.
+  const info = await lstat(path);
+  if (!info.isDirectory() || info.isSymbolicLink()) {
+    throw new Error(`Expected a directory at ${path}.`);
+  }
+}
+
 export async function ensureAppPaths(paths: AppPaths): Promise<void> {
+  // The media directory is the one location an operator can redirect via PLS_MEDIA_DIR. When it is
+  // environment-managed (anything other than the platform default under the app root), ensure it
+  // exists without forcing 0o700: chmod'ing an existing/shared folder would either change its
+  // permissions unexpectedly or fail with EPERM and block startup. This mirrors how a user-chosen
+  // output folder is handled in the runtime; the platform default stays private.
+  const mediaIsEnvironmentManaged =
+    paths.defaultMedia !== undefined && paths.media !== paths.defaultMedia;
   await Promise.all([
     ensurePrivateDirectory(paths.root),
     ensurePrivateDirectory(dirname(paths.database)),
-    ensurePrivateDirectory(paths.media),
+    mediaIsEnvironmentManaged
+      ? ensureDirectoryExists(paths.media)
+      : ensurePrivateDirectory(paths.media),
     ensurePrivateDirectory(paths.uploads),
     ensurePrivateDirectory(paths.thumbnails),
     ensurePrivateDirectory(paths.logs),

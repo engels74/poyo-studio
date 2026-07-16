@@ -31,7 +31,10 @@ async function serve(request: Request, outputId: string, head: boolean): Promise
       .get(outputId);
     if (!output?.local_path || output.download_state !== 'verified')
       return new Response('Local media is unavailable.', { status: 404 });
-    const path = await safeLocalMediaPath(platform.paths.media, output.local_path);
+    const path = await safeLocalMediaPath(
+      platform.paths.mediaReadRoots ?? [platform.paths.media],
+      output.local_path
+    );
     const file = Bun.file(path);
     if (!(await file.exists()) || file.size <= 0)
       return new Response('Local media is unavailable.', { status: 404 });

@@ -1,3 +1,4 @@
+import { env } from '$env/dynamic/private';
 import { latestBalance } from '$lib/server/account/balance';
 import { LibraryRepository } from '$lib/server/library/repository';
 import { getPlatformServices } from '$lib/server/platform/runtime';
@@ -7,6 +8,7 @@ import {
   REGISTRY_SCHEMA_VERSION
 } from '$lib/server/platform/version';
 import { OperationsSettingsService } from '$lib/server/settings/operations-settings';
+import { outputLocationDto, readStoragePreferences } from '$lib/server/settings/studio-settings';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async () => {
@@ -18,6 +20,11 @@ export const load: PageServerLoad = async () => {
   );
   return {
     settings: service.dto(platform.paths, await platform.apiKey.status()),
+    outputLocation: outputLocationDto(
+      platform.paths,
+      readStoragePreferences(platform.settings),
+      Boolean(env.PLS_MEDIA_DIR?.trim())
+    ),
     connectivity: platform.apiKey.connectivityStatus(),
     balance: latestBalance(platform.database),
     storage: await new LibraryRepository(platform.database).storageStatistics(platform.paths),

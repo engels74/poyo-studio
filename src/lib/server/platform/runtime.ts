@@ -6,7 +6,8 @@ import { ApiKeyManager } from '../settings/api-key-manager';
 import { SecretMetadataRepository } from '../settings/secret-metadata-repository';
 import { createPreferredSecretStore } from '../settings/secret-store';
 import { SettingsRepository } from '../settings/settings-repository';
-import { ensureAppPaths, resolveAppPaths } from './app-paths';
+import { readStoragePreferences, resolveEffectiveMedia } from '../settings/studio-settings';
+import { ensureAppPaths, ensureDirectoryExists, resolveAppPaths } from './app-paths';
 import { openDatabase } from './database';
 import { DATABASE_SCHEMA_VERSION } from './version';
 
@@ -27,14 +28,14 @@ function positiveInteger(value: string | undefined, fallback: number): number {
 }
 
 async function createPlatformServices(): Promise<PlatformServices> {
-  const paths = resolveAppPaths({ environment: env });
-  await ensureAppPaths(paths);
-  const database = await openDatabase(paths.database);
-  await new ManagedSourceRepository(database, paths).adoptLegacyReferences();
+  const basePaths = resolveAppPaths({ environment: env });
+  await ensureAppPaths(basePaths);
+  const database = await openDatabase(basePaths.database);
+  await new ManagedSourceRepository(database, basePaths).adoptLegacyReferences();
   seedImageRegistry(database);
   seedVideoRegistry(database);
   const logger = new StructuredLogger({
-    directory: paths.logs,
+    directory: basePaths.logs,
     separateErrorFile: env.PLS_LOG_SEPARATE_ERRORS !== 'false',
     maxBytes: positiveInteger(env.PLS_LOG_MAX_BYTES, 5 * 1024 * 1024),
     maxAgeMs: positiveInteger(env.PLS_LOG_MAX_AGE_MS, 24 * 60 * 60 * 1000),
@@ -52,6 +53,40 @@ async function createPlatformServices(): Promise<PlatformServices> {
       // Invalid persisted settings fail closed to validated environment defaults.
     }
   }
+
+  // Phase 2: apply a locally chosen output directory now that the database is open. This only
+  // runs at startup (services are memoized), so the running job worker never has its paths
+  // swapped underneath it — a change takes effect on the next restart. PLS_MEDIA_DIR wins.
+  const effective = resolveEffectiveMedia(
+    basePaths,
+    readStoragePreferences(settings),
+    Boolean(env.PLS_MEDIA_DIR?.trim())
+  );
+  const paths = {
+    ...basePaths,
+    media: effective.media,
+    mediaReadRoots: effective.mediaReadRoots
+  };
+  if (paths.media !== basePaths.media) {
+    try {
+      // A user-chosen output folder is ensured to exist without forcing 0o700 on it — its own
+      // permissions are the user's to set, and avoiding chmod prevents a spurious EPERM fallback.
+      await ensureDirectoryExists(paths.media);
+    } catch {
+      // The chosen directory is currently unavailable (e.g. an unmounted volume). Fall back to
+      // the platform default for this session rather than failing to boot; the preference is
+      // preserved and will apply again once the location is reachable.
+      await logger.warn('platform.output_location_unavailable', {
+        data: { requested: effective.media, fallback: basePaths.media }
+      });
+      paths.media = basePaths.media;
+      paths.mediaReadRoots = [
+        basePaths.media,
+        ...effective.mediaReadRoots.filter((root) => root !== basePaths.media)
+      ];
+    }
+  }
+
   const secretStore = await createPreferredSecretStore({ paths });
   const apiKey = new ApiKeyManager({
     environment: env,

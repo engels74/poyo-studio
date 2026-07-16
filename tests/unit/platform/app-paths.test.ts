@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { lstat } from 'node:fs/promises';
+import { chmod, lstat, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   ensureAppPaths,
+  ensureDirectoryExists,
   resolveAppPaths,
   resolvePathWithin
 } from '../../../src/lib/server/platform/app-paths';
@@ -40,6 +41,28 @@ describe('application paths', () => {
     expect(configured.source).toBe('environment');
   });
 
+  test('treats a whitespace-only PLS_MEDIA_DIR as unset and trims a real override', () => {
+    // Whitespace is not a real override: media falls back to the default under the root, matching
+    // the trim()-based "environment managed" check used by the output-location endpoints.
+    const blank = resolveAppPaths({
+      environment: { PLS_APP_DATA_DIR: '/srv/poyo', PLS_MEDIA_DIR: '   ' },
+      platform: 'linux',
+      homeDirectory: '/home/studio'
+    });
+    expect(blank.media).toBe('/srv/poyo/media');
+    expect(blank.defaultMedia).toBe('/srv/poyo/media');
+
+    const custom = resolveAppPaths({
+      environment: { PLS_APP_DATA_DIR: '/srv/poyo', PLS_MEDIA_DIR: '  /mnt/media  ' },
+      platform: 'linux',
+      homeDirectory: '/home/studio'
+    });
+    expect(custom.media).toBe('/mnt/media');
+    // defaultMedia stays the platform default regardless of the override, so the previous default
+    // root remains available to mediaReadRoots for older outputs.
+    expect(custom.defaultMedia).toBe('/srv/poyo/media');
+  });
+
   test('creates private local directories and keeps paths inside configured roots', async () => {
     const temporary = await createTemporaryDirectory('poyo-paths-');
     cleanups.push(temporary.cleanup);
@@ -58,5 +81,45 @@ describe('application paths', () => {
     if (process.platform !== 'win32') {
       expect((await lstat(paths.root)).mode & 0o077).toBe(0);
     }
+  });
+
+  test('ensureDirectoryExists keeps an existing user folder’s permissions instead of forcing 0o700', async () => {
+    if (process.platform === 'win32') return;
+    const temporary = await createTemporaryDirectory('poyo-writable-');
+    cleanups.push(temporary.cleanup);
+    const target = join(temporary.path, 'user-media');
+    await mkdir(target, { recursive: true });
+    await chmod(target, 0o755);
+    await ensureDirectoryExists(target);
+    // A user-chosen output folder must retain its own permissions (unlike the app's private dirs).
+    expect((await lstat(target)).mode & 0o777).toBe(0o755);
+  });
+
+  test('ensureAppPaths keeps an environment-managed PLS_MEDIA_DIR folder’s permissions', async () => {
+    if (process.platform === 'win32') return;
+    const temporary = await createTemporaryDirectory('poyo-env-media-');
+    cleanups.push(temporary.cleanup);
+
+    const paths = resolveAppPaths({
+      environment: {
+        PLS_APP_DATA_DIR: join(temporary.path, 'studio'),
+        PLS_MEDIA_DIR: join(temporary.path, 'shared-media')
+      },
+      platform: process.platform,
+      homeDirectory: temporary.path
+    });
+    // The environment-managed case: media differs from the platform default under the app root.
+    expect(paths.media).not.toBe(paths.defaultMedia);
+
+    // Simulate an existing shared folder the operator pointed PLS_MEDIA_DIR at.
+    await mkdir(paths.media, { recursive: true });
+    await chmod(paths.media, 0o755);
+
+    await ensureAppPaths(paths);
+
+    // The environment-managed media folder keeps its own permissions (no forced 0o700 that would
+    // change a shared folder or EPERM-fail startup), while the app's private root stays locked down.
+    expect((await lstat(paths.media)).mode & 0o777).toBe(0o755);
+    expect((await lstat(paths.root)).mode & 0o077).toBe(0);
   });
 });

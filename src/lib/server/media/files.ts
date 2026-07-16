@@ -42,11 +42,29 @@ export function parseByteRange(value: string | null, size: number): ByteRange | 
   return { start, end: Math.min(requestedEnd, size - 1) };
 }
 
-export async function safeLocalMediaPath(mediaRoot: string, candidate: string): Promise<string> {
-  const lexical = isAbsolute(candidate) ? candidate : resolvePathWithin(mediaRoot, candidate);
-  const [root, file] = await Promise.all([realpath(mediaRoot), realpath(lexical)]);
-  resolvePathWithin(root, file);
-  return file;
+/**
+ * Resolve a stored local media path, confirming it stays inside one of the allowed media
+ * roots. Accepts multiple roots so outputs written under a previous output location remain
+ * servable after the location changes; each root is realpath-checked independently, preserving
+ * the original per-root symlink/traversal guarantees.
+ */
+export async function safeLocalMediaPath(
+  mediaRoot: string | readonly string[],
+  candidate: string
+): Promise<string> {
+  const roots = typeof mediaRoot === 'string' ? [mediaRoot] : mediaRoot;
+  let lastError: unknown = new Error('Local media path is outside the configured roots.');
+  for (const root of roots) {
+    try {
+      const lexical = isAbsolute(candidate) ? candidate : resolvePathWithin(root, candidate);
+      const [canonicalRoot, file] = await Promise.all([realpath(root), realpath(lexical)]);
+      resolvePathWithin(canonicalRoot, file);
+      return file;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
 }
 
 export function privateMediaHeaders(contentType: string, size: number): Headers {
@@ -71,7 +89,7 @@ export interface FolderOpenDependencies {
 }
 
 export async function openContainingFolder(
-  mediaRoot: string,
+  mediaRoot: string | readonly string[],
   localPath: string,
   dependencies: FolderOpenDependencies = {}
 ): Promise<void> {

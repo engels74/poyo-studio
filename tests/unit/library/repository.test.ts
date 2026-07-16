@@ -138,6 +138,43 @@ describe('server-side jobs and grouped library repository', () => {
     });
   });
 
+  test('deletes a local file stored under a historical media read root', async () => {
+    const { fixture, job, output, localPath } = await completedGeneration('relocated');
+    const repository = new LibraryRepository(fixture.database);
+    // Simulate the output directory having moved: the active `media` is elsewhere, but the file
+    // still lives under a historical root that stays readable. Resolving against only the active
+    // `media` would throw "path escapes"; resolving against mediaReadRoots must find and delete it.
+    const movedMedia = `${fixture.paths.media}-new`;
+    const movedPaths = {
+      ...fixture.paths,
+      media: movedMedia,
+      mediaReadRoots: [movedMedia, fixture.paths.media]
+    };
+    await repository.deleteOutput(job.id, output.id, 'file', movedPaths);
+    expect(await Bun.file(localPath).exists()).toBe(false);
+    expect((await repository.getJobDetail(job.id))?.outputs[0]).toMatchObject({
+      downloadState: 'deleted',
+      localAvailable: false
+    });
+  });
+
+  test('refuses to mark an output deleted when its file is outside every known media root', async () => {
+    const { fixture, job, output, localPath } = await completedGeneration('orphan-guard');
+    const repository = new LibraryRepository(fixture.database);
+    // The file's root is not among the known media roots (e.g. dropped after enough relocations).
+    const foreign = `${fixture.paths.media}-foreign`;
+    const strandedPaths = { ...fixture.paths, media: foreign, mediaReadRoots: [foreign] };
+    await expect(repository.deleteOutput(job.id, output.id, 'file', strandedPaths)).rejects.toThrow(
+      /known media locations/
+    );
+    // Must not report success: the file stays and the DB row is left untouched (no false "deleted").
+    expect(await Bun.file(localPath).exists()).toBe(true);
+    expect((await repository.getJobDetail(job.id))?.outputs[0]).toMatchObject({
+      downloadState: 'verified',
+      localAvailable: true
+    });
+  });
+
   test('accounts managed sources once and exposes missing-file history without local paths', async () => {
     const { fixture, job } = await completedGeneration('managed-source');
     const sourceId = crypto.randomUUID();

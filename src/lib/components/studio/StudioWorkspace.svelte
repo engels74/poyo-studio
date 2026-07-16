@@ -9,6 +9,7 @@ import type {
   StudioEntry,
   StudioJobDto,
   StudioLoadData,
+  StudioOutputDto,
   StudioRoleInput
 } from '$lib/features/generation/contracts';
 import {
@@ -34,6 +35,11 @@ import {
   visibleFields,
   workflowLabel
 } from '$lib/features/generation/studio-controller';
+import {
+  clearStudioDraft,
+  readStudioDraft,
+  writeStudioDraft
+} from '$lib/features/generation/studio-draft';
 import type {
   ExpertOverride,
   FieldDefinition,
@@ -128,6 +134,23 @@ let presetDescription = $state(initialData.preset?.description ?? '');
 let presetMessage = $state(initialData.preset ? `Loaded preset “${initialData.preset.name}”.` : '');
 let lastEventId = -1;
 let recoverySequence = 0;
+let hydrated = $state(false);
+// Suppress draft persistence when the session's initial state is driven by an explicit preset/job
+// URL or an unresolved paid action (draft restore is skipped in that case), so the ephemeral state
+// never clobbers the user's stored "last setup" draft. An explicit reset re-enables auto-save.
+let draftPersistSuspended = $state(false);
+let restoredMessage = $state('');
+let outputs = $state<StudioOutputDto[] | null>(null);
+let outputsError = $state('');
+let loadingOutputs = $state(false);
+let selectedOutput = $state(0);
+let fetchedOutputsFor = '';
+let completedCredits = $state<number | null>(null);
+let nowMs = $state(0);
+const balanceStaleMs = 10 * 60_000;
+let balanceStale = $derived(
+  balance !== null && nowMs > 0 && nowMs - new Date(balance.fetchedAt).getTime() > balanceStaleMs
+);
 
 const pendingActionStorageKey = `poyo-studio-pending-action:${initialData.modality}`;
 interface PendingAction {
@@ -288,6 +311,112 @@ $effect(() => {
   expertText;
   const timer = window.setTimeout(() => void requestPreview(), 260);
   return () => window.clearTimeout(timer);
+});
+
+// Persist a secrets-free draft so in-app navigation and reloads restore the studio setup.
+// Guarded by `hydrated` so the initial default state never overwrites a stored draft before
+// onMount has had a chance to restore it.
+$effect(() => {
+  if (!hydrated || draftPersistSuspended) return;
+  let overrides: ExpertOverride[] = [];
+  try {
+    overrides = parseExpertOverrides(expertText);
+  } catch {
+    // Expert text is temporarily invalid (mid-edit): skip persisting rather than clobbering the
+    // stored draft's overrides with an empty set and losing the user's work on navigation/reload.
+    return;
+  }
+  writeStudioDraft(data.modality, {
+    version: 1,
+    entryKey,
+    sizeMode,
+    values: presetValues(data.modality, guided, overrides, roleInputs)
+  });
+});
+
+async function loadOutputs(jobId: string): Promise<void> {
+  loadingOutputs = true;
+  outputsError = '';
+  // Clear the previous job's media before fetching so switching between completed jobs never
+  // renders stale outputs under the new job's header during the in-flight request.
+  outputs = null;
+  selectedOutput = 0;
+  completedCredits = null;
+  try {
+    const response = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/outputs`);
+    const result = (await response.json()) as {
+      outputs?: StudioOutputDto[];
+      actualCredits?: number | null;
+    };
+    // A newer job may have become active while this request was in flight; a late response for a
+    // superseded job must not paint its media (or error) under the current job's header. Clear the
+    // once-per-job marker so returning to this job re-fetches instead of staying stuck on a blank
+    // result stage.
+    if (activeJob?.id !== jobId) {
+      if (fetchedOutputsFor === jobId) fetchedOutputsFor = '';
+      return;
+    }
+    // The charge is known from the job record regardless of whether the files are still viewable,
+    // so surface it even when the media itself can't be loaded.
+    if (response.ok) completedCredits = result.actualCredits ?? null;
+    // Treat "no viewable output" (e.g. files deleted or moved after completion) as an error rather
+    // than a blank success, so the result stage shows guidance instead of an empty preview.
+    if (response.ok && result.outputs?.some((output) => output.mediaUrl)) {
+      outputs = result.outputs;
+      selectedOutput = 0;
+    } else {
+      outputsError = 'The generated media could not be loaded. Open the job to review it.';
+      // A non-2xx response is a (possibly transient) server error, not a terminal "files gone"
+      // result, so clear the once-per-job marker to leave a retry path open for the next activeJob
+      // refresh. A 2xx with no viewable output is terminal (deleted/moved files), so keep the marker
+      // to avoid refetching a permanently empty result.
+      if (!response.ok && fetchedOutputsFor === jobId) fetchedOutputsFor = '';
+    }
+  } catch {
+    if (activeJob?.id === jobId)
+      outputsError = 'The generated media could not be loaded. Open the job to review it.';
+    // Clear the once-per-job marker on any fetch/parse failure so a later activeJob refresh (e.g. an
+    // SSE reconnect snapshot re-emitting this job) can retry a transient failure instead of leaving
+    // the result stage stuck. Terminal "no viewable output" (response ok, files gone) keeps the
+    // marker so it does not refetch a permanently empty result.
+    if (fetchedOutputsFor === jobId) fetchedOutputsFor = '';
+  } finally {
+    // Release the spinner unless a *different* settled job is now loading its own outputs: that
+    // newer in-flight load owns loadingOutputs. In every other case (this job still active, no
+    // active job, or a superseding in-progress/failed job) clear it so a superseded fetch can't
+    // strand a stale "Loading the generated media…" state.
+    const supersededByLoadingJob =
+      activeJob?.id !== jobId &&
+      activeJob?.localPhase === 'complete' &&
+      activeJob?.remoteStatus !== 'failed';
+    if (!supersededByLoadingJob) loadingOutputs = false;
+  }
+}
+
+// Load verified outputs into the result stage once a job completes. A plain (non-reactive)
+// guard fetches exactly once per job and avoids an effect loop.
+$effect(() => {
+  const job = activeJob;
+  if (!job) {
+    outputs = null;
+    outputsError = '';
+    completedCredits = null;
+    loadingOutputs = false;
+    fetchedOutputsFor = '';
+    return;
+  }
+  const settled = job.localPhase === 'complete' && job.remoteStatus !== 'failed';
+  if (settled && fetchedOutputsFor !== job.id) {
+    fetchedOutputsFor = job.id;
+    void loadOutputs(job.id);
+    // Refresh the balance after a paid job settles; the actual charge is now known upstream.
+    if (hasApiKey) void refreshBalanceSnapshot();
+  } else if (!settled) {
+    // The active job is not a settled/successful generation (a new in-progress job, or a failed
+    // one): clear the previous completed job's charge so its "Charged X credits" line does not
+    // linger under the new job. A settled job whose outputs we've already loaded keeps its charge.
+    completedCredits = null;
+  }
 });
 
 function addRoleInput(role: string, input: StudioRoleInput): void {
@@ -499,6 +628,11 @@ async function refreshBalanceSnapshot(): Promise<void> {
     });
     const result = (await response.json()) as { balance?: StudioLoadData['balance'] };
     if (response.ok && result.balance) balance = result.balance;
+    nowMs = Date.now();
+  } catch {
+    // Balance refresh is best-effort: a network failure or a non-JSON/empty error body must not
+    // reject. Call sites use `void refreshBalanceSnapshot()` and the refresh button handler, where a
+    // rejection would go unhandled — keep the last known balance and let a later action retry.
   } finally {
     balanceRefreshing = false;
   }
@@ -581,6 +715,10 @@ function resetDraft(): void {
   submissionLocked = false;
   dirty = false;
   sizeMode = inferSizeMode(selectedEntry, guided);
+  restoredMessage = '';
+  clearStudioDraft(data.modality);
+  // A deliberate reset returns to the normal studio entry point, so allow auto-save to resume.
+  draftPersistSuspended = false;
   previewRevision += 1;
 }
 
@@ -729,6 +867,53 @@ function abandonPendingAction(): void {
 }
 
 onMount(() => {
+  // Restore the last studio draft unless an explicit preset/job URL or an unresolved paid
+  // action is driving the initial state. Preserve only what is still valid for the model.
+  const explicitContext = Boolean(initialData.preset) || Boolean(readPendingAction());
+  if (!explicitContext) {
+    const draft = readStudioDraft(data.modality);
+    if (draft) {
+      const entry = data.entries.find((item) => item.key === draft.entryKey);
+      if (entry) {
+        entryKey = entry.key;
+        guided = initialGuidedValues(entry, draft.values);
+        roleInputs = initialRoleInputs(entry, draft.values);
+        const overrides = filterRetiredExpertOverrides(entry, draft.values.expertOverrides ?? []);
+        expertText = overrides.length
+          ? JSON.stringify(
+              Object.fromEntries(overrides.map((item) => [item.key, item.value])),
+              null,
+              2
+            )
+          : '';
+        sizeMode = sizeModes(entry).includes(draft.sizeMode)
+          ? draft.sizeMode
+          : inferSizeMode(entry, guided);
+        // Treat the restored draft as the baseline, not an unsaved edit, so switching model
+        // afterwards does not prompt to discard "changes" the user did not just make.
+        previewRevision += 1;
+        restoredMessage = Object.keys(roleInputs).length
+          ? 'Restored your last setup. Locally selected files may need to be added again.'
+          : 'Restored your last setup.';
+      } else {
+        clearStudioDraft(data.modality);
+        restoredMessage = 'Your last model is unavailable, so the studio reset to defaults.';
+      }
+    }
+  } else {
+    // Draft restore was skipped because a preset/job URL or unresolved paid action drives the
+    // initial state; suppress draft persist too so the ephemeral state does not clobber the user's
+    // stored "last setup" draft. An explicit reset re-enables auto-save.
+    draftPersistSuspended = true;
+  }
+  hydrated = true;
+  // Balance freshness: refresh once if it is missing or stale, then tick a clock so the "stale"
+  // indicator stays live without hammering the upstream balance endpoint.
+  nowMs = Date.now();
+  if (hasApiKey && (!balance || nowMs - new Date(balance.fetchedAt).getTime() > balanceStaleMs)) {
+    void refreshBalanceSnapshot();
+  }
+  const balanceTick = window.setInterval(() => (nowMs = Date.now()), 60_000);
   void reconcilePendingAction();
   const events = new EventSource('/api/events/jobs');
   events.onopen = () => (connection = 'connected');
@@ -751,7 +936,10 @@ onMount(() => {
     const message = event as MessageEvent<string>;
     if (acceptDurableEvent(message)) updateFromJobEvent(message);
   });
-  return () => events.close();
+  return () => {
+    events.close();
+    window.clearInterval(balanceTick);
+  };
 });
 
 function showMobileSection(section: MobileStep, mobile: boolean): boolean {
@@ -1038,6 +1226,7 @@ function showMobileSection(section: MobileStep, mobile: boolean): boolean {
         </div>
       {/if}
       {#if presetMessage}<p class="mb-2 text-xs leading-5 text-muted-foreground">{presetMessage}</p>{/if}
+      {#if restoredMessage}<p class="mb-2 text-xs leading-5 text-muted-foreground">{restoredMessage}</p>{/if}
       {#if previewIssues.length}
         <div class="mb-2" role="alert">
           {#each previewIssues.slice(0, 2) as issue (issue)}<p class="text-xs leading-5 text-destructive">{issue}</p>{/each}
@@ -1053,11 +1242,26 @@ function showMobileSection(section: MobileStep, mobile: boolean): boolean {
           {#if recoveryConcluded}<Button variant="ghost" size="sm" onclick={abandonPendingAction}>Acknowledge risk and start a new action</Button>{/if}
         </div>
       {/if}
-      <div class="mb-3 flex items-center justify-between gap-3 text-xs">
-        <span>Estimated credits: <strong>Unavailable</strong></span>
-        <button type="button" class="focus-ring rounded text-right text-muted-foreground hover:text-foreground" onclick={refreshBalanceSnapshot} disabled={balanceRefreshing || !hasApiKey}>
-          {balance ? `${balance.credits} credits · ${new Date(balance.fetchedAt).toLocaleString()}` : hasApiKey ? 'Balance not refreshed' : 'API key required'}
-        </button>
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
+        <span class="text-muted-foreground">
+          {#if completedCredits !== null}
+            Charged <strong class="text-foreground">{completedCredits} credits</strong> for this generation
+          {:else}
+            Billed per generation · Poyo does not publish a pre-generation estimate, so the exact cost appears after completion
+          {/if}
+        </span>
+        <span class="flex items-center gap-1.5">
+          {#if balance}
+            <span class:text-warning={balanceStale} title={`Balance as of ${new Date(balance.fetchedAt).toLocaleString()}`}>
+              {balance.credits} credits{balanceStale ? ' · stale' : ''}
+            </span>
+          {:else}
+            <span class="text-muted-foreground">{hasApiKey ? 'Balance not loaded' : 'API key required'}</span>
+          {/if}
+          <button type="button" class="focus-ring grid size-6 place-items-center rounded text-muted-foreground hover:text-foreground disabled:opacity-50" aria-label="Refresh balance" onclick={refreshBalanceSnapshot} disabled={balanceRefreshing || !hasApiKey}>
+            <AppIcon name="refresh" size={13} />
+          </button>
+        </span>
       </div>
       <div class="grid grid-cols-[auto_auto_1fr] gap-2">
         <Button variant="ghost" size="sm" onclick={resetDraft}>Reset</Button>
@@ -1105,7 +1309,41 @@ function showMobileSection(section: MobileStep, mobile: boolean): boolean {
     </div>
 
     <div class="media-stage grid place-items-center px-5 py-10 text-center">
-      {#if activeJob}
+      {#if activeJob && activeJob.localPhase === 'complete' && activeJob.remoteStatus !== 'failed' && outputs?.some((output) => output.mediaUrl)}
+        {@const shown = outputs.filter((output) => output.mediaUrl)}
+        {@const current = shown[Math.min(selectedOutput, shown.length - 1)]}
+        {#if current && current.mediaUrl}
+          <div class="flex w-full max-w-4xl flex-col items-center gap-4">
+            <h2 id={`${data.modality}-stage-heading`} class="sr-only">Generated {data.modality} result</h2>
+            {#if current.mediaKind === 'video'}
+              <!-- svelte-ignore a11y_media_has_caption -->
+              <video src={current.mediaUrl} controls class="max-h-[68vh] max-w-full rounded-[var(--radius)] shadow-[var(--shadow-sm)]"></video>
+            {:else}
+              <img src={current.mediaUrl} alt={`Generated ${data.modality} for ${activeJob.publicModelId}`} class="max-h-[68vh] w-auto max-w-full rounded-[var(--radius)] object-contain shadow-[var(--shadow-sm)]" />
+            {/if}
+            {#if shown.length > 1}
+              <div class="flex flex-wrap justify-center gap-2" aria-label="Generated outputs">
+                {#each shown as output, index (output.outputId)}
+                  <button type="button" class="focus-ring size-14 overflow-hidden rounded border" class:border-primary={index === selectedOutput} class:border-stage-border={index !== selectedOutput} aria-label={`Show output ${index + 1} of ${shown.length}`} aria-pressed={index === selectedOutput} onclick={() => (selectedOutput = index)}>
+                    {#if output.mediaKind === 'video'}
+                      <!-- svelte-ignore a11y_media_has_caption -->
+                      <video src={output.mediaUrl ?? ''} muted class="size-full object-cover"></video>
+                    {:else}
+                      <img src={output.mediaUrl ?? ''} alt="" class="size-full object-cover" />
+                    {/if}
+                  </button>
+                {/each}
+              </div>
+            {/if}
+            <div class="flex flex-wrap items-center justify-center gap-2">
+              <LinkButton href={`/jobs?selected=${activeJob.id}`} variant="outline" class="border-stage-border bg-stage-elevated text-stage-foreground hover:bg-stage-border">View job</LinkButton>
+              <a href={current.mediaUrl} target="_blank" rel="noopener" class="focus-ring inline-flex min-h-9 items-center gap-2 rounded-[var(--radius)] border border-stage-border bg-stage-elevated px-3.5 text-sm font-semibold text-stage-foreground hover:bg-stage-border">Open</a>
+              <a href={current.mediaUrl} download={current.fileName ?? ''} class="focus-ring inline-flex min-h-9 items-center gap-2 rounded-[var(--radius)] border border-stage-border bg-stage-elevated px-3.5 text-sm font-semibold text-stage-foreground hover:bg-stage-border">Download</a>
+              <Button variant="ghost" class="text-stage-muted hover:bg-stage-elevated hover:text-stage-foreground" onclick={() => (activeJob = null)}>Remix</Button>
+            </div>
+          </div>
+        {/if}
+      {:else if activeJob}
         <div class="max-w-xl">
           <div class="mx-auto grid size-12 place-items-center rounded-lg bg-stage-elevated text-stage-foreground">
             <AppIcon name={activeJob.remoteStatus === 'failed' ? 'pending' : activeJob.localPhase === 'complete' ? 'success' : activeJob.failureDomain !== 'none' ? 'pending' : 'activity'} size={23} />
@@ -1117,12 +1355,14 @@ function showMobileSection(section: MobileStep, mobile: boolean): boolean {
               : activeJob.remoteStatus === 'failed'
                 ? 'Poyo generation failed'
                 : activeJob.localPhase === 'complete'
-                ? 'Generation verified locally'
-                : activeJob.localPhase === 'requires_attention'
-                  ? 'Job needs attention'
-                  : activeJob.remoteStatus === 'running'
-                    ? 'Poyo is generating'
-                    : 'Job submitted and persisted'}
+                  ? 'Generation verified locally'
+                  : activeJob.localPhase === 'requires_attention'
+                    ? 'Job needs attention'
+                    : activeJob.localPhase === 'downloading'
+                      ? 'Downloading and verifying'
+                      : activeJob.remoteStatus === 'running'
+                        ? 'Poyo is generating'
+                        : 'Job submitted and persisted'}
           </h2>
           <p class="mx-auto mt-2 max-w-md text-sm leading-6 text-stage-muted">
             {submissionUnknown
@@ -1130,10 +1370,16 @@ function showMobileSection(section: MobileStep, mobile: boolean): boolean {
               : activeJob.remoteStatus === 'failed'
                 ? 'Poyo authoritatively reported that the remote generation failed. No local download was attempted.'
                 : activeJob.failureDomain === 'poll'
-                ? `Status check delayed. Last successful check ${activeJob.lastPolledAt ?? 'is not available'}.`
-                : activeJob.localPhase === 'complete'
-                  ? 'The Poyo task finished and its downloaded outputs passed local verification.'
-                  : `Real state: ${activeJob.localPhase.replaceAll('_', ' ')} · ${activeJob.remoteStatus.replaceAll('_', ' ')}.`}
+                  ? `Status check delayed. Last successful check ${activeJob.lastPolledAt ?? 'is not available'}.`
+                  : activeJob.localPhase === 'complete'
+                    ? outputsError
+                      ? outputsError
+                      : loadingOutputs
+                        ? 'Loading the generated media…'
+                        : 'The Poyo task finished and its downloaded outputs passed local verification.'
+                    : activeJob.localPhase === 'downloading'
+                      ? 'Poyo finished. The output is downloading and being verified locally before it appears here.'
+                      : `Real state: ${activeJob.localPhase.replaceAll('_', ' ')} · ${activeJob.remoteStatus.replaceAll('_', ' ')}.`}
           </p>
           {#if activeJob.progress !== null}
             <div class="mx-auto mt-5 max-w-sm text-left">

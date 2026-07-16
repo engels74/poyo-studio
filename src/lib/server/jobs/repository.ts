@@ -688,28 +688,49 @@ export class JobRepository extends DatabaseRepository {
         status.progress === null
           ? current.progress
           : Math.max(current.progress ?? 0, status.progress);
-      const malformed = nextStatus === 'finished' ? this.outputSetProblem(current, status) : null;
-      const phase = malformed
-        ? 'requires_attention'
-        : nextStatus === 'finished'
-          ? 'downloading'
-          : nextStatus === 'failed'
-            ? 'complete'
-            : 'monitoring';
-      const domain = nextStatus === 'failed' || malformed ? 'remote_generation' : 'none';
+      // Never regress a locally-complete job. A late or manual poll must not move a job whose
+      // outputs already downloaded and verified back to downloading, or re-flag it as malformed.
+      const alreadyComplete = current.localPhase === 'complete';
+      const malformed =
+        !alreadyComplete && nextStatus === 'finished'
+          ? this.outputSetProblem(current, status)
+          : null;
+      const phase = alreadyComplete
+        ? 'complete'
+        : malformed
+          ? 'requires_attention'
+          : nextStatus === 'finished'
+            ? 'downloading'
+            : nextStatus === 'failed'
+              ? 'complete'
+              : 'monitoring';
+      const domain = alreadyComplete
+        ? current.failureDomain
+        : nextStatus === 'failed' || malformed
+          ? 'remote_generation'
+          : 'none';
+      const attentionCode = alreadyComplete
+        ? current.attentionCode
+        : malformed
+          ? 'malformed_output_set'
+          : null;
+      // Preserve the settled charge on an already-complete job. A late or manual poll can carry a
+      // different credits_amount (including 0 for a not-yet-charged mid-run status); overwriting it
+      // would regress the recorded charge behind the "Charged X credits" UX.
+      const credits = alreadyComplete ? current.actualCredits : status.creditsAmount;
       const now = this.timestamp();
       this.database
         .query(
-          `UPDATE jobs SET local_phase=?,remote_status_raw=?,remote_status=?,failure_domain=?,attention_code=?,progress=?,actual_credits=?,last_polled_at=?,next_poll_at=?,updated_at=?,completed_at=CASE WHEN ?='complete' THEN ? ELSE completed_at END WHERE id=?`
+          `UPDATE jobs SET local_phase=?,remote_status_raw=?,remote_status=?,failure_domain=?,attention_code=?,progress=?,actual_credits=?,last_polled_at=?,next_poll_at=?,updated_at=?,completed_at=CASE WHEN ?='complete' AND completed_at IS NULL THEN ? ELSE completed_at END WHERE id=?`
         )
         .run(
           phase,
           status.statusRaw,
           nextStatus,
           domain,
-          malformed ? 'malformed_output_set' : null,
+          attentionCode,
           progress,
-          status.creditsAmount,
+          credits,
           now,
           nextTerminal ? null : new Date(this.now().getTime() + pollDelayMs).toISOString(),
           now,
@@ -724,7 +745,7 @@ export class JobRepository extends DatabaseRepository {
           reason: malformed,
           observedCount: status.files.length
         });
-      else if (nextStatus === 'finished') this.upsertOutputs(jobId, status);
+      else if (!alreadyComplete && nextStatus === 'finished') this.upsertOutputs(jobId, status);
       return job;
     });
   }
