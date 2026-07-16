@@ -714,6 +714,10 @@ export class JobRepository extends DatabaseRepository {
         : malformed
           ? 'malformed_output_set'
           : null;
+      // Preserve the settled charge on an already-complete job. A late or manual poll can carry a
+      // different credits_amount (including 0 for a not-yet-charged mid-run status); overwriting it
+      // would regress the recorded charge behind the "Charged X credits" UX.
+      const credits = alreadyComplete ? current.actualCredits : status.creditsAmount;
       const now = this.timestamp();
       this.database
         .query(
@@ -726,7 +730,7 @@ export class JobRepository extends DatabaseRepository {
           domain,
           attentionCode,
           progress,
-          status.creditsAmount,
+          credits,
           now,
           nextTerminal ? null : new Date(this.now().getTime() + pollDelayMs).toISOString(),
           now,

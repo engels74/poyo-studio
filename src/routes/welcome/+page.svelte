@@ -67,9 +67,14 @@ async function request<T>(path: string, method: string, body: Record<string, unk
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body)
   });
-  const payload = (await response.json().catch(() => ({}))) as T & { error?: { message?: string } };
+  const payload = (await response.json().catch(() => ({}))) as T & {
+    error?: { message?: string };
+    result?: { message?: string };
+  };
   if (!response.ok)
-    throw new Error(payload.error?.message ?? `Request failed (${response.status}).`);
+    throw new Error(
+      payload.error?.message ?? payload.result?.message ?? `Request failed (${response.status}).`
+    );
   return payload;
 }
 

@@ -331,6 +331,11 @@ $effect(() => {
 async function loadOutputs(jobId: string): Promise<void> {
   loadingOutputs = true;
   outputsError = '';
+  // Clear the previous job's media before fetching so switching between completed jobs never
+  // renders stale outputs under the new job's header during the in-flight request.
+  outputs = null;
+  selectedOutput = 0;
+  completedCredits = null;
   try {
     const response = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/outputs`);
     const result = (await response.json()) as {

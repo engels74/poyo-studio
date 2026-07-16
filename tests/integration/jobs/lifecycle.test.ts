@@ -454,6 +454,7 @@ describe('durable coordinator and media lifecycle', () => {
     expect(completed?.localPhase).toBe('complete');
     const completedAt = completed?.completedAt ?? null;
     expect(completedAt).not.toBeNull();
+    expect(completed?.actualCredits).toBe(4);
 
     // A late or duplicate observation (e.g. a manual refresh) must not move the job back to
     // downloading or overwrite its original completion timestamp.
@@ -465,6 +466,11 @@ describe('durable coordinator and media lifecycle', () => {
     expect(
       fixture.repository.output(fixture.repository.outputs(job.id)[0]?.id ?? '')?.downloadState
     ).toBe('verified');
+
+    // A late poll carrying a different credits_amount (e.g. 0 from a not-yet-charged mid-run
+    // observation) must not overwrite the settled charge recorded at completion.
+    fixture.repository.applyStatus(job.id, { ...finishedStatus, creditsAmount: 0 }, 1_000);
+    expect(fixture.repository.get(job.id)?.actualCredits).toBe(4);
   });
 
   test('JOB-14 renews a download lease before expiry while media work is active', async () => {
