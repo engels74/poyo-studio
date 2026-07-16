@@ -135,6 +135,10 @@ let presetMessage = $state(initialData.preset ? `Loaded preset “${initialData.
 let lastEventId = -1;
 let recoverySequence = 0;
 let hydrated = $state(false);
+// Suppress draft persistence when the session's initial state is driven by an explicit preset/job
+// URL or an unresolved paid action (draft restore is skipped in that case), so the ephemeral state
+// never clobbers the user's stored "last setup" draft. An explicit reset re-enables auto-save.
+let draftPersistSuspended = $state(false);
 let restoredMessage = $state('');
 let outputs = $state<StudioOutputDto[] | null>(null);
 let outputsError = $state('');
@@ -313,7 +317,7 @@ $effect(() => {
 // Guarded by `hydrated` so the initial default state never overwrites a stored draft before
 // onMount has had a chance to restore it.
 $effect(() => {
-  if (!hydrated) return;
+  if (!hydrated || draftPersistSuspended) return;
   let overrides: ExpertOverride[] = [];
   try {
     overrides = parseExpertOverrides(expertText);
@@ -366,7 +370,11 @@ async function loadOutputs(jobId: string): Promise<void> {
   } catch {
     if (activeJob?.id === jobId)
       outputsError = 'The generated media could not be loaded. Open the job to review it.';
-    else if (fetchedOutputsFor === jobId) fetchedOutputsFor = '';
+    // Clear the once-per-job marker on any fetch/parse failure so a later activeJob refresh (e.g. an
+    // SSE reconnect snapshot re-emitting this job) can retry a transient failure instead of leaving
+    // the result stage stuck. Terminal "no viewable output" (response ok, files gone) keeps the
+    // marker so it does not refetch a permanently empty result.
+    if (fetchedOutputsFor === jobId) fetchedOutputsFor = '';
   } finally {
     if (activeJob?.id === jobId) loadingOutputs = false;
   }
@@ -690,6 +698,8 @@ function resetDraft(): void {
   sizeMode = inferSizeMode(selectedEntry, guided);
   restoredMessage = '';
   clearStudioDraft(data.modality);
+  // A deliberate reset returns to the normal studio entry point, so allow auto-save to resume.
+  draftPersistSuspended = false;
   previewRevision += 1;
 }
 
@@ -840,7 +850,8 @@ function abandonPendingAction(): void {
 onMount(() => {
   // Restore the last studio draft unless an explicit preset/job URL or an unresolved paid
   // action is driving the initial state. Preserve only what is still valid for the model.
-  if (!initialData.preset && !readPendingAction()) {
+  const explicitContext = Boolean(initialData.preset) || Boolean(readPendingAction());
+  if (!explicitContext) {
     const draft = readStudioDraft(data.modality);
     if (draft) {
       const entry = data.entries.find((item) => item.key === draft.entryKey);
@@ -870,6 +881,11 @@ onMount(() => {
         restoredMessage = 'Your last model is unavailable, so the studio reset to defaults.';
       }
     }
+  } else {
+    // Draft restore was skipped because a preset/job URL or unresolved paid action drives the
+    // initial state; suppress draft persist too so the ephemeral state does not clobber the user's
+    // stored "last setup" draft. An explicit reset re-enables auto-save.
+    draftPersistSuspended = true;
   }
   hydrated = true;
   // Balance freshness: refresh once if it is missing or stale, then tick a clock so the "stale"
