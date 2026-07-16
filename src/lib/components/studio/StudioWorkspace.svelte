@@ -366,6 +366,11 @@ async function loadOutputs(jobId: string): Promise<void> {
       selectedOutput = 0;
     } else {
       outputsError = 'The generated media could not be loaded. Open the job to review it.';
+      // A non-2xx response is a (possibly transient) server error, not a terminal "files gone"
+      // result, so clear the once-per-job marker to leave a retry path open for the next activeJob
+      // refresh. A 2xx with no viewable output is terminal (deleted/moved files), so keep the marker
+      // to avoid refetching a permanently empty result.
+      if (!response.ok && fetchedOutputsFor === jobId) fetchedOutputsFor = '';
     }
   } catch {
     if (activeJob?.id === jobId)
