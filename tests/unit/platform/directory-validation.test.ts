@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { symlink, writeFile } from 'node:fs/promises';
+import { readFile, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { validateOutputDirectory } from '../../../src/lib/server/platform/directory-validation';
 import { createTemporaryDirectory } from '../../helpers/temporary-directory';
@@ -63,5 +63,15 @@ describe('validateOutputDirectory', () => {
     await symlink(dir, link);
     const result = await validateOutputDirectory(link);
     expect(result.code).toBe('symlink');
+  });
+
+  test('preserves an existing user file that shares the probe name', async () => {
+    const dir = await temp();
+    const clash = join(dir, '.poyo-write-check');
+    await writeFile(clash, 'user data');
+    const result = await validateOutputDirectory(dir);
+    expect(result.ok).toBe(true);
+    // The write probe must never overwrite or delete a user file, even one named like the probe.
+    expect(await readFile(clash, 'utf8')).toBe('user data');
   });
 });

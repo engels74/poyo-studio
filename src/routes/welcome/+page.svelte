@@ -191,11 +191,20 @@ function completeApiKeyStep(): void {
 
 function applyTheme(choice: ThemePreference): void {
   themeChoice = choice;
-  localStorage.setItem(themeStorageKey, choice);
-  const resolved = resolveTheme(choice, window.matchMedia('(prefers-color-scheme: dark)').matches);
-  document.documentElement.classList.toggle('dark', resolved === 'dark');
-  document.documentElement.dataset.theme = resolved;
-  document.documentElement.dataset.themePreference = choice;
+  // Storage/matchMedia access can throw (private mode, disabled storage); mirror the studio-draft
+  // convention and degrade gracefully so a theme click never breaks the onboarding page.
+  try {
+    localStorage.setItem(themeStorageKey, choice);
+    const resolved = resolveTheme(
+      choice,
+      window.matchMedia('(prefers-color-scheme: dark)').matches
+    );
+    document.documentElement.classList.toggle('dark', resolved === 'dark');
+    document.documentElement.dataset.theme = resolved;
+    document.documentElement.dataset.themePreference = choice;
+  } catch {
+    // Ignore storage/matchMedia failures; the selected theme is still persisted via saveTheme().
+  }
 }
 
 function saveTheme(): void {

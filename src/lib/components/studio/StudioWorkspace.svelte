@@ -342,6 +342,9 @@ async function loadOutputs(jobId: string): Promise<void> {
       outputs?: StudioOutputDto[];
       actualCredits?: number | null;
     };
+    // A newer job may have become active while this request was in flight; a late response for a
+    // superseded job must not paint its media (or error) under the current job's header.
+    if (activeJob?.id !== jobId) return;
     if (response.ok && result.outputs) {
       outputs = result.outputs;
       completedCredits = result.actualCredits ?? null;
@@ -350,9 +353,10 @@ async function loadOutputs(jobId: string): Promise<void> {
       outputsError = 'The generated media could not be loaded. Open the job to review it.';
     }
   } catch {
-    outputsError = 'The generated media could not be loaded. Open the job to review it.';
+    if (activeJob?.id === jobId)
+      outputsError = 'The generated media could not be loaded. Open the job to review it.';
   } finally {
-    loadingOutputs = false;
+    if (activeJob?.id === jobId) loadingOutputs = false;
   }
 }
 

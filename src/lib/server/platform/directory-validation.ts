@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { lstat, mkdir, rm, statfs, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 
@@ -91,9 +92,11 @@ export async function validateOutputDirectory(input: string): Promise<DirectoryV
     }
   }
 
-  const probe = join(path, '.poyo-write-check');
+  // Use a unique probe filename with an exclusive-create flag so validation never overwrites or
+  // deletes an existing user file that happens to share the probe name.
+  const probe = join(path, `.poyo-write-check-${randomUUID()}`);
   try {
-    await writeFile(probe, 'ok', { mode: 0o600 });
+    await writeFile(probe, 'ok', { mode: 0o600, flag: 'wx' });
     await rm(probe, { force: true });
   } catch {
     return result('not_writable', 'The folder exists but is not writable.', path, {
