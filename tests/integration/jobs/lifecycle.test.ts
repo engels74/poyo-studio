@@ -405,6 +405,68 @@ describe('durable coordinator and media lifecycle', () => {
     expect(fixture.repository.get(job.id)?.localPhase).toBe('complete');
   });
 
+  test('JOB-15 a stale or duplicate status does not regress a locally complete job', async () => {
+    const fixture = await createJobFixture();
+    cleanups.push(fixture.cleanup);
+    const job = accepted(fixture, 'stale-guard');
+    const finishedStatus: PoyoStatusResult = {
+      taskId: 'task-stale-guard',
+      statusRaw: 'finished',
+      status: 'finished',
+      creditsAmount: 4,
+      files: [
+        {
+          url: 'https://media.example/result.png',
+          fileType: 'image',
+          label: null,
+          format: 'png',
+          contentType: 'image/png',
+          fileName: 'result.png',
+          fileSize: 8
+        }
+      ],
+      createdTime: 'now',
+      progress: 100,
+      errorMessage: null
+    };
+    const coordinator = new JobCoordinator({
+      repository: fixture.repository,
+      poyo: gateway({ getStatus: async () => finishedStatus }),
+      downloader: new OutputDownloader({
+        repository: fixture.repository,
+        paths: fixture.paths,
+        resolveHost: publicDns,
+        fetch: async () =>
+          new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), {
+            headers: { 'content-type': 'image/png' }
+          })
+      }),
+      runtimeSettings: () => ({
+        pollDelayMs: 2_000,
+        staleAfterMs: 60_000,
+        automaticDownloads: true
+      })
+    });
+
+    await coordinator.poll(job.id, true);
+    await coordinator.reconcile(job.id);
+    const completed = fixture.repository.get(job.id);
+    expect(completed?.localPhase).toBe('complete');
+    const completedAt = completed?.completedAt ?? null;
+    expect(completedAt).not.toBeNull();
+
+    // A late or duplicate observation (e.g. a manual refresh) must not move the job back to
+    // downloading or overwrite its original completion timestamp.
+    fixture.setNow(new Date('2027-01-01T00:00:00.000Z'));
+    fixture.repository.applyStatus(job.id, finishedStatus, 1_000);
+    const afterStale = fixture.repository.get(job.id);
+    expect(afterStale?.localPhase).toBe('complete');
+    expect(afterStale?.completedAt).toBe(completedAt);
+    expect(
+      fixture.repository.output(fixture.repository.outputs(job.id)[0]?.id ?? '')?.downloadState
+    ).toBe('verified');
+  });
+
   test('JOB-14 renews a download lease before expiry while media work is active', async () => {
     const fixture = await createJobFixture();
     cleanups.push(fixture.cleanup);
