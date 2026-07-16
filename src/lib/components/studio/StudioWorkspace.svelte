@@ -629,6 +629,10 @@ async function refreshBalanceSnapshot(): Promise<void> {
     const result = (await response.json()) as { balance?: StudioLoadData['balance'] };
     if (response.ok && result.balance) balance = result.balance;
     nowMs = Date.now();
+  } catch {
+    // Balance refresh is best-effort: a network failure or a non-JSON/empty error body must not
+    // reject. Call sites use `void refreshBalanceSnapshot()` and the refresh button handler, where a
+    // rejection would go unhandled — keep the last known balance and let a later action retry.
   } finally {
     balanceRefreshing = false;
   }
