@@ -10,6 +10,8 @@ interface Props {
   class?: string;
   controls?: boolean;
   viewable?: boolean;
+  /** `cover` fills the frame (may crop); `contain` preserves the full asset with letterboxing. */
+  fit?: 'cover' | 'contain';
 }
 
 let {
@@ -18,8 +20,11 @@ let {
   alt,
   class: className = '',
   controls = false,
-  viewable = false
+  viewable = false,
+  fit = 'cover'
 }: Props = $props();
+
+let fitClass = $derived(fit === 'contain' ? 'object-contain' : 'object-cover');
 let open = $state(false);
 let zoom = $state(1);
 let fullscreen = $state(false);
@@ -58,11 +63,11 @@ $effect(() => {
 
 <div class={`relative overflow-hidden bg-stage text-stage-foreground ${className}`}>
   {#if src && mediaKind === 'image'}
-    <img class="size-full object-cover" {src} {alt} loading="lazy" decoding="async" />
+    <img class={`size-full ${fitClass}`} {src} {alt} loading="lazy" decoding="async" />
   {:else if src && mediaKind === 'video'}
     <!-- svelte-ignore a11y_media_has_caption -- generated media does not provide a caption track -->
     <video
-      class="size-full object-cover"
+      class={`size-full ${fitClass}`}
       {src}
       aria-label={alt}
       preload="metadata"
