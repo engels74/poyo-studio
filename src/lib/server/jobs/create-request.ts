@@ -1,6 +1,9 @@
 import type { Database } from 'bun:sqlite';
 import type { StudioEntry, StudioRoleInput } from '../../features/generation/contracts';
-import { valuesWithRoleInputs } from '../../features/generation/studio-controller';
+import {
+  isRetainedSourceUrl,
+  valuesWithRoleInputs
+} from '../../features/generation/studio-controller';
 import { IMAGE_REGISTRY_ENTRIES } from '../../features/registry/image-registry';
 import { normalizeRegistryRequest } from '../../features/registry/normalize-registry';
 import type { ExpertOverride } from '../../features/registry/types';
@@ -66,6 +69,14 @@ function assertUrl(value: string): void {
       'invalid_media_url',
       'Media inputs require HTTP(S) URLs without credentials.'
     );
+}
+
+function uploadNeedsRefresh(input: PublicCreateJobInput): boolean {
+  if (isRetainedSourceUrl(input.url)) return true;
+  const expiresAt = input.metadata?.expiresAt;
+  if (typeof expiresAt !== 'string') return false;
+  const expiry = Date.parse(expiresAt);
+  return Number.isFinite(expiry) && expiry <= Date.now();
 }
 
 function parseExpertOverrides(value: unknown): ExpertOverride[] {
@@ -172,8 +183,9 @@ export async function prepareJobCreateRequest(
   body: unknown,
   resolveManagedSource: (
     localSourceId: string,
-    mediaKind: 'image' | 'video'
-  ) => Promise<{ id: string }>
+    mediaKind: 'image' | 'video',
+    refreshUpload: boolean
+  ) => Promise<{ id: string; url?: string }>
 ): Promise<CreateJobRequest> {
   const envelope = record(body, 'Job request');
   const unsupported = Object.keys(envelope).find((key) => !allowedTopLevel.has(key));
@@ -206,14 +218,19 @@ export async function prepareJobCreateRequest(
   const publicInputs = parseInputs(envelope.inputs);
   validateRoleInputs(entry, publicInputs);
   const inputs: CreateJobInput[] = await Promise.all(
-    publicInputs.map(async (input) => ({
-      ...input,
-      ...(input.source === 'uploaded' && input.localSourceId
-        ? {
-            managedSourceId: (await resolveManagedSource(input.localSourceId, input.mediaKind)).id
-          }
-        : {})
-    }))
+    publicInputs.map(async (input) => {
+      if (input.source !== 'uploaded' || !input.localSourceId) return input;
+      const source = await resolveManagedSource(
+        input.localSourceId,
+        input.mediaKind,
+        uploadNeedsRefresh(input)
+      );
+      return {
+        ...input,
+        ...(source.url ? { url: source.url } : {}),
+        managedSourceId: source.id
+      };
+    })
   );
   const roleInputs = inputs.reduce<Record<string, StudioRoleInput[]>>((roles, input) => {
     const current = roles[input.role] ?? [];

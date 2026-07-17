@@ -52,6 +52,8 @@ type JobListRow = {
   representative_type: string | null;
   representative_state: SafeMediaSummary['downloadState'] | null;
   representative_path: string | null;
+  representative_width: number | null;
+  representative_height: number | null;
 };
 
 type LibraryRow = {
@@ -75,6 +77,8 @@ type LibraryRow = {
   representative_type: string | null;
   representative_state: SafeMediaSummary['downloadState'] | null;
   representative_path: string | null;
+  representative_width: number | null;
+  representative_height: number | null;
 };
 
 type DetailJobRow = JobListRow & {
@@ -116,6 +120,8 @@ type OutputRow = {
   checksum: string | null;
   signature: string | null;
   aspect_ratio: string | null;
+  pixel_width: number | null;
+  pixel_height: number | null;
   download_state: SafeMediaSummary['downloadState'];
   favorite: number;
   pinned: number;
@@ -226,6 +232,8 @@ function mediaSummary(row: {
   representative_type: string | null;
   representative_state: SafeMediaSummary['downloadState'] | null;
   representative_path: string | null;
+  representative_width: number | null;
+  representative_height: number | null;
 }): SafeMediaSummary | null {
   if (!row.representative_id || !row.representative_kind || !row.representative_state) return null;
   return {
@@ -233,6 +241,8 @@ function mediaSummary(row: {
     mediaKind: row.representative_kind,
     contentType: row.representative_type,
     fileName: row.representative_path ? basename(row.representative_path) : null,
+    pixelWidth: row.representative_width,
+    pixelHeight: row.representative_height,
     downloadState: row.representative_state,
     mediaUrl:
       row.representative_state === 'verified'
@@ -280,7 +290,9 @@ function listSelect(): string {
     (SELECT o.media_kind FROM job_outputs o WHERE o.job_id=j.id ORDER BY o.favorite DESC,o.download_state='verified' DESC,o.output_order LIMIT 1) representative_kind,
     (SELECT o.content_type FROM job_outputs o WHERE o.job_id=j.id ORDER BY o.favorite DESC,o.download_state='verified' DESC,o.output_order LIMIT 1) representative_type,
     (SELECT o.download_state FROM job_outputs o WHERE o.job_id=j.id ORDER BY o.favorite DESC,o.download_state='verified' DESC,o.output_order LIMIT 1) representative_state,
-    (SELECT o.local_path FROM job_outputs o WHERE o.job_id=j.id ORDER BY o.favorite DESC,o.download_state='verified' DESC,o.output_order LIMIT 1) representative_path`;
+    (SELECT o.local_path FROM job_outputs o WHERE o.job_id=j.id ORDER BY o.favorite DESC,o.download_state='verified' DESC,o.output_order LIMIT 1) representative_path,
+    (SELECT o.pixel_width FROM job_outputs o WHERE o.job_id=j.id ORDER BY o.favorite DESC,o.download_state='verified' DESC,o.output_order LIMIT 1) representative_width,
+    (SELECT o.pixel_height FROM job_outputs o WHERE o.job_id=j.id ORDER BY o.favorite DESC,o.download_state='verified' DESC,o.output_order LIMIT 1) representative_height`;
 }
 
 function tagArray(source: string): string[] {
@@ -424,7 +436,9 @@ export class LibraryRepository extends DatabaseRepository {
       (SELECT o.media_kind FROM job_outputs o WHERE o.job_id=j.id ORDER BY o.favorite DESC,o.download_state='verified' DESC,o.output_order LIMIT 1) representative_kind,
       (SELECT o.content_type FROM job_outputs o WHERE o.job_id=j.id ORDER BY o.favorite DESC,o.download_state='verified' DESC,o.output_order LIMIT 1) representative_type,
       (SELECT o.download_state FROM job_outputs o WHERE o.job_id=j.id ORDER BY o.favorite DESC,o.download_state='verified' DESC,o.output_order LIMIT 1) representative_state,
-      (SELECT o.local_path FROM job_outputs o WHERE o.job_id=j.id ORDER BY o.favorite DESC,o.download_state='verified' DESC,o.output_order LIMIT 1) representative_path
+      (SELECT o.local_path FROM job_outputs o WHERE o.job_id=j.id ORDER BY o.favorite DESC,o.download_state='verified' DESC,o.output_order LIMIT 1) representative_path,
+      (SELECT o.pixel_width FROM job_outputs o WHERE o.job_id=j.id ORDER BY o.favorite DESC,o.download_state='verified' DESC,o.output_order LIMIT 1) representative_width,
+      (SELECT o.pixel_height FROM job_outputs o WHERE o.job_id=j.id ORDER BY o.favorite DESC,o.download_state='verified' DESC,o.output_order LIMIT 1) representative_height
       FROM jobs j WHERE ${clauses.join(' AND ')} ORDER BY j.created_at DESC,j.id DESC LIMIT ?`;
     const rows = this.database
       .query<LibraryRow, Binding[]>(sql)
@@ -510,6 +524,8 @@ export class LibraryRepository extends DatabaseRepository {
         checksum: output.checksum,
         signature: output.signature,
         aspectRatio: output.aspect_ratio,
+        pixelWidth: output.pixel_width,
+        pixelHeight: output.pixel_height,
         favorite: output.favorite === 1,
         pinned: output.pinned === 1,
         localAvailable,

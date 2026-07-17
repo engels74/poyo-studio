@@ -3,9 +3,12 @@ import type { PresetValues } from '../../../src/lib/features/presets/types';
 import {
   clearStudioDraft,
   readStudioDraft,
+  restoreStudioDraftRoleInputs,
+  serializeStudioDraftRoleInputs,
   writeStudioDraft,
   type StudioDraft
 } from '../../../src/lib/features/generation/studio-draft';
+import { IMAGE_REGISTRY } from '../../../src/lib/features/registry/image-registry';
 
 class MemoryStorage {
   private store = new Map<string, string>();
@@ -37,10 +40,23 @@ const values: PresetValues = {
 };
 
 const draft: StudioDraft = {
-  version: 1,
+  version: 3,
   entryKey: 'seedream-5-0-pro',
   sizeMode: 'aspect-ratio',
-  values
+  automaticFields: ['aspectRatio'],
+  values,
+  roleInputs: {
+    reference: [
+      {
+        id: 'remote-reference',
+        role: 'reference',
+        source: 'remote',
+        url: 'https://example.com/a.png',
+        name: 'example.com',
+        mediaKind: 'image'
+      }
+    ]
+  }
 };
 
 describe('studio draft persistence', () => {
@@ -62,7 +78,46 @@ describe('studio draft persistence', () => {
   });
 
   test('rejects a wrong version', () => {
-    localStorage.setItem('poyo-studio-draft:image', JSON.stringify({ ...draft, version: 2 }));
+    localStorage.setItem('poyo-studio-draft:image', JSON.stringify({ ...draft, version: 4 }));
+    expect(readStudioDraft('image')).toBeNull();
+  });
+
+  test('migrates a version 1 draft without inventing automatic field intent', () => {
+    localStorage.setItem(
+      'poyo-studio-draft:image',
+      JSON.stringify({
+        version: 1,
+        entryKey: draft.entryKey,
+        sizeMode: draft.sizeMode,
+        values
+      })
+    );
+    expect(readStudioDraft('image')).toEqual({
+      ...draft,
+      automaticFields: [],
+      roleInputs: {}
+    });
+  });
+
+  test('migrates a version 2 draft without treating an uploaded URL as a retained source', () => {
+    localStorage.setItem(
+      'poyo-studio-draft:image',
+      JSON.stringify({
+        version: 2,
+        entryKey: draft.entryKey,
+        sizeMode: draft.sizeMode,
+        automaticFields: ['aspectRatio'],
+        values
+      })
+    );
+    expect(readStudioDraft('image')).toEqual({ ...draft, roleInputs: {} });
+  });
+
+  test('rejects malformed automatic field keys', () => {
+    localStorage.setItem(
+      'poyo-studio-draft:image',
+      JSON.stringify({ ...draft, automaticFields: ['aspectRatio', 'apiKey'] })
+    );
     expect(readStudioDraft('image')).toBeNull();
   });
 
@@ -88,7 +143,13 @@ describe('studio draft persistence', () => {
   });
 
   test('rejects a PresetValues shape with missing or mistyped required fields', () => {
-    const base = { version: 1, entryKey: 'seedream-5-0-pro', sizeMode: 'aspect-ratio' };
+    const base = {
+      version: 3,
+      entryKey: 'seedream-5-0-pro',
+      sizeMode: 'aspect-ratio',
+      automaticFields: [],
+      roleInputs: {}
+    };
     const malformed: unknown[] = [
       { version: 1, modality: 'image', expertOverrides: [], inputRoles: [] }, // missing guided → cloneJson throws
       { ...values, guided: [] }, // guided is not a plain object
@@ -121,13 +182,110 @@ describe('studio draft persistence', () => {
     localStorage.setItem(
       'poyo-studio-draft:image',
       JSON.stringify({
-        version: 1,
+        version: 3,
         entryKey: 'seedream-5-0-pro',
         sizeMode: 'custom',
-        values: uploaded
+        automaticFields: [],
+        values: uploaded,
+        roleInputs: {}
       })
     );
     expect(readStudioDraft('image')?.values).toEqual(uploaded);
+  });
+
+  test('persists an opaque retained source and measured metadata without a local filename', () => {
+    const serialized = serializeStudioDraftRoleInputs({
+      reference: [
+        {
+          id: 'browser-file-id',
+          role: 'reference',
+          source: 'uploaded',
+          url: 'https://uploads.example.test/source.png',
+          name: '/Users/alice/secret-client/source.png',
+          mediaKind: 'image',
+          localSourceId: 'source-opaque-1',
+          sizeBytes: 42,
+          width: 900,
+          height: 1601,
+          metadataProbe: 'measured'
+        }
+      ]
+    });
+    expect(serialized.reference?.[0]).toMatchObject({
+      id: 'source-opaque-1',
+      localSourceId: 'source-opaque-1',
+      url: 'https://retained-source.invalid/source-opaque-1',
+      name: 'Uploaded reference',
+      width: 900,
+      height: 1601
+    });
+    expect(JSON.stringify(serialized)).not.toContain('/Users/alice');
+    expect(JSON.stringify(serialized)).not.toContain('uploads.example.test');
+
+    const uploadedDraft: StudioDraft = {
+      ...draft,
+      values: {
+        ...values,
+        inputRoles: [
+          {
+            role: 'reference',
+            source: 'uploaded',
+            urls: ['https://uploads.example.test/source.png']
+          }
+        ]
+      },
+      roleInputs: serialized
+    };
+    writeStudioDraft('image', uploadedDraft);
+    const stored = readStudioDraft('image');
+    expect(stored?.values.inputRoles[0]?.urls).toEqual([]);
+    expect(stored?.roleInputs.reference?.[0]?.url).toBe(
+      'https://retained-source.invalid/source-opaque-1'
+    );
+    expect(JSON.stringify(stored)).not.toContain('uploads.example.test');
+  });
+
+  test('restores a retained source but drops legacy uploaded URLs without a source ID', () => {
+    const entry = IMAGE_REGISTRY.entries.find(
+      (candidate) => candidate.key === 'seedream-5.0-pro-edit:image-edit'
+    );
+    if (!entry) throw new Error('Missing Seedream edit fixture.');
+    const retained: StudioDraft = {
+      ...draft,
+      entryKey: entry.key,
+      values: {
+        ...values,
+        inputRoles: [
+          {
+            role: 'reference',
+            source: 'uploaded',
+            urls: ['https://uploads.example.test/source.png']
+          }
+        ]
+      },
+      roleInputs: {
+        reference: [
+          {
+            id: 'source-opaque-1',
+            role: 'reference',
+            source: 'uploaded',
+            url: 'https://uploads.example.test/source.png',
+            name: 'Uploaded reference',
+            mediaKind: 'image',
+            localSourceId: 'source-opaque-1',
+            width: 900,
+            height: 1601,
+            metadataProbe: 'measured'
+          }
+        ]
+      }
+    };
+    expect(restoreStudioDraftRoleInputs(entry, retained).reference?.[0]).toMatchObject({
+      localSourceId: 'source-opaque-1',
+      width: 900,
+      height: 1601
+    });
+    expect(restoreStudioDraftRoleInputs(entry, { ...retained, roleInputs: {} })).toEqual({});
   });
 
   test('rejects malformed JSON', () => {

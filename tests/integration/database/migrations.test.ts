@@ -74,6 +74,10 @@ describe('database migrations', () => {
         .query<{ name: string }, []>('PRAGMA table_info(job_inputs)')
         .all()
         .map((column) => column.name);
+      const outputColumns = database
+        .query<{ name: string }, []>('PRAGMA table_info(job_outputs)')
+        .all()
+        .map((column) => column.name);
       const sourceForeignKey = database
         .query<{ table: string; from: string; to: string }, []>(
           'PRAGMA foreign_key_list(job_inputs)'
@@ -84,6 +88,7 @@ describe('database migrations', () => {
       expect(tables).toEqual(expectedTables);
       expect(indexes.length).toBeGreaterThanOrEqual(17);
       expect(inputColumns).toContain('managed_source_id');
+      expect(outputColumns).toEqual(expect.arrayContaining(['pixel_width', 'pixel_height']));
       expect(sourceForeignKey).toMatchObject({ table: 'managed_sources', to: 'id' });
       expect(journal?.journal_mode).toBe('wal');
       expect(health).toEqual({
@@ -107,7 +112,7 @@ describe('database migrations', () => {
       const migrations = reopened
         .query<{ count: number }, []>('SELECT COUNT(*) AS count FROM schema_migrations')
         .get();
-      expect(migrations?.count).toBe(3);
+      expect(migrations?.count).toBe(4);
       expect(new SettingsRepository(reopened).get<{ mode: string }>('theme')?.value.mode).toBe(
         'dark'
       );

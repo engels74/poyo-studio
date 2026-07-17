@@ -10,6 +10,9 @@ afterEach(async () => {
 
 const retiredRerunMessage =
   'This Seedream 5 Pro job contains the retired n setting. Use Edit in studio to review current settings before creating a new paid job.';
+const unexpectedManagedSourceRefresh = async (): Promise<{ id: string; url: string }> => {
+  throw new Error('This fixture has no managed source to refresh.');
+};
 
 function durableCounts(database: Parameters<typeof seedImageRegistry>[0]) {
   return Object.fromEntries(
@@ -168,8 +171,16 @@ describe('durable job repository invariants', () => {
       )
       .all(job.id);
     const retryActionId = '019b0000-0000-7000-8000-000000000104';
-    const retry = fixture.repository.retryAmbiguous(job.id, retryActionId);
-    const replay = fixture.repository.retryAmbiguous(job.id, retryActionId);
+    const retry = await fixture.repository.retryAmbiguous(
+      job.id,
+      retryActionId,
+      unexpectedManagedSourceRefresh
+    );
+    const replay = await fixture.repository.retryAmbiguous(
+      job.id,
+      retryActionId,
+      unexpectedManagedSourceRefresh
+    );
     expect(retry.retryOfJobId).toBe(job.id);
     expect(retry.id).not.toBe(job.id);
     expect(replay.id).toBe(retry.id);
@@ -246,7 +257,11 @@ describe('durable job repository invariants', () => {
       const rerunActionId = crypto.randomUUID();
       let error: unknown;
       try {
-        fixture.repository.rerunAsNew(source.id, rerunActionId);
+        await fixture.repository.rerunAsNew(
+          source.id,
+          rerunActionId,
+          unexpectedManagedSourceRefresh
+        );
       } catch (caught) {
         error = caught;
       }
@@ -277,7 +292,11 @@ describe('durable job repository invariants', () => {
         input: { prompt: 'Current Pro request', size: '1:1', resolution: '2K' }
       }
     });
-    const currentRerun = fixture.repository.rerunAsNew(current.id, crypto.randomUUID());
+    const currentRerun = await fixture.repository.rerunAsNew(
+      current.id,
+      crypto.randomUUID(),
+      unexpectedManagedSourceRefresh
+    );
     expect(currentRerun.retryOfJobId).toBe(current.id);
     expect(currentRerun.guidedRequest).not.toHaveProperty('n');
     expect(currentRerun.normalizedPayload.input).not.toHaveProperty('n');
@@ -290,7 +309,11 @@ describe('durable job repository invariants', () => {
       guidedRequest: { prompt: 'Two outputs', n: 2 },
       normalizedPayload: { model: 'flux-schnell', input: { prompt: 'Two outputs', n: 2 } }
     });
-    const supportingRerun = fixture.repository.rerunAsNew(supporting.id, crypto.randomUUID());
+    const supportingRerun = await fixture.repository.rerunAsNew(
+      supporting.id,
+      crypto.randomUUID(),
+      unexpectedManagedSourceRefresh
+    );
     expect(supportingRerun.guidedRequest.n).toBe(2);
     expect(supportingRerun.normalizedPayload.input.n).toBe(2);
   });
@@ -409,6 +432,82 @@ describe('durable job repository invariants', () => {
     expect(fixture.repository.outputs(job.id)).toHaveLength(6);
   });
 
+  test('JOB-DIM retains verified dimensions when a later probe has no evidence', async () => {
+    const fixture = await createJobFixture();
+    cleanups.push(fixture.cleanup);
+    const job = createTestJob(fixture.repository, 'verified-dimensions');
+    fixture.repository.applyStatus(
+      job.id,
+      {
+        taskId: 'verified-dimensions-task',
+        statusRaw: 'finished',
+        status: 'finished',
+        creditsAmount: 1,
+        files: [
+          {
+            url: 'https://poyo.test/verified-dimensions.png',
+            fileType: 'image',
+            label: null,
+            format: 'png',
+            contentType: 'image/png',
+            fileName: 'verified-dimensions.png',
+            fileSize: null
+          }
+        ],
+        createdTime: 'now',
+        progress: 100,
+        errorMessage: null
+      },
+      1000
+    );
+    const output = fixture.repository.outputs(job.id)[0];
+    if (!output) throw new Error('Output missing.');
+
+    const firstAttempt = fixture.repository.startDownload(output.id);
+    expect(firstAttempt).toBe(1);
+    expect(
+      fixture.repository.verifyDownload(output.id, firstAttempt, {
+        path: '/tmp/verified-dimensions.png',
+        size: 100,
+        checksum: 'first-checksum',
+        signature: '89504e47',
+        contentType: 'image/png',
+        pixelWidth: 1600,
+        pixelHeight: 900,
+        aspectRatio: '16:9'
+      })
+    ).toBe(true);
+    expect(fixture.repository.output(output.id)).toMatchObject({
+      downloadState: 'verified',
+      contentType: 'image/png',
+      pixelWidth: 1600,
+      pixelHeight: 900,
+      aspectRatio: '16:9'
+    });
+
+    const secondAttempt = fixture.repository.startDownload(output.id);
+    expect(secondAttempt).toBe(2);
+    expect(
+      fixture.repository.verifyDownload(output.id, secondAttempt, {
+        path: '/tmp/verified-dimensions.png',
+        size: 100,
+        checksum: 'second-checksum',
+        signature: '89504e47',
+        contentType: null,
+        pixelWidth: null,
+        pixelHeight: null,
+        aspectRatio: null
+      })
+    ).toBe(true);
+    expect(fixture.repository.output(output.id)).toMatchObject({
+      downloadState: 'verified',
+      contentType: 'image/png',
+      pixelWidth: 1600,
+      pixelHeight: 900,
+      aspectRatio: '16:9'
+    });
+  });
+
   test('JOB-09 safely reclaims expired owner-token leases and rejects stale completion', async () => {
     const fixture = await createJobFixture();
     cleanups.push(fixture.cleanup);
@@ -495,7 +594,7 @@ describe('durable job repository invariants', () => {
     });
   });
 
-  test('UPLOAD-04 persists a managed local source reference beside its remote upload URL', async () => {
+  test('UPLOAD-04 persists and refreshes a managed source before a paid rerun', async () => {
     const fixture = await createJobFixture();
     cleanups.push(fixture.cleanup);
     const managedSourceId = crypto.randomUUID();
@@ -531,7 +630,8 @@ describe('durable job repository invariants', () => {
           mediaKind: 'image',
           source: 'uploaded',
           url: 'https://poyo.test/source.png',
-          managedSourceId
+          managedSourceId,
+          metadata: { expiresAt: '2026-07-15T12:01:00.000Z' }
         }
       ]
     });
@@ -551,5 +651,28 @@ describe('durable job repository invariants', () => {
       local_reference: null,
       upload_url: 'https://poyo.test/source.png'
     });
+    let refreshes = 0;
+    const actionId = crypto.randomUUID();
+    const rerun = await fixture.repository.rerunAsNew(job.id, actionId, async (id, mediaKind) => {
+      refreshes += 1;
+      expect({ id, mediaKind }).toEqual({ id: managedSourceId, mediaKind: 'image' });
+      return { id, url: 'https://poyo.test/refreshed-source.png' };
+    });
+    expect(rerun.normalizedPayload.input.image_url).toBe('https://poyo.test/refreshed-source.png');
+    expect(
+      fixture.database
+        .query<{ managed_source_id: string | null; upload_url: string | null }, [string]>(
+          'SELECT managed_source_id,upload_url FROM job_inputs WHERE job_id=?'
+        )
+        .get(rerun.id)
+    ).toEqual({
+      managed_source_id: managedSourceId,
+      upload_url: 'https://poyo.test/refreshed-source.png'
+    });
+    const replay = await fixture.repository.rerunAsNew(job.id, actionId, async () => {
+      throw new Error('An idempotent replay must not upload the source again.');
+    });
+    expect(replay.id).toBe(rerun.id);
+    expect(refreshes).toBe(1);
   });
 });

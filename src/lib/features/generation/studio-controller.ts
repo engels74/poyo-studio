@@ -28,6 +28,21 @@ export interface StudioCreateJobRequest {
   }>;
 }
 
+const retainedSourceOrigin = 'https://retained-source.invalid';
+
+export function retainedSourceUrl(localSourceId: string): string {
+  return `${retainedSourceOrigin}/${encodeURIComponent(localSourceId)}`;
+}
+
+export function isRetainedSourceUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.origin === retainedSourceOrigin && url.pathname.length > 1;
+  } catch {
+    return false;
+  }
+}
+
 function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }

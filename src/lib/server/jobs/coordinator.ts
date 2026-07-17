@@ -134,11 +134,11 @@ export class JobCoordinator {
       const settings = this.settings();
       const status = await this.options.poyo.getStatus(job.poyoTaskId);
       const updated = this.options.repository.applyStatus(jobId, status, settings.pollDelayMs);
-      if (status.status === 'finished') {
+      if (updated.remoteStatus === 'finished') {
         if (settings.automaticDownloads) await this.downloadPending(jobId);
         else await this.refreshBalance('remote_completion');
       }
-      if (status.status === 'failed') await this.refreshBalance('remote_failure');
+      if (updated.remoteStatus === 'failed') await this.refreshBalance('remote_failure');
       return updated;
     } catch (error) {
       const age = this.now().getTime() - Date.parse(job.lastPolledAt ?? job.createdAt);

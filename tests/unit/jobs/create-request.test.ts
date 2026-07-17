@@ -147,6 +147,50 @@ describe('server-authoritative paid request preparation', () => {
     }
   });
 
+  test('JOB-10 replaces a retained-source placeholder with a freshly uploaded URL', async () => {
+    const fixture = await createJobFixture();
+    try {
+      seedImageRegistry(fixture.database);
+      const localSourceId = '019b0000-0000-7000-8000-000000000099';
+      let refreshRequested = false;
+      const prepared = await prepareJobCreateRequest(
+        fixture.database,
+        {
+          actionId,
+          entryKey: 'seedream-5.0-pro-edit:image-edit',
+          values: { prompt: 'Retain the composition', aspectRatio: '9:16', resolution: '2K' },
+          expertOverrides: [],
+          inputs: [
+            {
+              role: 'reference',
+              mediaKind: 'image',
+              source: 'uploaded',
+              url: `https://retained-source.invalid/${localSourceId}`,
+              localSourceId,
+              metadata: { name: 'Uploaded reference', width: 900, height: 1601 }
+            }
+          ]
+        },
+        async (id, mediaKind, refreshUpload) => {
+          expect(id).toBe(localSourceId);
+          expect(mediaKind).toBe('image');
+          refreshRequested = refreshUpload;
+          return { id, url: 'https://poyo.test/fresh-retained-source.png' };
+        }
+      );
+      expect(refreshRequested).toBe(true);
+      expect(prepared.inputs?.[0]).toMatchObject({
+        managedSourceId: localSourceId,
+        url: 'https://poyo.test/fresh-retained-source.png'
+      });
+      expect(prepared.normalizedPayload.input.image_urls).toEqual([
+        'https://poyo.test/fresh-retained-source.png'
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   test('JOB-10 rejects browser-authored envelopes, protected overrides, stale entries and media tampering', async () => {
     const fixture = await createJobFixture();
     try {

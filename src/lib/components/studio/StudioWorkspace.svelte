@@ -36,16 +36,42 @@ import {
   workflowLabel
 } from '$lib/features/generation/studio-controller';
 import {
+  automaticFieldChoice,
+  automaticSizingIssues,
+  initialAutomaticFields,
+  restoreAutomaticFields,
+  resolvedGuidedValues,
+  type AutomaticFieldKey,
+  type AutomaticFieldState
+} from '$lib/features/generation/studio-sizing';
+import {
   clearStudioDraft,
   readStudioDraft,
+  restoreStudioDraftRoleInputs,
+  serializeStudioDraftRoleInputs,
   writeStudioDraft
 } from '$lib/features/generation/studio-draft';
+import {
+  applyBatchJob,
+  beginPaidBatchRetry,
+  createBatchItem,
+  duplicateBatchItem,
+  readStudioBatch,
+  restoreBatchItemForRegistry,
+  restoreBatchRoleInputs,
+  writeStudioBatch,
+  type StudioBatch,
+  type StudioBatchItem
+} from '$lib/features/generation/studio-batch';
 import type {
   ExpertOverride,
   FieldDefinition,
   NormalizedPreview
 } from '$lib/features/registry/types';
+import BatchReview from './BatchReview.svelte';
+import ChoiceField from './ChoiceField.svelte';
 import FieldControl from './FieldControl.svelte';
+import ModelPicker from './ModelPicker.svelte';
 
 interface Props {
   data: StudioLoadData;
@@ -82,6 +108,7 @@ const initialExpertOverrides = filterRetiredExpertOverrides(
   initialEntry,
   initialData.preset?.values.expertOverrides ?? []
 );
+const initialAutomatic = initialAutomaticFields(initialEntry, Boolean(initialData.preset));
 
 function inferSizeMode(entry: StudioEntry, values: Record<string, unknown>): SizeMode {
   if (values.aspectRatio !== undefined) return 'aspect-ratio';
@@ -102,6 +129,7 @@ let expertText = $state(
       )
     : ''
 );
+let automaticFields = $state<AutomaticFieldState>(initialAutomatic);
 let preview = $state<NormalizedPreview | null>(null);
 let previewIssues = $state<string[]>([]);
 let previewState = $state<'idle' | 'validating' | 'valid' | 'invalid'>('idle');
@@ -147,6 +175,14 @@ let selectedOutput = $state(0);
 let fetchedOutputsFor = '';
 let completedCredits = $state<number | null>(null);
 let nowMs = $state(0);
+let batch = $state<StudioBatch>({
+  version: 1,
+  modality: initialData.modality,
+  items: []
+});
+let batchHydrated = $state(false);
+let batchSubmitting = $state(false);
+let editingBatchItemId = $state<string | null>(null);
 const balanceStaleMs = 10 * 60_000;
 let balanceStale = $derived(
   balance !== null && nowMs > 0 && nowMs - new Date(balance.fetchedAt).getTime() > balanceStaleMs
@@ -216,7 +252,20 @@ let advancedChanged = $derived(
     (field) => guided[field.key] !== undefined && guided[field.key] !== field.default
   ).length
 );
-let currentGuided = $derived(valuesWithRoleInputs(selectedEntry, guided, roleInputs));
+let activeAutomaticFields = $derived<AutomaticFieldState>({
+  aspectRatio:
+    automaticFields.aspectRatio &&
+    selectedEntry.fields.some((field) => field.key === 'aspectRatio') &&
+    (!availableSizeModes.includes('aspect-ratio') || sizeMode === 'aspect-ratio'),
+  resolution:
+    automaticFields.resolution &&
+    selectedEntry.fields.some((field) => field.key === 'resolution') &&
+    (!availableSizeModes.includes('resolution') || sizeMode === 'resolution')
+});
+let resolvedGuided = $derived(
+  resolvedGuidedValues(selectedEntry, guided, roleInputs, activeAutomaticFields)
+);
+let currentGuided = $derived(valuesWithRoleInputs(selectedEntry, resolvedGuided, roleInputs));
 let hasApiKey = $derived(data.apiKey.status === 'configured');
 let allRoleInputs = $derived(Object.values(roleInputs).flat());
 
@@ -225,6 +274,22 @@ function updateGuided(key: string, value: unknown): void {
   else guided[key] = value;
   dirty = true;
   previewRevision += 1;
+}
+
+function isAutomaticField(
+  field: FieldDefinition
+): field is FieldDefinition & { key: AutomaticFieldKey } {
+  return field.key === 'aspectRatio' || field.key === 'resolution';
+}
+
+function updateChoice(key: string, value: unknown, automatic: boolean): void {
+  if (key !== 'aspectRatio' && key !== 'resolution') return;
+  automaticFields[key] = automatic;
+  if (!automatic) updateGuided(key, value);
+  else {
+    dirty = true;
+    previewRevision += 1;
+  }
 }
 
 function chooseSizeMode(next: SizeMode): void {
@@ -252,12 +317,14 @@ function switchEntry(next: StudioEntry): void {
     return;
   entryKey = next.key;
   guided = initialGuidedValues(next);
+  automaticFields = initialAutomaticFields(next);
   roleInputs = {};
   sizeMode = inferSizeMode(next, guided);
   expertText = '';
   preview = null;
   previewIssues = [];
   activeJob = null;
+  editingBatchItemId = null;
   dirty = false;
   previewRevision += 1;
 }
@@ -271,6 +338,13 @@ async function requestPreview(): Promise<NormalizedPreview | null> {
   const sequence = ++previewSequence;
   previewState = 'validating';
   previewIssues = [];
+  const sizingIssues = automaticSizingIssues(selectedEntry, roleInputs, activeAutomaticFields);
+  if (sizingIssues.length) {
+    preview = null;
+    previewState = 'invalid';
+    previewIssues = sizingIssues;
+    return null;
+  }
   try {
     const overrides = parseExpertOverrides(expertText);
     const response = await fetch('/api/requests/preview', {
@@ -313,6 +387,11 @@ $effect(() => {
   return () => window.clearTimeout(timer);
 });
 
+$effect(() => {
+  if (!batchHydrated) return;
+  writeStudioBatch(data.modality, batch);
+});
+
 // Persist a secrets-free draft so in-app navigation and reloads restore the studio setup.
 // Guarded by `hydrated` so the initial default state never overwrites a stored draft before
 // onMount has had a chance to restore it.
@@ -327,10 +406,12 @@ $effect(() => {
     return;
   }
   writeStudioDraft(data.modality, {
-    version: 1,
+    version: 3,
     entryKey,
     sizeMode,
-    values: presetValues(data.modality, guided, overrides, roleInputs)
+    automaticFields: (['aspectRatio', 'resolution'] as const).filter((key) => automaticFields[key]),
+    values: presetValues(data.modality, guided, overrides, roleInputs),
+    roleInputs: serializeStudioDraftRoleInputs(roleInputs)
   });
 });
 
@@ -664,7 +745,7 @@ async function submit(): Promise<void> {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(
-        createJobRequest(action.actionId, selectedEntry, guided, overrides, roleInputs)
+        createJobRequest(action.actionId, selectedEntry, resolvedGuided, overrides, roleInputs)
       )
     });
     const result = (await response.json()) as { job?: StudioJobDto; error?: { message?: string } };
@@ -698,6 +779,367 @@ async function submit(): Promise<void> {
   }
 }
 
+function automaticFieldKeys(): AutomaticFieldKey[] {
+  return (['aspectRatio', 'resolution'] as const).filter((key) => automaticFields[key]);
+}
+
+function replaceBatchItem(next: StudioBatchItem): void {
+  batch.items = batch.items.map((item) => (item.id === next.id ? next : item));
+}
+
+function persistBatchNow(): void {
+  if (batchHydrated) writeStudioBatch(data.modality, batch);
+}
+
+async function addCurrentToBatch(): Promise<void> {
+  if (!(await requestPreview())) return;
+  const incompatible = batch.items.find((item) => item.request.entryKey !== entryKey);
+  if (incompatible) {
+    previewIssues = [
+      `This batch uses ${incompatible.displayName}. Remove its items before starting a batch with ${selectedEntry.displayName}.`
+    ];
+    return;
+  }
+  if (batch.items.length >= 20) {
+    previewIssues = ['A local batch supports at most 20 independently recoverable items.'];
+    return;
+  }
+  let overrides: ExpertOverride[];
+  try {
+    overrides = parseExpertOverrides(expertText);
+  } catch (error) {
+    previewIssues = [error instanceof Error ? error.message : 'Expert overrides are invalid.'];
+    return;
+  }
+
+  const existing = editingBatchItemId
+    ? batch.items.find((item) => item.id === editingBatchItemId)
+    : undefined;
+  const now = new Date().toISOString();
+  const actionId = existing?.request.actionId ?? crypto.randomUUID();
+  const item = createBatchItem(
+    {
+      modality: data.modality,
+      displayName: selectedEntry.displayName,
+      sizeMode,
+      automaticFields: automaticFieldKeys(),
+      request: createJobRequest(actionId, selectedEntry, resolvedGuided, overrides, roleInputs)
+    },
+    {
+      itemId: existing?.id ?? crypto.randomUUID(),
+      actionId,
+      now
+    }
+  );
+  if (existing) {
+    replaceBatchItem({ ...item, createdAt: existing.createdAt });
+    editingBatchItemId = null;
+    restoredMessage = 'Updated the batch item. Review the batch before submission.';
+  } else {
+    batch.items = [...batch.items, item];
+    restoredMessage = `Added item ${batch.items.length} to the local batch.`;
+  }
+}
+
+function editBatchItem(item: StudioBatchItem): void {
+  if (item.state !== 'draft' && item.state !== 'invalid') return;
+  const entry = data.entries.find((candidate) => candidate.key === item.request.entryKey);
+  if (!entry) {
+    replaceBatchItem({
+      ...item,
+      state: 'invalid',
+      error:
+        'This audited model is no longer available. Remove or duplicate the item with a current model.'
+    });
+    return;
+  }
+  if (dirty && !window.confirm('Load this batch item and replace the current setup draft?')) return;
+  entryKey = entry.key;
+  guided = JSON.parse(JSON.stringify(item.request.values)) as Record<string, unknown>;
+  roleInputs = restoreBatchRoleInputs(item);
+  automaticFields = restoreAutomaticFields(entry, item.automaticFields);
+  sizeMode = sizeModes(entry).includes(item.sizeMode)
+    ? item.sizeMode
+    : inferSizeMode(entry, guided);
+  expertText = item.request.expertOverrides.length
+    ? JSON.stringify(
+        Object.fromEntries(
+          item.request.expertOverrides.map((override) => [override.key, override.value])
+        ),
+        null,
+        2
+      )
+    : '';
+  activeJob = null;
+  editingBatchItemId = item.id;
+  dirty = true;
+  restoredMessage = 'Editing a batch item. Save it back to the batch when ready.';
+  previewRevision += 1;
+}
+
+function duplicateBatch(item: StudioBatchItem): void {
+  if (batch.items.length >= 20) return;
+  batch.items = [
+    ...batch.items,
+    duplicateBatchItem(item, {
+      itemId: crypto.randomUUID(),
+      actionId: crypto.randomUUID(),
+      now: new Date().toISOString()
+    })
+  ];
+}
+
+function removeBatchItem(item: StudioBatchItem): void {
+  if (item.state === 'unknown' || item.state === 'submitting') return;
+  batch.items = batch.items.filter((candidate) => candidate.id !== item.id);
+  if (editingBatchItemId === item.id) editingBatchItemId = null;
+}
+
+async function loadBatchOutputs(itemId: string, jobId: string): Promise<void> {
+  const current = batch.items.find((item) => item.id === itemId);
+  if (!current || current.outputs.length) return;
+  try {
+    const response = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/outputs`);
+    const result = (await response.json()) as { outputs?: StudioOutputDto[] };
+    const latest = batch.items.find((item) => item.id === itemId);
+    if (!response.ok || !result.outputs || !latest || latest.job?.id !== jobId) return;
+    replaceBatchItem({ ...latest, outputs: result.outputs });
+  } catch {
+    // The job remains durable and its result can be recovered from job history or a later snapshot.
+  }
+}
+
+function applyJobToBatchItem(item: StudioBatchItem, job: StudioJobDto): void {
+  const latest = batch.items.find((candidate) => candidate.id === item.id) ?? item;
+  const next = applyBatchJob(latest, job);
+  replaceBatchItem(next);
+  if (next.state === 'complete') void loadBatchOutputs(next.id, job.id);
+}
+
+async function reconcileBatchItem(item: StudioBatchItem): Promise<boolean> {
+  try {
+    const response = await fetch(`/api/jobs?actionId=${encodeURIComponent(item.request.actionId)}`);
+    if (response.status === 404) {
+      if (item.state === 'unknown') {
+        replaceBatchItem({
+          ...item,
+          error:
+            'No local job is recorded yet. The paid action stays locked; check again before taking any retry risk.'
+        });
+      }
+      return false;
+    }
+    const result = (await response.json()) as { job?: StudioJobDto };
+    if (!response.ok || !result.job) return false;
+    applyJobToBatchItem(item, result.job);
+    return true;
+  } catch {
+    if (item.state === 'unknown') {
+      replaceBatchItem({
+        ...item,
+        error: 'The local job database could not be reached. This action remains locked.'
+      });
+    }
+    return false;
+  }
+}
+
+async function submitBatchItem(itemId: string): Promise<void> {
+  const item = batch.items.find((candidate) => candidate.id === itemId);
+  if (item?.state !== 'draft') return;
+  replaceBatchItem({ ...item, state: 'submitting', error: null });
+  persistBatchNow();
+  try {
+    const response = await fetch('/api/jobs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(item.request)
+    });
+    const result = (await response.json()) as { job?: StudioJobDto; error?: { message?: string } };
+    const latest = batch.items.find((candidate) => candidate.id === itemId) ?? item;
+    if (!response.ok || !result.job) {
+      if (await reconcileBatchItem(latest)) return;
+      if (response.ok) {
+        const unknown = {
+          ...latest,
+          state: 'unknown' as const,
+          error:
+            'The local server response did not confirm the paid job. This action is locked until it can be reconciled.'
+        };
+        replaceBatchItem(unknown);
+        persistBatchNow();
+        return;
+      }
+      replaceBatchItem({
+        ...latest,
+        state: 'failed',
+        error:
+          result.error?.message ?? 'The local server rejected this item before a job was confirmed.'
+      });
+      return;
+    }
+    applyJobToBatchItem(latest, result.job);
+  } catch {
+    const latest = batch.items.find((candidate) => candidate.id === itemId) ?? item;
+    const unknown = {
+      ...latest,
+      state: 'unknown' as const,
+      error:
+        'The paid submission outcome is unknown. Automatic resubmission is blocked to avoid duplicate spend.'
+    };
+    replaceBatchItem(unknown);
+    persistBatchNow();
+    void reconcileBatchItem(unknown);
+  }
+}
+
+async function submitBatch(): Promise<void> {
+  if (batchSubmitting || !hasApiKey) return;
+  batchSubmitting = true;
+  try {
+    const ready = batch.items.filter((item) => item.state === 'draft').map((item) => item.id);
+    for (const itemId of ready) await submitBatchItem(itemId);
+  } finally {
+    batchSubmitting = false;
+  }
+}
+
+async function retryBatchItem(item: StudioBatchItem): Promise<void> {
+  if (item.state !== 'failed') return;
+  if (!item.job) {
+    const actionId = crypto.randomUUID();
+    const retry = {
+      ...item,
+      request: { ...item.request, actionId },
+      state: 'draft' as const,
+      error: null,
+      updatedAt: new Date().toISOString()
+    };
+    replaceBatchItem(retry);
+    await submitBatchItem(retry.id);
+    return;
+  }
+  if (item.job.failureDomain === 'download') {
+    try {
+      const response = await fetch(`/api/jobs/${encodeURIComponent(item.job.id)}/outputs`);
+      const result = (await response.json()) as { outputs?: StudioOutputDto[] };
+      if (!response.ok || !Array.isArray(result.outputs))
+        throw new Error('The local outputs could not be checked.');
+      const pending = (result.outputs ?? []).filter((output) => !output.localAvailable);
+      if (!pending.length) {
+        replaceBatchItem({
+          ...item,
+          error: 'No unavailable output is currently eligible for a local download retry.'
+        });
+        return;
+      }
+      let accepted = 0;
+      for (const output of pending) {
+        const retryResponse = await fetch(
+          `/api/jobs/${encodeURIComponent(item.job.id)}/outputs/${encodeURIComponent(output.outputId)}/retry`,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: '{}'
+          }
+        );
+        if (retryResponse.ok) accepted += 1;
+      }
+      if (!accepted) throw new Error('No local download retry was accepted.');
+      replaceBatchItem({
+        ...item,
+        state: 'downloading',
+        error:
+          accepted === pending.length
+            ? null
+            : `${accepted} of ${pending.length} local download retries were accepted.`
+      });
+    } catch {
+      replaceBatchItem({ ...item, error: 'The local download retry could not be started.' });
+    }
+    return;
+  }
+  const ambiguous = item.job.attentionCode === 'submission_unknown';
+  if (
+    !window.confirm(
+      ambiguous
+        ? 'Poyo may already have accepted this item. Retrying can spend credits twice. Continue with a linked paid retry?'
+        : 'Retrying creates a new paid Poyo job for this item. Continue?'
+    )
+  )
+    return;
+  const actionId = crypto.randomUUID();
+  const retry = beginPaidBatchRetry(item, actionId, new Date().toISOString());
+  replaceBatchItem(retry);
+  persistBatchNow();
+  try {
+    const response = await fetch(
+      `/api/jobs/${encodeURIComponent(item.job.id)}/${ambiguous ? 'retry-ambiguous' : 'rerun'}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(
+          ambiguous
+            ? { acknowledgeDuplicateSpendRisk: true, actionId }
+            : { acknowledgeNewPaidJob: true, actionId }
+        )
+      }
+    );
+    const result = (await response.json()) as { job?: StudioJobDto; error?: { message?: string } };
+    const latest = batch.items.find((candidate) => candidate.id === item.id) ?? retry;
+    if (!response.ok || !result.job) {
+      if (await reconcileBatchItem(latest)) return;
+      if (response.ok) {
+        const unknown = {
+          ...latest,
+          state: 'unknown' as const,
+          error:
+            'The local server response did not confirm the paid retry. Another retry is locked until this action is reconciled.'
+        };
+        replaceBatchItem(unknown);
+        persistBatchNow();
+        return;
+      }
+      replaceBatchItem({
+        ...latest,
+        state: 'failed',
+        job: item.job,
+        outputs: item.outputs,
+        error: result.error?.message ?? 'The local server rejected this paid retry.'
+      });
+      return;
+    }
+    applyJobToBatchItem(latest, result.job);
+  } catch {
+    const latest = batch.items.find((candidate) => candidate.id === item.id) ?? retry;
+    const unknown = {
+      ...latest,
+      state: 'unknown' as const,
+      error:
+        'The paid retry outcome is unknown. Another retry is locked until this action is reconciled.'
+    };
+    replaceBatchItem(unknown);
+    persistBatchNow();
+    void reconcileBatchItem(unknown);
+  }
+}
+
+function abandonBatchItem(item: StudioBatchItem): void {
+  if (
+    item.state !== 'unknown' ||
+    !window.confirm(
+      'The original request may still create a paid Poyo task. Abandon this action and accept the risk that a later retry could spend credits twice?'
+    )
+  )
+    return;
+  replaceBatchItem({
+    ...item,
+    state: 'failed',
+    error: 'This unresolved action was explicitly abandoned. A retry will use a new paid action ID.'
+  });
+  persistBatchNow();
+}
+
 function resetDraft(): void {
   if (submissionUnknown || readPendingAction()) {
     previewIssues = [
@@ -706,11 +1148,13 @@ function resetDraft(): void {
     return;
   }
   guided = initialGuidedValues(selectedEntry);
+  automaticFields = initialAutomaticFields(selectedEntry);
   roleInputs = {};
   expertText = '';
   preview = null;
   previewIssues = [];
   activeJob = null;
+  editingBatchItemId = null;
   submissionUnknown = false;
   submissionLocked = false;
   dirty = false;
@@ -733,7 +1177,7 @@ async function savePreset(): Promise<void> {
         entryKey,
         name: presetName,
         description: presetDescription,
-        values: presetValues(data.modality, guided, overrides, roleInputs)
+        values: presetValues(data.modality, resolvedGuided, overrides, roleInputs)
       })
     });
     const result = (await response.json()) as {
@@ -774,7 +1218,6 @@ function startResize(event: PointerEvent): void {
 }
 
 function updateFromJobEvent(event: MessageEvent<string>): void {
-  if (!activeJob) return;
   const update = JSON.parse(event.data) as {
     jobId: string;
     localPhase: string;
@@ -783,6 +1226,18 @@ function updateFromJobEvent(event: MessageEvent<string>): void {
     progress: number | null;
     observedAt: string;
   };
+  const batchItem = batch.items.find((item) => item.job?.id === update.jobId);
+  if (batchItem?.job) {
+    applyJobToBatchItem(batchItem, {
+      ...batchItem.job,
+      localPhase: update.localPhase,
+      remoteStatus: update.remoteStatus,
+      failureDomain: update.failureDomain,
+      progress: update.progress,
+      updatedAt: update.observedAt
+    });
+  }
+  if (!activeJob) return;
   if (update.jobId !== activeJob.id) return;
   activeJob = {
     ...activeJob,
@@ -867,6 +1322,22 @@ function abandonPendingAction(): void {
 }
 
 onMount(() => {
+  const storedBatch = readStudioBatch(data.modality);
+  if (storedBatch) {
+    batch = {
+      ...storedBatch,
+      items: storedBatch.items.map((item) =>
+        restoreBatchItemForRegistry(
+          item,
+          data.entries.find((candidate) => candidate.key === item.request.entryKey)
+        )
+      )
+    };
+  }
+  batchHydrated = true;
+  for (const item of batch.items) {
+    if (item.state !== 'draft' && item.state !== 'invalid') void reconcileBatchItem(item);
+  }
   // Restore the last studio draft unless an explicit preset/job URL or an unresolved paid
   // action is driving the initial state. Preserve only what is still valid for the model.
   const explicitContext = Boolean(initialData.preset) || Boolean(readPendingAction());
@@ -877,7 +1348,8 @@ onMount(() => {
       if (entry) {
         entryKey = entry.key;
         guided = initialGuidedValues(entry, draft.values);
-        roleInputs = initialRoleInputs(entry, draft.values);
+        automaticFields = restoreAutomaticFields(entry, draft.automaticFields);
+        roleInputs = restoreStudioDraftRoleInputs(entry, draft);
         const overrides = filterRetiredExpertOverrides(entry, draft.values.expertOverrides ?? []);
         expertText = overrides.length
           ? JSON.stringify(
@@ -892,9 +1364,14 @@ onMount(() => {
         // Treat the restored draft as the baseline, not an unsaved edit, so switching model
         // afterwards does not prompt to discard "changes" the user did not just make.
         previewRevision += 1;
-        restoredMessage = Object.keys(roleInputs).length
-          ? 'Restored your last setup. Locally selected files may need to be added again.'
-          : 'Restored your last setup.';
+        const adjustedAutomatic = draft.automaticFields.some(
+          (key) => !entry.fields.some((field) => field.key === key)
+        );
+        restoredMessage = `${
+          Object.keys(roleInputs).length
+            ? 'Restored your last setup. Retained local sources are securely re-uploaded when needed.'
+            : 'Restored your last setup.'
+        }${adjustedAutomatic ? ' An automatic size preference was removed because this model no longer supports that field.' : ''}`;
       } else {
         clearStudioDraft(data.modality);
         restoredMessage = 'Your last model is unavailable, so the studio reset to defaults.';
@@ -923,11 +1400,17 @@ onMount(() => {
     if (!acceptDurableEvent(message)) return;
     connection = 'connected';
     const snapshot = JSON.parse(message.data) as { jobs: StudioJobDto[] };
+    for (const item of batch.items) {
+      const matchingBatchJob = snapshot.jobs.find((job) => job.id === item.job?.id);
+      if (matchingBatchJob) applyJobToBatchItem(item, matchingBatchJob);
+    }
+    const batchJobIds = new Set(batch.items.map((item) => item.job?.id).filter(Boolean));
     const matching = activeJob
       ? snapshot.jobs.find((job) => job.id === activeJob?.id)
       : snapshot.jobs.find(
           (job) =>
             job.publicModelId === selectedEntry.publicModelId &&
+            !batchJobIds.has(job.id) &&
             !['complete'].includes(job.localPhase)
         );
     if (matching) activeJob = matching;
@@ -981,47 +1464,97 @@ function showMobileSection(section: MobileStep, mobile: boolean): boolean {
               <AppIcon name="heart" size={17} class={favorites.includes(entryKey) ? 'text-primary' : ''} />
             </button>
           </div>
-          <div class="mt-4 grid gap-3">
-            <label class="grid gap-1.5 text-xs font-semibold" for={`${data.modality}-workflow`}>
-              Creative intent
-              <select
-                id={`${data.modality}-workflow`}
-                class="focus-ring h-9 rounded-[var(--radius)] border border-input bg-background px-2.5 text-sm"
-                value={selectedEntry.workflow}
-                onchange={(event) => switchWorkflow(event.currentTarget.value)}
-              >
-                {#each workflows as workflow (workflow)}
-                  <option value={workflow}>{workflowLabel(workflow)}</option>
-                {/each}
-              </select>
-            </label>
-            <label class="grid gap-1.5 text-xs font-semibold" for={`${data.modality}-model`}>
-              Audited model
-              <select
-                id={`${data.modality}-model`}
-                class="focus-ring h-9 rounded-[var(--radius)] border border-input bg-background px-2.5 text-sm"
-                value={entryKey}
-                onchange={(event) => {
-                  const next = data.entries.find((entry) => entry.key === event.currentTarget.value);
-                  if (next) switchEntry(next);
-                }}
-              >
-                {#each modelEntries as entry (entry.key)}
-                  <option value={entry.key}>{favorites.includes(entry.key) ? '★ ' : ''}{entry.displayName} · {entry.provider}</option>
-                {/each}
-              </select>
-            </label>
+          <div class="mt-4 grid gap-4">
+            {#if data.modality === 'image'}
+              <fieldset class="grid gap-2">
+                <legend class="text-xs font-semibold">Creative intent</legend>
+                <div class="grid grid-cols-2 gap-1 rounded-[var(--radius)] bg-muted p-1">
+                  {#each [
+                    { workflow: 'text-to-image', label: 'Text to image' },
+                    { workflow: 'image-edit', label: 'Edit image' }
+                  ] as intent (intent.workflow)}
+                    <label
+                      class="focus-within:ring-2 focus-within:ring-ring flex min-h-10 cursor-pointer items-center justify-center rounded px-2 text-center text-xs font-semibold"
+                      class:bg-background={
+                        intent.workflow === 'text-to-image'
+                          ? selectedEntry.workflow === 'text-to-image'
+                          : selectedEntry.workflow !== 'text-to-image'
+                      }
+                      class:shadow-[var(--shadow-xs)]={
+                        intent.workflow === 'text-to-image'
+                          ? selectedEntry.workflow === 'text-to-image'
+                          : selectedEntry.workflow !== 'text-to-image'
+                      }
+                    >
+                      <input
+                        class="sr-only"
+                        type="radio"
+                        name={`${data.modality}-creative-intent`}
+                        value={intent.workflow}
+                        checked={
+                          intent.workflow === 'text-to-image'
+                            ? selectedEntry.workflow === 'text-to-image'
+                            : selectedEntry.workflow !== 'text-to-image'
+                        }
+                        onchange={() => switchWorkflow(intent.workflow)}
+                      />
+                      {intent.label}
+                    </label>
+                  {/each}
+                </div>
+              </fieldset>
+            {:else}
+              <fieldset class="grid gap-2">
+                <legend class="text-xs font-semibold">Creative intent</legend>
+                <div class="grid max-h-40 grid-cols-2 gap-1 overflow-y-auto rounded-[var(--radius)] bg-muted p-1">
+                  {#each workflows as workflow (workflow)}
+                    <label
+                      class="focus-within:ring-2 focus-within:ring-ring flex min-h-10 cursor-pointer items-center rounded px-2 text-xs font-semibold"
+                      class:bg-background={selectedEntry.workflow === workflow}
+                      class:shadow-[var(--shadow-xs)]={selectedEntry.workflow === workflow}
+                    >
+                      <input
+                        class="sr-only"
+                        type="radio"
+                        name={`${data.modality}-creative-intent`}
+                        value={workflow}
+                        checked={selectedEntry.workflow === workflow}
+                        onchange={() => switchWorkflow(workflow)}
+                      />
+                      {workflowLabel(workflow)}
+                    </label>
+                  {/each}
+                </div>
+              </fieldset>
+            {/if}
+            <ModelPicker
+              entries={modelEntries}
+              selectedKey={entryKey}
+              {favorites}
+              onchange={switchEntry}
+            />
           </div>
           <p class="mt-3 font-mono text-[0.6875rem] text-muted-foreground">{selectedEntry.publicModelId}</p>
           {#if selectedEntry.limitations.length}
-            <div class="mt-3 rounded-[var(--radius)] bg-warning/10 px-3 py-2 text-xs leading-5 text-foreground">
-              <strong>Known limitation:</strong> {selectedEntry.limitations[0]}
-            </div>
+            <details class="mt-3 text-xs leading-5 text-muted-foreground">
+              <summary class="focus-ring w-fit cursor-pointer rounded font-semibold text-foreground">Verified note for this model</summary>
+              <p class="mt-1.5">{selectedEntry.limitations[0]}</p>
+            </details>
           {/if}
           {#if setupFields.length}
             <div class="mt-5 grid gap-4">
               {#each setupFields as field (field.key)}
-                <FieldControl {field} value={guided[field.key]} onchange={updateGuided} />
+                {#if isAutomaticField(field)}
+                  <ChoiceField
+                    {field}
+                    value={guided[field.key]}
+                    automatic={automaticFields[field.key]}
+                    automaticChoice={automaticFieldChoice(selectedEntry, field.key, roleInputs)}
+                    onchange={updateChoice}
+                  />
+                {:else}
+                  <FieldControl {field} value={guided[field.key]} onchange={updateGuided} />
+                {/if}
               {/each}
             </div>
           {/if}
@@ -1153,7 +1686,17 @@ function showMobileSection(section: MobileStep, mobile: boolean): boolean {
           {/if}
           <div class="mt-4 grid gap-4">
             {#each commonFields as field (field.key)}
-              <FieldControl {field} value={field.key === 'dimensions' ? { width: guided.width, height: guided.height } : guided[field.key]} onchange={updateGuided} />
+              {#if isAutomaticField(field)}
+                <ChoiceField
+                  {field}
+                  value={guided[field.key]}
+                  automatic={automaticFields[field.key]}
+                  automaticChoice={automaticFieldChoice(selectedEntry, field.key, roleInputs)}
+                  onchange={updateChoice}
+                />
+              {:else}
+                <FieldControl {field} value={field.key === 'dimensions' ? { width: guided.width, height: guided.height } : guided[field.key]} onchange={updateGuided} />
+              {/if}
             {/each}
           </div>
         </section>
@@ -1263,12 +1806,33 @@ function showMobileSection(section: MobileStep, mobile: boolean): boolean {
           </button>
         </span>
       </div>
-      <div class="grid grid-cols-[auto_auto_1fr] gap-2">
+      <div class="grid grid-cols-2 gap-2">
         <Button variant="ghost" size="sm" onclick={resetDraft}>Reset</Button>
         <Button variant="outline" size="sm" onclick={() => (showPresetForm = !showPresetForm)}>Save preset</Button>
         <Button
+          variant="outline"
+          size="sm"
+          disabled={!preview || submitting || submissionLocked || batchSubmitting}
+          onclick={() => void addCurrentToBatch()}
+        >
+          {editingBatchItemId ? 'Update batch item' : 'Add to batch'}
+        </Button>
+        <BatchReview
+          modality={data.modality}
+          items={batch.items}
+          submitting={batchSubmitting}
+          canSubmit={hasApiKey}
+          onedit={editBatchItem}
+          onduplicate={duplicateBatch}
+          onremove={removeBatchItem}
+          onsubmit={() => void submitBatch()}
+          onretry={(item) => void retryBatchItem(item)}
+          onreconcile={(item) => void reconcileBatchItem(item)}
+          onabandon={abandonBatchItem}
+        />
+        <Button
           variant="primary"
-          class="min-h-10"
+          class="col-span-2 min-h-10"
           disabled={!preview || submitting || submissionLocked || !hasApiKey}
           ariaDescribedby={`${data.modality}-generate-status`}
           onclick={submit}

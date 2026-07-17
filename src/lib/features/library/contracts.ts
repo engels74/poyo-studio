@@ -22,6 +22,8 @@ export interface SafeMediaSummary {
   mediaKind: 'image' | 'video';
   contentType: string | null;
   fileName: string | null;
+  pixelWidth: number | null;
+  pixelHeight: number | null;
   downloadState: 'pending' | 'downloading' | 'verified' | 'failed' | 'expired' | 'deleted';
   mediaUrl: string | null;
 }
@@ -205,3 +207,9 @@ export interface DashboardDto {
 }
 
 export type LocalDeleteChoice = 'file' | 'metadata' | 'both';
+
+export interface NativeMediaCapabilities {
+  openNative: boolean;
+  reveal: boolean;
+  revealLabel: 'Reveal in Finder' | 'Show in File Explorer' | 'Show in folder';
+}
