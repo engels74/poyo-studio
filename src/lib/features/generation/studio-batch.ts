@@ -329,12 +329,17 @@ export function batchItemCompatibilityIssues(item: StudioBatchItem, entry: Studi
   if (modes.length && !modes.includes(item.sizeMode))
     issues.push('The saved size mode is no longer supported.');
   const fields = new Map(entry.fields.map((field) => [field.key, field]));
+  const hasDimensions = entry.fields.some((field) => field.kind === 'dimensions');
   for (const key of item.automaticFields) {
     if (!fields.has(key)) issues.push(`Automatic ${key} is no longer supported.`);
   }
   for (const [key, value] of Object.entries(item.request.values)) {
     const field = fields.get(key);
-    if (!field && key !== 'enableSafetyChecker') {
+    if (
+      !field &&
+      key !== 'enableSafetyChecker' &&
+      !(hasDimensions && (key === 'width' || key === 'height'))
+    ) {
       issues.push(`The saved ${key} option is no longer supported.`);
       continue;
     }

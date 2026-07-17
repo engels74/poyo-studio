@@ -973,7 +973,7 @@ export class JobRepository extends DatabaseRepository {
         .run(data.size, now, id, attempt);
       this.database
         .query(
-          `UPDATE job_outputs SET download_state='verified',local_path=?,byte_size=?,checksum=?,signature=?,content_type=COALESCE(?,content_type),pixel_width=?,pixel_height=?,aspect_ratio=COALESCE(?,aspect_ratio),verified_at=? WHERE id=?`
+          `UPDATE job_outputs SET download_state='verified',local_path=?,byte_size=?,checksum=?,signature=?,content_type=COALESCE(?,content_type),pixel_width=COALESCE(?,pixel_width),pixel_height=COALESCE(?,pixel_height),aspect_ratio=COALESCE(?,aspect_ratio),verified_at=? WHERE id=?`
         )
         .run(
           data.path,

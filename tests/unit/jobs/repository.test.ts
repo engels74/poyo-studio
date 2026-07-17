@@ -432,6 +432,82 @@ describe('durable job repository invariants', () => {
     expect(fixture.repository.outputs(job.id)).toHaveLength(6);
   });
 
+  test('JOB-DIM retains verified dimensions when a later probe has no evidence', async () => {
+    const fixture = await createJobFixture();
+    cleanups.push(fixture.cleanup);
+    const job = createTestJob(fixture.repository, 'verified-dimensions');
+    fixture.repository.applyStatus(
+      job.id,
+      {
+        taskId: 'verified-dimensions-task',
+        statusRaw: 'finished',
+        status: 'finished',
+        creditsAmount: 1,
+        files: [
+          {
+            url: 'https://poyo.test/verified-dimensions.png',
+            fileType: 'image',
+            label: null,
+            format: 'png',
+            contentType: 'image/png',
+            fileName: 'verified-dimensions.png',
+            fileSize: null
+          }
+        ],
+        createdTime: 'now',
+        progress: 100,
+        errorMessage: null
+      },
+      1000
+    );
+    const output = fixture.repository.outputs(job.id)[0];
+    if (!output) throw new Error('Output missing.');
+
+    const firstAttempt = fixture.repository.startDownload(output.id);
+    expect(firstAttempt).toBe(1);
+    expect(
+      fixture.repository.verifyDownload(output.id, firstAttempt, {
+        path: '/tmp/verified-dimensions.png',
+        size: 100,
+        checksum: 'first-checksum',
+        signature: '89504e47',
+        contentType: 'image/png',
+        pixelWidth: 1600,
+        pixelHeight: 900,
+        aspectRatio: '16:9'
+      })
+    ).toBe(true);
+    expect(fixture.repository.output(output.id)).toMatchObject({
+      downloadState: 'verified',
+      contentType: 'image/png',
+      pixelWidth: 1600,
+      pixelHeight: 900,
+      aspectRatio: '16:9'
+    });
+
+    const secondAttempt = fixture.repository.startDownload(output.id);
+    expect(secondAttempt).toBe(2);
+    expect(
+      fixture.repository.verifyDownload(output.id, secondAttempt, {
+        path: '/tmp/verified-dimensions.png',
+        size: 100,
+        checksum: 'second-checksum',
+        signature: '89504e47',
+        contentType: null,
+        pixelWidth: null,
+        pixelHeight: null,
+        aspectRatio: null
+      })
+    ).toBe(true);
+    expect(fixture.repository.output(output.id)).toMatchObject({
+      downloadState: 'verified',
+      contentType: 'image/png',
+      pixelWidth: 1600,
+      pixelHeight: 900,
+      aspectRatio: '16:9'
+    });
+  });
+
   test('JOB-09 safely reclaims expired owner-token leases and rejects stale completion', async () => {
     const fixture = await createJobFixture();
     cleanups.push(fixture.cleanup);

@@ -315,6 +315,48 @@ describe('studio batch persistence and state', () => {
     ).toContain('The newRequiredField option is now required.');
   });
 
+  test('BATCH-DIM keeps custom dimensions compatible only while the capability exists', () => {
+    const entry = IMAGE_REGISTRY.entries.find(
+      (candidate) => candidate.key === 'flux-schnell:text-to-image'
+    );
+    if (!entry) throw new Error('Missing Flux Schnell registry fixture.');
+    expect(entry.fields).toContainEqual(
+      expect.objectContaining({ key: 'dimensions', kind: 'dimensions' })
+    );
+    const item = createBatchItem(
+      {
+        modality: 'image',
+        displayName: entry.displayName,
+        sizeMode: 'custom',
+        automaticFields: [],
+        request: {
+          ...request,
+          entryKey: entry.key,
+          values: { prompt: 'custom', width: 1024, height: 1024 }
+        }
+      },
+      { itemId: 'item-1', actionId: request.actionId, now: '2026-07-17T00:00:00.000Z' }
+    );
+
+    expect(batchItemCompatibilityIssues(item, entry)).toEqual([]);
+    expect(restoreBatchItemForRegistry(item, entry)).toMatchObject({
+      state: 'draft',
+      error: null,
+      request: { values: { width: 1024, height: 1024 } }
+    });
+
+    const withoutDimensions = {
+      ...entry,
+      fields: entry.fields.filter((field) => field.kind !== 'dimensions')
+    };
+    expect(batchItemCompatibilityIssues(item, withoutDimensions)).toEqual(
+      expect.arrayContaining([
+        'The saved width option is no longer supported.',
+        'The saved height option is no longer supported.'
+      ])
+    );
+  });
+
   test('BATCH-08 preserves allowed Expert overrides and paid ambiguity across registry drift', () => {
     const entry = IMAGE_REGISTRY.entries.find(
       (candidate) => candidate.key === 'seedream-5.0-pro:text-to-image'
