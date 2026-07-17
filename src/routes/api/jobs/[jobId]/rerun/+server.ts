@@ -1,8 +1,10 @@
 import { JobRequestError } from '$lib/server/jobs/create-request';
 import { safeJobDto } from '$lib/server/jobs/events';
 import { jobHttpError } from '$lib/server/jobs/http';
+import { createManagedSourceUploadRefresher } from '$lib/server/jobs/managed-source-upload';
 import { getJobRuntime } from '$lib/server/jobs/runtime';
 import { readSameOriginJson } from '$lib/server/platform/request-security';
+import { getPlatformServices } from '$lib/server/platform/runtime';
 import type { RequestHandler } from './$types';
 
 export const POST: RequestHandler = async ({ request, params }) => {
@@ -18,8 +20,13 @@ export const POST: RequestHandler = async ({ request, params }) => {
         'paid_action_acknowledgement_required',
         'Explicit acknowledgement is required for a new paid job.'
       );
+    const platform = await getPlatformServices();
     const runtime = await getJobRuntime();
-    const job = runtime.repository.rerunAsNew(params.jobId, body.actionId);
+    const job = await runtime.repository.rerunAsNew(
+      params.jobId,
+      body.actionId,
+      createManagedSourceUploadRefresher(platform)
+    );
     void runtime.coordinator.reconcile(job.id).catch(() => undefined);
     return Response.json({ job: safeJobDto(job) }, { status: 202 });
   } catch (error) {

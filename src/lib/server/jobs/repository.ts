@@ -98,12 +98,18 @@ type OutputRow = {
   checksum: string | null;
   signature: string | null;
   aspect_ratio: string | null;
+  pixel_width: number | null;
+  pixel_height: number | null;
   download_state: OutputRecord['downloadState'];
   favorite: number;
   pinned: number;
   verified_at: string | null;
   deleted_at: string | null;
 };
+type RefreshManagedSource = (
+  managedSourceId: string,
+  mediaKind: 'image' | 'video'
+) => Promise<{ id: string; url: string }>;
 
 const transitions: Record<LocalPhase, readonly LocalPhase[]> = {
   queued: ['validating', 'submission_prepared', 'requires_attention'],
@@ -127,6 +133,15 @@ function canonical(value: unknown): string {
 }
 function hash(value: string): string {
   return new Bun.CryptoHasher('sha256').update(value).digest('hex');
+}
+
+function replacePayloadUrls(value: unknown, replacements: ReadonlyMap<string, string>): unknown {
+  if (typeof value === 'string') return replacements.get(value) ?? value;
+  if (Array.isArray(value)) return value.map((item) => replacePayloadUrls(item, replacements));
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [key, replacePayloadUrls(item, replacements)])
+  );
 }
 function assertSafeRequest(value: unknown): void {
   if (value === undefined || typeof value === 'function' || typeof value === 'symbol')
@@ -200,6 +215,8 @@ function mapOutput(row: OutputRow): OutputRecord {
     checksum: row.checksum,
     signature: row.signature,
     aspectRatio: row.aspect_ratio,
+    pixelWidth: row.pixel_width,
+    pixelHeight: row.pixel_height,
     downloadState: row.download_state,
     favorite: row.favorite === 1,
     pinned: row.pinned === 1,
@@ -402,25 +419,77 @@ export class JobRepository extends DatabaseRepository {
         ...(input.managed_source_id ? { managedSourceId: input.managed_source_id } : {})
       }));
   }
-  retryAmbiguous(jobId: string, actionId: string): JobRecord {
-    const job = this.get(jobId);
-    if (job?.attentionCode !== 'submission_unknown')
-      throw new Error('Only ambiguous submissions may be explicitly retried.');
+  private existingRetry(jobId: string, actionId: string): JobRecord | null {
+    if (!isPaidActionId(actionId))
+      throw new JobRequestError('invalid_action_id', 'A stable opaque action ID is required.');
+    const existing = this.getByActionId(actionId);
+    if (!existing) return null;
+    if (existing.retryOfJobId !== jobId)
+      throw new JobRequestError(
+        'action_id_conflict',
+        'This paid action ID is already associated with another request.',
+        409
+      );
+    return existing;
+  }
+  private async createRefreshedRetry(
+    job: JobRecord,
+    actionId: string,
+    refreshManagedSource: RefreshManagedSource
+  ): Promise<JobRecord> {
+    const existing = this.existingRetry(job.id, actionId);
+    if (existing) return existing;
+    const replacements = new Map<string, string>();
+    const inputs = await Promise.all(
+      this.inputsFor(job.id).map(async (input) => {
+        if (input.source !== 'uploaded') return input;
+        if (!input.managedSourceId)
+          throw new JobRequestError(
+            'rerun_source_requires_review',
+            'This historical upload is no longer safely reusable. Open it in studio and select the source again.',
+            409
+          );
+        const refreshed = await refreshManagedSource(input.managedSourceId, input.mediaKind);
+        if (refreshed.id !== input.managedSourceId)
+          throw new Error('Managed source refresh returned an unexpected identifier.');
+        replacements.set(input.url, refreshed.url);
+        return { ...input, url: refreshed.url };
+      })
+    );
+    const replay = this.existingRetry(job.id, actionId);
+    if (replay) return replay;
     return this.create({
       actionId,
       ...(job.entryKey ? { entryKey: job.entryKey } : {}),
       workflow: job.workflow,
       publicModelId: job.publicModelId,
       guidedRequest: job.guidedRequest,
-      normalizedPayload: job.normalizedPayload,
+      normalizedPayload: replacePayloadUrls(
+        job.normalizedPayload,
+        replacements
+      ) as JobRecord['normalizedPayload'],
       ...(typeof job.guidedRequest.prompt === 'string' ? { prompt: job.guidedRequest.prompt } : {}),
       ...(job.estimatedCredits === null ? {} : { estimatedCredits: job.estimatedCredits }),
       retryOfJobId: job.id,
       expertDiff: job.expertDiff,
-      inputs: this.inputsFor(job.id)
+      inputs
     });
   }
-  rerunAsNew(jobId: string, actionId: string): JobRecord {
+  async retryAmbiguous(
+    jobId: string,
+    actionId: string,
+    refreshManagedSource: RefreshManagedSource
+  ): Promise<JobRecord> {
+    const job = this.get(jobId);
+    if (job?.attentionCode !== 'submission_unknown')
+      throw new Error('Only ambiguous submissions may be explicitly retried.');
+    return this.createRefreshedRetry(job, actionId, refreshManagedSource);
+  }
+  async rerunAsNew(
+    jobId: string,
+    actionId: string,
+    refreshManagedSource: RefreshManagedSource
+  ): Promise<JobRecord> {
     const job = this.get(jobId);
     if (!job) throw new Error('Job not found.');
     if (job.attentionCode === 'submission_unknown')
@@ -437,19 +506,7 @@ export class JobRepository extends DatabaseRepository {
         'This Seedream 5 Pro job contains the retired n setting. Use Edit in studio to review current settings before creating a new paid job.',
         409
       );
-    return this.create({
-      actionId,
-      ...(job.entryKey ? { entryKey: job.entryKey } : {}),
-      workflow: job.workflow,
-      publicModelId: job.publicModelId,
-      guidedRequest: job.guidedRequest,
-      normalizedPayload: job.normalizedPayload,
-      ...(typeof job.guidedRequest.prompt === 'string' ? { prompt: job.guidedRequest.prompt } : {}),
-      ...(job.estimatedCredits === null ? {} : { estimatedCredits: job.estimatedCredits }),
-      retryOfJobId: job.id,
-      expertDiff: job.expertDiff,
-      inputs: this.inputsFor(job.id)
-    });
+    return this.createRefreshedRetry(job, actionId, refreshManagedSource);
   }
   getByActionId(actionId: string): JobRecord | null {
     const row = this.database
@@ -682,7 +739,14 @@ export class JobRepository extends DatabaseRepository {
       const current = this.get(jobId);
       if (!current) throw new Error('Job not found.');
       const terminal = current.remoteStatus === 'finished' || current.remoteStatus === 'failed';
-      const nextStatus = terminal ? current.remoteStatus : status.status;
+      if (terminal) {
+        this.append(current, 'status.observed', {
+          observedProgress: status.progress,
+          ignoredAfterTerminal: true
+        });
+        return current;
+      }
+      const nextStatus = status.status;
       const nextTerminal = nextStatus === 'finished' || nextStatus === 'failed';
       const progress =
         status.progress === null
@@ -753,6 +817,14 @@ export class JobRepository extends DatabaseRepository {
     return this.transaction(() => {
       const current = this.get(jobId);
       if (!current) throw new Error('Job not found.');
+      if (
+        current.localPhase === 'complete' ||
+        current.remoteStatus === 'finished' ||
+        current.remoteStatus === 'failed'
+      ) {
+        this.append(current, 'poll.failed', { code, ignoredAfterTerminal: true });
+        return current;
+      }
       const phase = stale ? 'requires_attention' : current.localPhase;
       const now = this.timestamp();
       const failures =
@@ -883,6 +955,9 @@ export class JobRepository extends DatabaseRepository {
       checksum: string;
       signature: string;
       contentType: string | null;
+      pixelWidth?: number | null;
+      pixelHeight?: number | null;
+      aspectRatio?: string | null;
     },
     claim?: WorkClaim
   ): boolean {
@@ -898,9 +973,20 @@ export class JobRepository extends DatabaseRepository {
         .run(data.size, now, id, attempt);
       this.database
         .query(
-          `UPDATE job_outputs SET download_state='verified',local_path=?,byte_size=?,checksum=?,signature=?,content_type=COALESCE(?,content_type),verified_at=? WHERE id=?`
+          `UPDATE job_outputs SET download_state='verified',local_path=?,byte_size=?,checksum=?,signature=?,content_type=COALESCE(?,content_type),pixel_width=?,pixel_height=?,aspect_ratio=COALESCE(?,aspect_ratio),verified_at=? WHERE id=?`
         )
-        .run(data.path, data.size, data.checksum, data.signature, data.contentType, now, id);
+        .run(
+          data.path,
+          data.size,
+          data.checksum,
+          data.signature,
+          data.contentType,
+          data.pixelWidth ?? null,
+          data.pixelHeight ?? null,
+          data.aspectRatio ?? null,
+          now,
+          id
+        );
       this.append(this.requireJob(output.jobId), 'download.verified', { outputId: id });
       return true;
     });

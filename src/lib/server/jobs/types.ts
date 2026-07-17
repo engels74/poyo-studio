@@ -135,6 +135,8 @@ export interface OutputRecord {
   checksum: string | null;
   signature: string | null;
   aspectRatio: string | null;
+  pixelWidth: number | null;
+  pixelHeight: number | null;
   downloadState: 'pending' | 'downloading' | 'verified' | 'failed' | 'expired' | 'deleted';
   favorite: boolean;
   pinned: boolean;

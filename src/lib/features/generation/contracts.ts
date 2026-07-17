@@ -62,6 +62,8 @@ export interface StudioOutputDto {
   mediaKind: 'image' | 'video';
   mediaUrl: string | null;
   aspectRatio: string | null;
+  pixelWidth: number | null;
+  pixelHeight: number | null;
   fileName: string | null;
   downloadState: string;
   localAvailable: boolean;

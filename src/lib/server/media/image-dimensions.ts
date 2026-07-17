@@ -3,6 +3,8 @@ export interface PixelDimensions {
   height: number;
 }
 
+export const IMAGE_DIMENSION_HEADER_MAX_BYTES = 4 * 1024 * 1024;
+
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
 export function readImageDimensions(bytes: Uint8Array): PixelDimensions | null {
@@ -11,6 +13,17 @@ export function readImageDimensions(bytes: Uint8Array): PixelDimensions | null {
   } catch {
     return null;
   }
+}
+
+export async function readImageDimensionsFromFile(
+  path: string,
+  maxBytes = IMAGE_DIMENSION_HEADER_MAX_BYTES
+): Promise<PixelDimensions | null> {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) return null;
+  const file = Bun.file(path);
+  if (!(await file.exists()) || file.size <= 0) return null;
+  const bytes = new Uint8Array(await file.slice(0, Math.min(file.size, maxBytes)).arrayBuffer());
+  return readImageDimensions(bytes);
 }
 
 export function aspectRatioLabel(width: number, height: number): string | null {

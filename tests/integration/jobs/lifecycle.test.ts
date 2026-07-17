@@ -127,6 +127,71 @@ describe('durable coordinator and media lifecycle', () => {
     });
   });
 
+  test('JOB-02 restart recovery finishes delayed remote output without a duplicate submit', async () => {
+    const fixture = await createJobFixture();
+    cleanups.push(fixture.cleanup);
+    const job = accepted(fixture, 'restart-finished');
+    fixture.setNow(new Date('2026-07-15T12:00:02.000Z'));
+    let submits = 0;
+    let polls = 0;
+    let downloads = 0;
+    const coordinator = new JobCoordinator({
+      repository: fixture.repository,
+      poyo: gateway({
+        submit: async () => {
+          submits += 1;
+          throw new Error('Recovery must not submit an acknowledged job again.');
+        },
+        getStatus: async () => {
+          polls += 1;
+          return {
+            taskId: 'task-restart-finished',
+            statusRaw: 'finished',
+            status: 'finished',
+            creditsAmount: 3,
+            files: [
+              {
+                url: 'https://media.example/restart.png',
+                fileType: 'image',
+                label: null,
+                format: 'png',
+                contentType: 'image/png',
+                fileName: 'restart.png',
+                fileSize: 8
+              }
+            ],
+            createdTime: 'now',
+            progress: 100,
+            errorMessage: null
+          };
+        }
+      }),
+      downloader: new OutputDownloader({
+        repository: fixture.repository,
+        paths: fixture.paths,
+        resolveHost: publicDns,
+        fetch: async () => {
+          downloads += 1;
+          return new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), {
+            headers: { 'content-type': 'image/png' }
+          });
+        }
+      }),
+      workerId: 'restarted-worker'
+    });
+
+    await coordinator.recoverOnce();
+
+    expect({ submits, polls, downloads }).toEqual({ submits: 0, polls: 1, downloads: 1 });
+    expect(fixture.repository.get(job.id)).toMatchObject({
+      localPhase: 'complete',
+      remoteStatus: 'finished',
+      actualCredits: 3
+    });
+    expect(fixture.repository.outputs(job.id)).toHaveLength(1);
+    expect(fixture.repository.outputs(job.id)[0]?.downloadState).toBe('verified');
+  });
+
   test('INT-05 ambiguous submit is frozen and never auto-retried after restart', async () => {
     const fixture = await createJobFixture();
     cleanups.push(fixture.cleanup);
@@ -276,6 +341,71 @@ describe('durable coordinator and media lifecycle', () => {
     expect(verified.checksum).toHaveLength(64);
     expect(verified.localPath && (await exists(verified.localPath))).toBe(true);
     expect(await readdir(fixture.paths.temporary).catch(() => [])).toEqual([]);
+    expect(
+      fixture.database
+        .query<{ count: number }, [string]>(
+          'SELECT COUNT(*) count FROM download_attempts WHERE output_id=?'
+        )
+        .get(output.id)?.count
+    ).toBe(2);
+  });
+
+  test('MEDIA-03 restart permits an explicit failed-download retry without resubmission', async () => {
+    const fixture = await createJobFixture();
+    cleanups.push(fixture.cleanup);
+    const { job, output } = finishedOutput(fixture, 'restart-download-retry');
+    let submits = 0;
+    const failedDownloader = new OutputDownloader({
+      repository: fixture.repository,
+      paths: fixture.paths,
+      resolveHost: publicDns,
+      fetch: async () =>
+        new Response(new Uint8Array([1, 2, 3]), {
+          headers: { 'content-type': 'image/png' }
+        })
+    });
+    const original = new JobCoordinator({
+      repository: fixture.repository,
+      poyo: gateway(),
+      downloader: failedDownloader,
+      workerId: 'before-restart'
+    });
+    await original.downloadPending(job.id);
+    expect(fixture.repository.get(job.id)).toMatchObject({
+      localPhase: 'requires_attention',
+      failureDomain: 'download',
+      attentionCode: 'download_failed'
+    });
+
+    const restarted = new JobCoordinator({
+      repository: fixture.repository,
+      poyo: gateway({
+        submit: async () => {
+          submits += 1;
+          throw new Error('A download retry must not create another paid submission.');
+        }
+      }),
+      downloader: new OutputDownloader({
+        repository: fixture.repository,
+        paths: fixture.paths,
+        resolveHost: publicDns,
+        fetch: async () =>
+          new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), {
+            headers: { 'content-type': 'image/png' }
+          })
+      }),
+      workerId: 'after-restart'
+    });
+    await restarted.retryDownload(output.id);
+
+    expect(submits).toBe(0);
+    expect(fixture.repository.get(job.id)).toMatchObject({
+      localPhase: 'complete',
+      remoteStatus: 'finished',
+      failureDomain: 'none',
+      attentionCode: null
+    });
+    expect(fixture.repository.output(output.id)?.downloadState).toBe('verified');
     expect(
       fixture.database
         .query<{ count: number }, [string]>(
@@ -471,6 +601,169 @@ describe('durable coordinator and media lifecycle', () => {
     // observation) must not overwrite the settled charge recorded at completion.
     fixture.repository.applyStatus(job.id, { ...finishedStatus, creditsAmount: 0 }, 1_000);
     expect(fixture.repository.get(job.id)?.actualCredits).toBe(4);
+  });
+
+  test('JOB-15 the first terminal observation wins over late running and conflicting terminal responses', async () => {
+    const fixture = await createJobFixture();
+    cleanups.push(fixture.cleanup);
+    const job = accepted(fixture, 'terminal-first-wins');
+    fixture.repository.applyStatus(
+      job.id,
+      {
+        taskId: 'task-terminal-first-wins',
+        statusRaw: 'failed',
+        status: 'failed',
+        creditsAmount: 2,
+        files: [],
+        createdTime: 'now',
+        progress: 55,
+        errorMessage: 'safe remote failure'
+      },
+      1_000
+    );
+    const terminal = fixture.repository.get(job.id);
+    expect(terminal).toMatchObject({
+      localPhase: 'complete',
+      remoteStatusRaw: 'failed',
+      remoteStatus: 'failed',
+      failureDomain: 'remote_generation',
+      progress: 55,
+      actualCredits: 2,
+      nextPollAt: null
+    });
+
+    fixture.setNow(new Date('2026-07-15T12:01:00.000Z'));
+    fixture.repository.applyStatus(
+      job.id,
+      {
+        taskId: 'task-terminal-first-wins',
+        statusRaw: 'running',
+        status: 'running',
+        creditsAmount: 0,
+        files: [],
+        createdTime: 'now',
+        progress: 90,
+        errorMessage: null
+      },
+      1_000
+    );
+    let downloads = 0;
+    const coordinator = new JobCoordinator({
+      repository: fixture.repository,
+      poyo: gateway({
+        getStatus: async () => ({
+          taskId: 'task-terminal-first-wins',
+          statusRaw: 'finished',
+          status: 'finished',
+          creditsAmount: 9,
+          files: [
+            {
+              url: 'https://media.example/late.png',
+              fileType: 'image',
+              label: null,
+              format: 'png',
+              contentType: 'image/png',
+              fileName: 'late.png',
+              fileSize: 8
+            }
+          ],
+          createdTime: 'now',
+          progress: 100,
+          errorMessage: null
+        })
+      }),
+      downloader: new OutputDownloader({
+        repository: fixture.repository,
+        paths: fixture.paths,
+        resolveHost: publicDns,
+        fetch: async () => {
+          downloads += 1;
+          return new Response();
+        }
+      }),
+      workerId: 'late-terminal-poller'
+    });
+    await coordinator.poll(job.id, true);
+
+    expect(fixture.repository.get(job.id)).toEqual(terminal);
+    expect(fixture.repository.outputs(job.id)).toEqual([]);
+    expect(downloads).toBe(0);
+  });
+
+  test('JOB-15 poll failure after local completion is audit-only', async () => {
+    const fixture = await createJobFixture();
+    cleanups.push(fixture.cleanup);
+    const job = accepted(fixture, 'settled-poll-failure');
+    const finishedStatus: PoyoStatusResult = {
+      taskId: 'task-settled-poll-failure',
+      statusRaw: 'finished',
+      status: 'finished',
+      creditsAmount: 4,
+      files: [
+        {
+          url: 'https://media.example/settled.png',
+          fileType: 'image',
+          label: null,
+          format: 'png',
+          contentType: 'image/png',
+          fileName: 'settled.png',
+          fileSize: 8
+        }
+      ],
+      createdTime: 'now',
+      progress: 100,
+      errorMessage: null
+    };
+    const completing = new JobCoordinator({
+      repository: fixture.repository,
+      poyo: gateway({ getStatus: async () => finishedStatus }),
+      downloader: new OutputDownloader({
+        repository: fixture.repository,
+        paths: fixture.paths,
+        resolveHost: publicDns,
+        fetch: async () =>
+          new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), {
+            headers: { 'content-type': 'image/png' }
+          })
+      }),
+      workerId: 'completing-worker'
+    });
+    await completing.poll(job.id, true);
+    const settled = fixture.repository.get(job.id);
+    const settledOutputs = fixture.repository.outputs(job.id);
+    expect(settled?.localPhase).toBe('complete');
+
+    fixture.setNow(new Date('2026-07-15T12:01:00.000Z'));
+    const failing = new JobCoordinator({
+      repository: fixture.repository,
+      poyo: gateway({
+        getStatus: async () => {
+          throw new PoyoError({
+            category: 'network',
+            technicalCode: 'network_failure',
+            message: 'offline',
+            retryable: true,
+            operation: 'status'
+          });
+        }
+      }),
+      downloader: new OutputDownloader({ repository: fixture.repository, paths: fixture.paths }),
+      workerId: 'late-poller'
+    });
+    await failing.poll(job.id, true);
+
+    expect(fixture.repository.get(job.id)).toEqual(settled);
+    expect(fixture.repository.outputs(job.id)).toEqual(settledOutputs);
+    const failureEvent = fixture.repository
+      .eventsAfter(0)
+      .filter((event) => event.eventType === 'poll.failed')
+      .at(-1);
+    expect(failureEvent).toMatchObject({
+      localPhase: 'complete',
+      remoteStatus: 'finished',
+      failureDomain: 'none',
+      payload: { code: 'network_failure' }
+    });
   });
 
   test('JOB-14 renews a download lease before expiry while media work is active', async () => {

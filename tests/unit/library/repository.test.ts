@@ -83,7 +83,10 @@ async function completedGeneration(suffix: string) {
     size: 4,
     checksum: 'checksum',
     signature: '89504e47',
-    contentType: 'image/png'
+    contentType: 'image/png',
+    pixelWidth: 1080,
+    pixelHeight: 1920,
+    aspectRatio: '9:16'
   });
   fixture.repository.finishIfDownloaded(job.id);
   return { fixture, job, output, localPath };
@@ -105,10 +108,20 @@ describe('server-side jobs and grouped library repository', () => {
     const mediaPage = repository.listLibrary({ ...library, mediaKind: 'image' }, 1);
     expect(mediaPage.total).toBe(1);
     expect(mediaPage.items[0]).toMatchObject({ jobId: job.id, outputCount: 1 });
-    expect(mediaPage.items[0]?.representative?.mediaUrl).toStartWith('/api/media/');
+    expect(mediaPage.items[0]?.representative).toMatchObject({
+      mediaUrl: expect.stringMatching(/^\/api\/media\//),
+      pixelWidth: 1080,
+      pixelHeight: 1920
+    });
 
     const detail = await repository.getJobDetail(job.id);
-    expect(detail?.outputs[0]).toMatchObject({ localAvailable: true, fileName: 'first.png' });
+    expect(detail?.outputs[0]).toMatchObject({
+      localAvailable: true,
+      fileName: 'first.png',
+      pixelWidth: 1080,
+      pixelHeight: 1920,
+      aspectRatio: '9:16'
+    });
     expect(detail?.outputs[0]).not.toHaveProperty('localPath');
     expect(await repository.storageStatistics(fixture.paths)).toMatchObject({
       indexedBytes: 4,

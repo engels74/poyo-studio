@@ -99,6 +99,15 @@ async function receiptArtifacts(directory: string, outputId: string): Promise<st
   );
 }
 
+function pngWithDimensions(width: number, height: number): Uint8Array<ArrayBuffer> {
+  const bytes = new Uint8Array(new ArrayBuffer(24));
+  bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(16, width, false);
+  view.setUint32(20, height, false);
+  return bytes;
+}
+
 describe('output downloader security boundaries', () => {
   test('SEC-DL-00 fixture transport is unavailable outside guarded loopback test mode', async () => {
     expect(runtimeTestDownloadTransport({})).toEqual({});
@@ -301,15 +310,41 @@ describe('output downloader security boundaries', () => {
       resolveHost: publicDns,
       fetch: async () => new Response(video)
     }).download(output.id);
-    expect(verified).toMatchObject({ downloadState: 'verified', contentType: 'video/mp4' });
+    expect(verified).toMatchObject({
+      downloadState: 'verified',
+      contentType: 'video/mp4',
+      pixelWidth: null,
+      pixelHeight: null,
+      aspectRatio: null
+    });
     expect(verified.localPath).toEndWith('.mp4');
+  });
+
+  test('MEDIA-DL-04 persists measured image dimensions and aspect ratio after publication', async () => {
+    const fixture = await createJobFixture();
+    cleanups.push(fixture.cleanup);
+    const { output } = readyOutput(fixture, 'dimensions');
+    const verified = await new OutputDownloader({
+      repository: fixture.repository,
+      paths: fixture.paths,
+      resolveHost: publicDns,
+      fetch: async () =>
+        new Response(pngWithDimensions(1080, 1920), {
+          headers: { 'content-type': 'image/png' }
+        })
+    }).download(output.id);
+    expect(verified).toMatchObject({
+      pixelWidth: 1080,
+      pixelHeight: 1920,
+      aspectRatio: '9:16'
+    });
   });
 
   test('MEDIA-DL-03 refuses symlinked parents and destination leaf collisions', async () => {
     const fixture = await createJobFixture();
     cleanups.push(fixture.cleanup);
     const { job, output } = readyOutput(fixture, 'symlink');
-    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const png = pngWithDimensions(1600, 900);
     const outside = join(dirname(fixture.paths.media), 'outside');
     await mkdir(fixture.paths.media, { recursive: true });
     await mkdir(outside, { recursive: true });
@@ -393,7 +428,7 @@ describe('output downloader security boundaries', () => {
   test('MEDIA-DL-06 adopts an exact durable publication after a crash before SQLite verification', async () => {
     const fixture = await createJobFixture();
     cleanups.push(fixture.cleanup);
-    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const png = pngWithDimensions(1600, 900);
     const { output } = readyOutput(fixture, 'crash-publish');
     let fetches = 0;
     await expect(
@@ -421,7 +456,13 @@ describe('output downloader security boundaries', () => {
       }
     }).download(output.id);
     expect(fetches).toBe(1);
-    expect(recovered).toMatchObject({ downloadState: 'verified', contentType: 'image/png' });
+    expect(recovered).toMatchObject({
+      downloadState: 'verified',
+      contentType: 'image/png',
+      pixelWidth: 1600,
+      pixelHeight: 900,
+      aspectRatio: '16:9'
+    });
     expect(recovered.localPath && new Uint8Array(await readFile(recovered.localPath))).toEqual(png);
   });
 

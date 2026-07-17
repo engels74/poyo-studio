@@ -1,8 +1,12 @@
 import { describe, expect, test } from 'bun:test';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import {
   aspectRatioLabel,
-  readImageDimensions
+  readImageDimensions,
+  readImageDimensionsFromFile
 } from '../../../src/lib/server/media/image-dimensions';
+import { createTemporaryDirectory } from '../../helpers/temporary-directory';
 
 function bytesOf(length: number): { bytes: Uint8Array; view: DataView } {
   const buffer = new ArrayBuffer(length);
@@ -110,6 +114,20 @@ describe('readImageDimensions', () => {
     expect(readImageDimensions(buildPng(640, 480).slice(0, 10))).toBeNull();
     expect(readImageDimensions(new Uint8Array(0))).toBeNull();
     expect(readImageDimensions(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]))).toBeNull();
+  });
+
+  test('reads only the bounded file prefix needed for dimension metadata', async () => {
+    const temporary = await createTemporaryDirectory('poyo-dimensions-');
+    try {
+      const path = join(temporary.path, 'portrait.png');
+      const bytes = new Uint8Array(1024 * 1024);
+      bytes.set(buildPng(1080, 1920));
+      await writeFile(path, bytes);
+      expect(await readImageDimensionsFromFile(path, 24)).toEqual({ width: 1080, height: 1920 });
+      expect(await readImageDimensionsFromFile(path, 8)).toBeNull();
+    } finally {
+      await temporary.cleanup();
+    }
   });
 });
 

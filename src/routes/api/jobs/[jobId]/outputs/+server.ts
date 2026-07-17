@@ -21,6 +21,8 @@ export const GET: RequestHandler = async ({ params, setHeaders }) => {
     mediaKind: output.mediaKind,
     mediaUrl: output.mediaUrl,
     aspectRatio: output.aspectRatio,
+    pixelWidth: output.pixelWidth,
+    pixelHeight: output.pixelHeight,
     fileName: output.fileName,
     downloadState: output.downloadState,
     localAvailable: output.localAvailable

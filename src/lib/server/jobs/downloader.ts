@@ -4,6 +4,7 @@ import { basename, extname } from 'node:path';
 import type { StructuredLogger } from '../diagnostics/jsonl-logger';
 import { safeErrorSummary } from '../diagnostics/redaction';
 import { syncDirectory } from '../media/filesystem-boundary';
+import { aspectRatioLabel, readImageDimensionsFromFile } from '../media/image-dimensions';
 import { type AppPaths, resolvePathWithin } from '../platform/app-paths';
 import {
   type DownloadHostResolver,
@@ -48,6 +49,25 @@ interface PublicationReceipt extends Omit<DownloadVerification, 'path'> {
   version: 1;
   outputId: string;
   fileName: string;
+}
+
+async function verifiedDimensions(
+  output: OutputRecord,
+  path: string
+): Promise<{
+  pixelWidth: number | null;
+  pixelHeight: number | null;
+  aspectRatio: string | null;
+}> {
+  if (output.mediaKind !== 'image') {
+    return { pixelWidth: null, pixelHeight: null, aspectRatio: null };
+  }
+  const dimensions = await readImageDimensionsFromFile(path).catch(() => null);
+  return {
+    pixelWidth: dimensions?.width ?? null,
+    pixelHeight: dimensions?.height ?? null,
+    aspectRatio: dimensions ? aspectRatioLabel(dimensions.width, dimensions.height) : null
+  };
 }
 
 function safeName(output: OutputRecord, contentType: string): string {
@@ -731,11 +751,12 @@ export class OutputDownloader {
           this.maxBytes
         ).catch(() => null);
         if (recovered && sameVerification(recovered, receipt)) {
+          const dimensions = await verifiedDimensions(output, recovered.path);
           if (
             !this.options.repository.verifyDownload(
               outputId,
               attempt,
-              recovered,
+              { ...recovered, ...dimensions },
               execution.workClaim
             )
           ) {
@@ -858,8 +879,14 @@ export class OutputDownloader {
       await rm(temporary);
       temporary = null;
       await this.options.afterPublish?.({ outputId, path: published.path });
+      const dimensions = await verifiedDimensions(output, published.path);
       if (
-        !this.options.repository.verifyDownload(outputId, attempt, published, execution.workClaim)
+        !this.options.repository.verifyDownload(
+          outputId,
+          attempt,
+          { ...published, ...dimensions },
+          execution.workClaim
+        )
       ) {
         throw new Error('Download work lease ownership was lost.');
       }
