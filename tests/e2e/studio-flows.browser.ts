@@ -38,6 +38,16 @@ const cleanupStageBoundMs = 5_000;
 const screenshotStageBoundMs = 2_000;
 const processSnapshotAttempts = 8;
 const processSnapshotRetryDelayMs = 100;
+const multiOutputPrompt = [
+  'Two cobalt paper sculptures for a related-output comparison',
+  'A second line proves that the complete persisted prompt remains available in job details.',
+  `Unbroken containment token: ${'cobalt'.repeat(120)}`
+].join('\n');
+const videoNavigationPrompt = [
+  'A slow cinematic orbit around a glass sculpture at sunrise.',
+  'This second long prompt verifies that parameter-only job navigation resets prompt controls.',
+  `Unbroken navigation token: ${'orbit'.repeat(60)}`
+].join('\n');
 
 type StageRunner = <T>(
   name: string,
@@ -575,9 +585,7 @@ async function createMultiOutputImage(page: Page): Promise<void> {
   await selectRadioValue(inspector, 'text-to-image');
   await selectRadioValue(inspector, 'gpt-4o-image:text-to-image');
   const promptPanel = await showInspectorSection(inspector, 'Prompt');
-  await promptPanel
-    .getByRole('textbox', { name: /^Prompt/ })
-    .fill('Two cobalt paper sculptures for a related-output comparison');
+  await promptPanel.getByRole('textbox', { name: /^Prompt/ }).fill(multiOutputPrompt);
   const outputPanel = await showInspectorSection(inspector, 'Output');
   await outputPanel.getByLabel('N', { exact: true }).fill('2');
   await waitForValidRequest(page);
@@ -1977,9 +1985,7 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     const videoInspector = page.locator('#parameter-inspector');
     await selectRadioValue(videoInspector, 'grok-imagine:text-to-video');
     const videoPromptPanel = await showInspectorSection(videoInspector, 'Prompt');
-    await videoPromptPanel
-      .getByRole('textbox', { name: /^Prompt/ })
-      .fill('A slow cinematic orbit around a glass sculpture at sunrise');
+    await videoPromptPanel.getByRole('textbox', { name: /^Prompt/ }).fill(videoNavigationPrompt);
     await waitForValidRequest(page);
     await generationCommands(page).getByRole('button', { name: 'Generate video' }).click();
     await page.getByRole('heading', { name: 'Poyo is generating' }).waitFor({ timeout: 15_000 });
@@ -1993,6 +1999,12 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     await page.getByRole('heading', { name: 'Generated video result' }).waitFor({
       timeout: 15_000
     });
+    const videoJobHref = await page
+      .getByRole('link', { name: 'View job', exact: true })
+      .getAttribute('href');
+    if (!videoJobHref) throw new Error('The generated video did not expose its job detail link.');
+    const videoJobId = new URL(videoJobHref, harness.url).searchParams.get('selected');
+    if (!videoJobId) throw new Error('The generated video job link did not identify its job.');
     expect(harness.mock.tasks.size).toBe(imageSubmitCountAfterEdit + 5);
     expect(
       harness.mock.requests.filter((request) => request.pathname === '/api/generate/submit')
@@ -2032,9 +2044,96 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     });
     await comparisonGroup.getByRole('link', { name: 'GPT-4o Image', exact: true }).click();
     await page.getByRole('heading', { name: 'Compare related outputs' }).waitFor();
+    const imageDetailUrl = page.url();
+    const promptContent = page.locator('#job-prompt');
+    const promptToggle = page.getByRole('button', { name: 'Show full prompt' });
+    expect((await promptContent.getAttribute('class'))?.split(' ')).toContain('line-clamp-4');
+    expect(await promptContent.textContent()).toBe(multiOutputPrompt);
+    expect(await promptToggle.getAttribute('aria-expanded')).toBe('false');
+    expect(await seriousAccessibilityViolations(page)).toEqual([]);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await pageHasNoHorizontalOverflow(page)).toBe(true);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await owner.context.grantPermissions(['clipboard-read', 'clipboard-write'], {
+      origin: new URL(harness.url).origin
+    });
+    const copyPrompt = page.getByRole('button', { name: 'Copy full prompt' });
+    await copyPrompt.click();
+    await page.getByText('Prompt copied.').waitFor();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(multiOutputPrompt);
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: {
+          writeText: async () => {
+            throw new Error('Synthetic clipboard rejection.');
+          }
+        }
+      });
+    });
+    await copyPrompt.click();
+    await page.getByText('The browser did not allow clipboard access.').waitFor();
+
+    await promptToggle.click();
+    const showLess = page.getByRole('button', { name: 'Show less' });
+    expect(await showLess.getAttribute('aria-expanded')).toBe('true');
+    expect((await promptContent.getAttribute('class'))?.split(' ')).not.toContain('line-clamp-4');
+    expect(await promptContent.textContent()).toBe(multiOutputPrompt);
+    expect(await seriousAccessibilityViolations(page)).toEqual([]);
+    await showLess.click();
+    expect(await promptToggle.getAttribute('aria-expanded')).toBe('false');
+    expect((await promptContent.getAttribute('class'))?.split(' ')).toContain('line-clamp-4');
+    await promptToggle.click();
+
+    const videoLibraryHref = new URL(`/library/${videoJobId}`, harness.url);
+    await page.evaluate(() => Reflect.set(window, '__jobDetailNavigationSentinel', 'preserved'));
+    await page.evaluate((href) => {
+      const link = document.createElement('a');
+      link.href = href;
+      link.textContent = 'Navigate directly to another job';
+      link.dataset.testid = 'direct-job-navigation';
+      document.body.append(link);
+    }, videoLibraryHref.toString());
+    await page.getByTestId('direct-job-navigation').click();
+    await page.waitForURL((url) => url.pathname === videoLibraryHref.pathname);
+    expect(await page.evaluate(() => Reflect.get(window, '__jobDetailNavigationSentinel'))).toBe(
+      'preserved'
+    );
+    await page.getByRole('heading', { name: /Grok Imagine Video/, level: 1 }).waitFor();
+    const navigatedPrompt = page.locator('#job-prompt');
+    const navigatedPromptToggle = page.getByRole('button', { name: 'Show full prompt' });
+    expect(await navigatedPrompt.textContent()).toBe(videoNavigationPrompt);
+    expect((await navigatedPrompt.getAttribute('class'))?.split(' ')).toContain('line-clamp-4');
+    expect(await navigatedPromptToggle.getAttribute('aria-expanded')).toBe('false');
+    expect(await page.getByRole('button', { name: 'Copy full prompt' }).count()).toBe(1);
+    expect(await page.getByText('Prompt copied.').count()).toBe(0);
+    expect(await page.getByText('The browser did not allow clipboard access.').count()).toBe(0);
+    expect(await page.getByRole('link', { name: /in a new tab/ }).count()).toBe(0);
+
+    await page.goto(imageDetailUrl);
+    await page.getByRole('heading', { name: 'Compare related outputs' }).waitFor();
+
     expect(
       await page.getByRole('combobox', { name: 'Output A', exact: true }).inputValue()
     ).not.toBe(await page.getByRole('combobox', { name: 'Output B', exact: true }).inputValue());
+
+    const quickOpen = page.getByRole('link', {
+      name: /Open .* comparison output A in a new tab/
+    });
+    const quickOpenHref = await quickOpen.getAttribute('href');
+    if (!quickOpenHref) throw new Error('The comparison preview did not expose a quick-open URL.');
+    expect(new URL(quickOpenHref, harness.url).pathname).toMatch(/^\/api\/media\//);
+    const quickOpenPopup = page.waitForEvent('popup');
+    await quickOpen.click();
+    const quickOpenPage = await quickOpenPopup;
+    await quickOpenPage.waitForLoadState('domcontentloaded');
+    expect(new URL(quickOpenPage.url()).pathname).toMatch(/^\/api\/media\//);
+    expect(await quickOpenPage.evaluate(() => window.opener === null)).toBe(true);
+    expect(page.url()).toBe(imageDetailUrl);
+    await quickOpenPage.close();
+
     await page
       .getByRole('button', {
         name: /Open full-screen media viewer for .* comparison output A/
@@ -2052,6 +2151,7 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     await resultPage.waitForLoadState('domcontentloaded');
     expect(new URL(resultPage.url()).pathname).toMatch(/^\/api\/media\//);
     await resultPage.close();
+
     const downloadHref = await page
       .getByRole('link', { name: 'Download copy' })
       .first()
@@ -2085,7 +2185,7 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     const remixedVideoInspector = page.locator('#parameter-inspector');
     const remixedPromptPanel = await showInspectorSection(remixedVideoInspector, 'Prompt');
     expect(await remixedPromptPanel.getByRole('textbox', { name: /^Prompt/ }).inputValue()).toBe(
-      'Two cobalt paper sculptures for a related-output comparison'
+      multiOutputPrompt
     );
     const remixedInputsPanel = await showInspectorSection(remixedVideoInspector, 'Inputs');
     await remixedInputsPanel.getByText('media.poyo-fixture.example').waitFor();
@@ -2734,6 +2834,9 @@ serial(
           .getByRole('heading', { name: 'Seedream 5.0 Pro' })
           .waitFor({ timeout: productStageBoundMs });
       });
+      await page.getByText('No prompt stored.', { exact: true }).waitFor();
+      expect(await page.getByRole('button', { name: 'Show full prompt' }).count()).toBe(0);
+      expect(await page.getByRole('button', { name: 'Copy full prompt' }).count()).toBe(0);
       const readRerunSnapshot = () => {
         const database = new Database(harness.databasePath, { readonly: true });
         try {
