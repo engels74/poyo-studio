@@ -2075,6 +2075,10 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     });
     await copyPrompt.click();
     await page.getByText('The browser did not allow clipboard access.').waitFor();
+    await page.evaluate(() => {
+      Reflect.deleteProperty(navigator, 'clipboard');
+    });
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(multiOutputPrompt);
 
     await promptToggle.click();
     const showLess = page.getByRole('button', { name: 'Show less' });
