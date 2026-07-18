@@ -424,6 +424,58 @@ describe('explicit credential backend authority', () => {
     expect(fixture.os.value).toBe(submitted);
   });
 
+  test('never deletes a stale file destination without a replacement credential', async () => {
+    const stale = 'sk-test_stale_file_not_deleted_123456';
+    const submitted = 'sk-test_new_explicit_file_value_123456';
+    const fixture = await setup({ file: new MemorySecretStore('file', stale) });
+    fixture.state.save({ selectedBackend: 'os', transition: null });
+    await fixture.manager.initialize();
+
+    await expect(fixture.manager.switchBackend({ backend: 'file' })).rejects.toMatchObject({
+      code: 'replacement_required'
+    });
+    expect(fixture.state.get()).toEqual({ selectedBackend: 'os', transition: null });
+    expect(fixture.file.value).toBe(stale);
+    expect(fixture.file.setCalls).toBe(0);
+    expect(fixture.file.deleteCalls).toBe(0);
+
+    await expect(
+      fixture.manager.switchBackend({ backend: 'file', replaceExisting: true })
+    ).rejects.toMatchObject({ code: 'credential_required' });
+    expect(fixture.state.get()).toEqual({ selectedBackend: 'os', transition: null });
+    expect(fixture.file.value).toBe(stale);
+    expect(fixture.file.setCalls).toBe(0);
+    expect(fixture.file.deleteCalls).toBe(0);
+
+    await fixture.manager.switchBackend({
+      backend: 'file',
+      secret: submitted,
+      replaceExisting: true
+    });
+    expect(fixture.state.get()).toMatchObject({
+      selectedBackend: 'file',
+      transition: { phase: 'complete' }
+    });
+    expect(fixture.file.value).toBe(submitted);
+    expect(fixture.file.setCalls).toBe(1);
+    expect(fixture.file.deleteCalls).toBe(0);
+  });
+
+  test('selects an empty file backend only when its destination is absent', async () => {
+    const fixture = await setup();
+    fixture.state.save({ selectedBackend: 'os', transition: null });
+    await fixture.manager.initialize();
+
+    expect(await fixture.manager.switchBackend({ backend: 'file' })).toMatchObject({
+      selectedBackend: 'file',
+      status: 'missing'
+    });
+    expect(fixture.state.get()).toEqual({ selectedBackend: 'file', transition: null });
+    expect(fixture.file.value).toBeNull();
+    expect(fixture.file.setCalls).toBe(0);
+    expect(fixture.file.deleteCalls).toBe(0);
+  });
+
   test('never deletes the source when destination verification fails', async () => {
     const source = 'sk-test_verify_before_delete_123456';
     const os = new MemorySecretStore('os');

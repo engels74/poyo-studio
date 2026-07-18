@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { chmod, lstat, mkdir } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export const APP_DIRECTORY_NAME = 'poyo-local-studio';
 export type AppRootKind = 'project' | 'platform';
@@ -48,7 +49,7 @@ function resolveHome(environment: Record<string, string | undefined>, explicit?:
 }
 
 export function deriveProjectRoot(
-  moduleDirectory = import.meta.dir,
+  moduleDirectory = dirname(fileURLToPath(import.meta.url)),
   fileExists: (path: string) => boolean = existsSync
 ): string {
   let candidate = resolve(moduleDirectory);

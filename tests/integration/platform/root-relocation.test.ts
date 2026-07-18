@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite';
-import { afterEach, describe, expect, test } from 'bun:test';
-import { lstat, mkdir, readdir, rename, symlink, unlink } from 'node:fs/promises';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
+import { chmod, lstat, mkdir, readdir, rename, symlink, unlink } from 'node:fs/promises';
 import { dirname, join, relative, sep } from 'node:path';
 import {
   type AppPaths,
@@ -121,7 +121,13 @@ async function createFixture(): Promise<RelocationFixture> {
       timestamp
     );
   const unknownFile = join(paths.project.root, 'future-owned-entry.bin');
-  await Bun.write(unknownFile, 'future-compatible-root-data', { mode: 0o600 });
+  const executableFile = join(paths.project.root, 'future-owned-tool');
+  await Bun.write(unknownFile, 'future-compatible-root-data', { mode: 0o644 });
+  await Bun.write(executableFile, 'future-compatible-root-tool', { mode: 0o755 });
+  if (process.platform !== 'win32') {
+    await chmod(unknownFile, 0o644);
+    await chmod(executableFile, 0o755);
+  }
   const secretCanary = 'relocation-secret-canary-value';
   await Bun.write(join(paths.project.secrets, 'credential'), secretCanary, { mode: 0o600 });
   return { paths, database, unknownFile, secretCanary };
@@ -283,6 +289,17 @@ describe('complete-root relocation', () => {
     expect(await Bun.file(join(fixture.paths.platform.root, 'future-owned-entry.bin')).text()).toBe(
       'future-compatible-root-data'
     );
+    expect(await Bun.file(join(fixture.paths.platform.root, 'future-owned-tool')).text()).toBe(
+      'future-compatible-root-tool'
+    );
+    if (process.platform !== 'win32') {
+      expect(
+        (await lstat(join(fixture.paths.platform.root, 'future-owned-entry.bin'))).mode & 0o777
+      ).toBe(0o600);
+      expect(
+        (await lstat(join(fixture.paths.platform.root, 'future-owned-tool'))).mode & 0o777
+      ).toBe(0o700);
+    }
     const manifestText = await Bun.file(
       join(fixture.paths.platform.root, ROOT_RELOCATION_MANIFEST_FILE)
     ).text();
@@ -325,6 +342,32 @@ describe('complete-root relocation', () => {
       status: 'valid',
       marker: { state: 'active', peerRootKind: null, rebasePhase: 'none' }
     });
+  });
+
+  test('releases the maintenance initiator when synchronous setup fails before upgrade', async () => {
+    const fixture = await createFixture();
+    const gate = new MaintenanceGate();
+    const randomUUID = spyOn(crypto, 'randomUUID').mockImplementation(() => {
+      throw new Error('injected UUID setup failure');
+    });
+    try {
+      await expect(
+        new RootRelocationCoordinator({
+          source: fixture.paths.project,
+          target: fixture.paths.platform,
+          database: fixture.database,
+          environment: {},
+          gate,
+          platform: 'linux'
+        }).relocate(gate.acquireMaintenanceInitiator('setup-failure'))
+      ).rejects.toThrow('injected UUID setup failure');
+      expect(gate.status()).toMatchObject({ admission: 'open', activeWriters: 0 });
+      const writer = gate.acquireWriter('after-setup-failure');
+      writer.release();
+    } finally {
+      randomUUID.mockRestore();
+      fixture.database.close();
+    }
   });
 
   test('rejects a non-hex manifest file hash before provisional activation', async () => {

@@ -1751,7 +1751,12 @@ export class RootRelocationCoordinator {
     const platform = this.options.platform ?? process.platform;
     let topology: RelocationTopology;
     let persistedExternalResources: PersistedExternalResourceIdentity[];
-    let sourceProbe: Awaited<ReturnType<typeof readRootMarker>>;
+    let sourceMarker: RootMarkerV1;
+    let transitionId: string;
+    let targetIdentity: string;
+    let stage: string;
+    let targetMarker: RootMarkerV1;
+    let sourceIntent: RootMarkerV1;
     try {
       topology = await assertRelocationTopology({
         source: this.options.source,
@@ -1767,7 +1772,7 @@ export class RootRelocationCoordinator {
         platform
       );
       await assertAvailableSpace(this.options.source, topology);
-      sourceProbe = await readRootMarker(this.options.source.root);
+      const sourceProbe = await readRootMarker(this.options.source.root);
       if (
         sourceProbe.status !== 'valid' ||
         sourceProbe.marker.state !== 'active' ||
@@ -1776,37 +1781,36 @@ export class RootRelocationCoordinator {
       ) {
         throw new RootRelocationError('source_not_active', 'The current root is not relocatable.');
       }
+      sourceMarker = sourceProbe.marker;
+      transitionId = crypto.randomUUID();
+      targetIdentity = crypto.randomUUID();
+      stage = stagePath(this.options.target.root, transitionId);
+      targetMarker = {
+        version: 1,
+        rootKind: this.options.target.rootKind as AppRootKind,
+        rootIdentityNonce: targetIdentity,
+        generation: sourceMarker.generation + 1,
+        transitionId,
+        state: 'prepared',
+        peerRootKind: sourceMarker.rootKind,
+        peerRootIdentityNonce: sourceMarker.rootIdentityNonce,
+        rebasePhase: topology.databaseMode === 'external' ? 'pending' : 'complete',
+        safeErrorCode: null,
+        schemaSignatureId: ROOT_SCHEMA_SIGNATURE_ID
+      };
+      sourceIntent = {
+        ...sourceMarker,
+        transitionId,
+        state: 'active-intent',
+        peerRootKind: targetMarker.rootKind,
+        peerRootIdentityNonce: targetIdentity,
+        rebasePhase: targetMarker.rebasePhase,
+        safeErrorCode: null
+      };
     } catch (error) {
       initiator.release();
       throw error;
     }
-    const sourceMarker = sourceProbe.marker;
-    const transitionId = crypto.randomUUID();
-    const targetIdentity = crypto.randomUUID();
-    const stage = stagePath(this.options.target.root, transitionId);
-    const targetMarker: RootMarkerV1 = {
-      version: 1,
-      rootKind: this.options.target.rootKind as AppRootKind,
-      rootIdentityNonce: targetIdentity,
-      generation: sourceMarker.generation + 1,
-      transitionId,
-      state: 'prepared',
-      peerRootKind: sourceMarker.rootKind,
-      peerRootIdentityNonce: sourceMarker.rootIdentityNonce,
-      rebasePhase: topology.databaseMode === 'external' ? 'pending' : 'complete',
-      safeErrorCode: null,
-      schemaSignatureId: ROOT_SCHEMA_SIGNATURE_ID
-    };
-    const sourceIntent: RootMarkerV1 = {
-      ...sourceMarker,
-      transitionId,
-      state: 'active-intent',
-      peerRootKind: targetMarker.rootKind,
-      peerRootIdentityNonce: targetIdentity,
-      rebasePhase: targetMarker.rebasePhase,
-      safeErrorCode: null
-    };
-
     let lease: ExclusiveMaintenanceLease | null = null;
     let sourceIntentWritten = false;
     let targetPublished = false;

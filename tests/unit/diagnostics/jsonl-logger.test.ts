@@ -5,6 +5,7 @@ import {
   StructuredLogger,
   type LoggerFileOperations
 } from '../../../src/lib/server/diagnostics/jsonl-logger';
+import { MaintenanceGate } from '../../../src/lib/server/platform/maintenance-gate';
 import { createTemporaryDirectory } from '../../helpers/temporary-directory';
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -115,5 +116,27 @@ describe('structured JSONL logging', () => {
         maxRotatedFiles: 1
       })
     ).toThrow('supported bounds');
+  });
+
+  test('enforces one suspend and resume cycle for an exclusive maintenance lease', async () => {
+    const temporary = await createTemporaryDirectory('poyo-log-maintenance-');
+    cleanups.push(temporary.cleanup);
+    const gate = new MaintenanceGate();
+    const logger = new StructuredLogger({ directory: temporary.path, gate });
+    gate.registerDrain('structured-logger', () => logger.suspendAndDrain());
+
+    await logger.info('before-maintenance');
+    const lease = await gate.upgradeToExclusiveMaintenance(
+      gate.acquireMaintenanceInitiator('credential-switch')
+    );
+
+    await expect(logger.info('during-maintenance')).rejects.toThrow(
+      'Logger is suspended for maintenance.'
+    );
+    logger.resumeBeforePublication();
+    lease.reopenBeforePublication();
+    await logger.info('after-maintenance');
+    expect(await Bun.file(join(temporary.path, 'app.jsonl')).text()).toContain('after-maintenance');
+    expect(() => logger.resumeBeforePublication()).toThrow('Logger is not suspended.');
   });
 });

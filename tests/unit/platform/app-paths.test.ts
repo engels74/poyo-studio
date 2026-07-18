@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { chmod, lstat, mkdir } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   deriveProjectRoot,
   ensureAppPaths,
@@ -54,8 +55,9 @@ describe('application paths', () => {
   });
 
   test.serial('derives repository and production-build roots independently of cwd', async () => {
-    const repositoryRoot = resolve(import.meta.dir, '../../..');
-    expect(deriveProjectRoot(import.meta.dir)).toBe(repositoryRoot);
+    const moduleDirectory = dirname(fileURLToPath(import.meta.url));
+    const repositoryRoot = resolve(moduleDirectory, '../../..');
+    expect(deriveProjectRoot()).toBe(repositoryRoot);
     expect(deriveProjectRoot(join(repositoryRoot, 'build', 'server', 'chunks'))).toBe(
       repositoryRoot
     );

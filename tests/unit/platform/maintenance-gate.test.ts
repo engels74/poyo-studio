@@ -79,7 +79,7 @@ describe('process-wide maintenance gate', () => {
     lease.reopenBeforePublication();
   });
 
-  test('joins detached work and awaited drain hooks before granting exclusivity', async () => {
+  test('joins detached work as an independent cohort before granting exclusivity', async () => {
     const gate = new MaintenanceGate();
     const detached = deferred();
     const drain = deferred();
@@ -92,8 +92,16 @@ describe('process-wide maintenance gate', () => {
     const initiator = gate.acquireMaintenanceInitiator('root-relocation');
     const upgrade = gate.upgradeToExclusiveMaintenance(initiator);
 
+    expect(gate.status()).toMatchObject({
+      admission: 'closed',
+      activeWriters: 0,
+      detachedTasks: 1
+    });
     await expectPending(upgrade);
     expect(drainStarted).toBe(false);
+    expect(() => gate.trackDetached('late-detached', async () => undefined)).toThrow(
+      MaintenanceUnavailableError
+    );
     detached.resolve();
     await Bun.sleep(0);
     expect(drainStarted).toBe(true);

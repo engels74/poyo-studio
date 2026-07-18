@@ -719,27 +719,17 @@ export class ApiKeyManager {
 
     const target = await targetStore.get();
     if (!value) {
-      if (target !== null && !input.replaceExisting) {
-        throw new CredentialBackendError(
-          'replacement_required',
-          'The destination contains an unselected value; explicit replacement approval is required.'
-        );
-      }
       if (target !== null) {
-        const reobserved = await targetStore.get();
-        if (reobserved === null || !secretsEqual(reobserved, target)) {
+        if (!input.replaceExisting) {
           throw new CredentialBackendError(
-            'transition_conflict',
-            'Credential storage changed after replacement approval; no value was deleted.'
+            'replacement_required',
+            'The destination contains an unselected value; explicit replacement approval is required.'
           );
         }
-        await targetStore.delete();
-        if ((await targetStore.get()) !== null) {
-          throw new CredentialBackendError(
-            'verification_failed',
-            'The unselected destination could not be cleared safely.'
-          );
-        }
+        throw new CredentialBackendError(
+          'credential_required',
+          'A new API key is required before the destination credential backend can be selected.'
+        );
       }
       this.state.save({ selectedBackend: input.backend, transition: null });
       return (await this.resolveUnlocked()).status;
