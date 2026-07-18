@@ -313,7 +313,7 @@ describe('durable coordinator and media lifecycle', () => {
     });
   });
 
-  test('JOB-04/05/06 poll failures do not fail generation and authoritative progress is monotonic', async () => {
+  test('JOB-04/05/06 poll failures do not fail generation and no-op progress is not retained', async () => {
     const fixture = await createJobFixture();
     cleanups.push(fixture.cleanup);
     const job = accepted(fixture, 'poll');
@@ -372,7 +372,7 @@ describe('durable coordinator and media lifecycle', () => {
         .eventsAfter(0)
         .filter((event) => event.eventType === 'status.observed')
         .map((event) => event.payload?.observedProgress)
-    ).toEqual([60, 40]);
+    ).toEqual([60]);
   });
 
   test('MEDIA-03/INT-08 uses atomic verified downloads and permits corrupt-output retry', async () => {

@@ -34,21 +34,13 @@ describe('process-wide maintenance gate', () => {
     expect(requestRequiresWriterPermit('POST')).toBe(true);
     expect(requestRequiresWriterPermit('PUT')).toBe(true);
     expect(requestRequiresWriterPermit('DELETE')).toBe(true);
-    expect(requestRequiresWriterPermit('POST', '/api/settings/storage-root')).toBe(false);
-    expect(requestRequiresWriterPermit('PUT', '/api/settings/storage-root')).toBe(true);
-    expect(requestRequiresWriterPermit('POST', '/api/settings/credential-backend')).toBe(false);
-    expect(requestRequiresWriterPermit('PUT', '/api/settings/credential-backend')).toBe(true);
-    expect(requestRequiresWriterPermit('POST', '/api/settings/credential-backend/conflict')).toBe(
-      false
-    );
-    expect(requestRequiresWriterPermit('PUT', '/api/settings/credential-backend/conflict')).toBe(
-      true
-    );
+    expect(requestRequiresWriterPermit('DELETE', '/api/settings/logs')).toBe(false);
+    expect(requestRequiresWriterPermit('POST', '/api/settings/logs')).toBe(true);
   });
 
   test('upgrades an initiator without awaiting itself and closes admission atomically', async () => {
     const gate = new MaintenanceGate();
-    const initiator = gate.acquireMaintenanceInitiator('root-relocation');
+    const initiator = gate.acquireMaintenanceInitiator('log-clear');
     const lease = await Promise.race([
       gate.upgradeToExclusiveMaintenance(initiator),
       Bun.sleep(100).then(() => {
@@ -67,7 +59,7 @@ describe('process-wide maintenance gate', () => {
 
   test('waits for every other writer but excludes the initiating request from the drain count', async () => {
     const gate = new MaintenanceGate();
-    const initiator = gate.acquireMaintenanceInitiator('root-relocation');
+    const initiator = gate.acquireMaintenanceInitiator('log-clear');
     const other = gate.acquireWriter('in-flight-route');
     const upgrade = gate.upgradeToExclusiveMaintenance(initiator);
 
@@ -89,7 +81,7 @@ describe('process-wide maintenance gate', () => {
       drainStarted = true;
       await drain.promise;
     });
-    const initiator = gate.acquireMaintenanceInitiator('root-relocation');
+    const initiator = gate.acquireMaintenanceInitiator('log-clear');
     const upgrade = gate.upgradeToExclusiveMaintenance(initiator);
 
     expect(gate.status()).toMatchObject({
@@ -115,7 +107,7 @@ describe('process-wide maintenance gate', () => {
   test('keeps mutation frozen after publication until process restart', async () => {
     const gate = new MaintenanceGate();
     const lease = await gate.upgradeToExclusiveMaintenance(
-      gate.acquireMaintenanceInitiator('root-relocation')
+      gate.acquireMaintenanceInitiator('log-clear')
     );
     lease.freezeUntilRestart();
     expect(gate.status().admission).toBe('frozen');
@@ -124,9 +116,9 @@ describe('process-wide maintenance gate', () => {
   });
 
   test.each([
-    ['credential-switch', 'credential-switch'],
-    ['root-relocation', 'root-relocation'],
-    ['credential-switch', 'root-relocation']
+    ['media-cleanup', 'media-cleanup'],
+    ['log-clear', 'log-clear'],
+    ['database-maintenance', 'log-clear']
   ] as const)(
     'consumes the losing %s/%s maintenance initiator without leaking a permit',
     async (firstLabel, secondLabel) => {

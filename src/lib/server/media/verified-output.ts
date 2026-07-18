@@ -1,6 +1,5 @@
 import type { Database } from 'bun:sqlite';
 import { basename } from 'node:path';
-import { RequestSecurityError } from '../platform/request-security';
 import {
   assertPrivateMediaRequest,
   MediaRangeError,
@@ -19,14 +18,14 @@ const allowedTypes = new Set([
   'video/quicktime'
 ]);
 
-export class MediaActionError extends Error {
+export class MediaOutputError extends Error {
   constructor(
-    readonly code: 'local_media_unavailable' | 'native_action_unavailable' | 'native_action_failed',
+    readonly code: 'local_media_unavailable',
     readonly status: number,
     message: string
   ) {
     super(message);
-    this.name = 'MediaActionError';
+    this.name = 'MediaOutputError';
   }
 }
 
@@ -40,7 +39,7 @@ export interface VerifiedMediaOutput {
 
 export async function resolveVerifiedMediaOutput(
   database: Database,
-  mediaRoots: string | readonly string[],
+  mediaRoot: string,
   outputId: string
 ): Promise<VerifiedMediaOutput> {
   const output = database
@@ -50,14 +49,14 @@ export async function resolveVerifiedMediaOutput(
     >('SELECT local_path,content_type,download_state FROM job_outputs WHERE id=?')
     .get(outputId);
   if (!output?.local_path || output.download_state !== 'verified') {
-    throw new MediaActionError(
+    throw new MediaOutputError(
       'local_media_unavailable',
       404,
       'This output is not available locally.'
     );
   }
-  const path = await safeLocalMediaPath(mediaRoots, output.local_path).catch(() => {
-    throw new MediaActionError(
+  const path = await safeLocalMediaPath(mediaRoot, output.local_path).catch(() => {
+    throw new MediaOutputError(
       'local_media_unavailable',
       404,
       'This output is not available locally.'
@@ -65,7 +64,7 @@ export async function resolveVerifiedMediaOutput(
   });
   const file = Bun.file(path);
   if (!(await file.exists()) || file.size <= 0) {
-    throw new MediaActionError(
+    throw new MediaOutputError(
       'local_media_unavailable',
       404,
       'This output is not available locally.'
@@ -99,14 +98,14 @@ function contentDisposition(fileName: string): string {
 export async function serveVerifiedMediaOutput(
   request: Request,
   database: Database,
-  mediaRoots: string | readonly string[],
+  mediaRoot: string,
   outputId: string,
   options: { head?: boolean; attachment?: boolean } = {}
 ): Promise<Response> {
   let size: number | null = null;
   try {
     assertPrivateMediaRequest(request);
-    const output = await resolveVerifiedMediaOutput(database, mediaRoots, outputId);
+    const output = await resolveVerifiedMediaOutput(database, mediaRoot, outputId);
     size = output.size;
     const file = Bun.file(output.path);
     const range = parseByteRange(request.headers.get('range'), output.size);
@@ -137,22 +136,4 @@ export async function serveVerifiedMediaOutput(
     }
     return new Response('Local media is unavailable.', { status: 404 });
   }
-}
-
-export function mediaActionHttpError(error: unknown): Response {
-  if (error instanceof RequestSecurityError || error instanceof MediaActionError) {
-    return Response.json(
-      { error: { code: error.code, message: error.message } },
-      { status: error.status }
-    );
-  }
-  return Response.json(
-    {
-      error: {
-        code: 'native_action_failed',
-        message: 'The local media action could not be completed.'
-      }
-    },
-    { status: 400 }
-  );
 }

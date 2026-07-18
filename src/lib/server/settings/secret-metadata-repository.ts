@@ -2,7 +2,7 @@ import { DatabaseRepository } from '../platform/repository';
 
 export type ApiKeySource = 'environment' | 'local' | 'none';
 export type ApiKeyStatus = 'configured' | 'missing' | 'unavailable' | 'error';
-export type SecretStoreKind = 'environment' | 'os' | 'file' | 'unavailable';
+export type SecretStoreKind = 'environment' | 'file';
 
 export interface SecretMetadata {
   activeSource: ApiKeySource;
@@ -16,10 +16,15 @@ export interface SecretMetadata {
 interface SecretMetadataRow {
   active_source: ApiKeySource;
   status: ApiKeyStatus;
-  store_kind: SecretStoreKind;
+  store_kind: string;
   last_connectivity_at: string | null;
   last_connectivity_status: string | null;
   updated_at: string;
+}
+
+function parseStoreKind(value: string): SecretStoreKind {
+  if (value === 'environment' || value === 'file') return value;
+  throw new Error('Credential metadata is invalid.');
 }
 
 export class SecretMetadataRepository extends DatabaseRepository {
@@ -36,7 +41,7 @@ export class SecretMetadataRepository extends DatabaseRepository {
     return {
       activeSource: row.active_source,
       status: row.status,
-      storeKind: row.store_kind,
+      storeKind: parseStoreKind(row.store_kind),
       lastConnectivityAt: row.last_connectivity_at,
       lastConnectivityStatus: row.last_connectivity_status,
       updatedAt: row.updated_at

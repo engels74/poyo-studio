@@ -1,5 +1,5 @@
 import { constants, Database } from 'bun:sqlite';
-import { lstat, mkdir } from 'node:fs/promises';
+import { chmod, lstat, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
@@ -327,6 +327,13 @@ export async function openDatabase(
     database.exec('PRAGMA journal_mode = WAL;');
     database.exec('PRAGMA synchronous = NORMAL;');
     migrateDatabase(database, options.migrations, options.now);
+    if (typeof process.getuid === 'function') {
+      for (const ownedFile of [path, `${path}-wal`, `${path}-shm`, `${path}-journal`]) {
+        await chmod(ownedFile, 0o600).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== 'ENOENT') throw error;
+        });
+      }
+    }
     return database;
   } catch (error) {
     database.close();

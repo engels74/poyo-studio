@@ -24,6 +24,76 @@ async function expectPending(promise: Promise<unknown>): Promise<void> {
 }
 
 describe('maintenance drain adapters', () => {
+  test('job recovery remains scheduled across exclusive log maintenance', async () => {
+    const gate = new MaintenanceGate();
+    let calls = 0;
+    const worker = new JobWorker(
+      {
+        recoverOnce: async () => {
+          calls += 1;
+        }
+      },
+      5,
+      gate
+    );
+    worker.start();
+    try {
+      const deadline = Date.now() + 500;
+      while (calls === 0 && Date.now() < deadline) await Bun.sleep(5);
+      expect(calls).toBeGreaterThan(0);
+
+      const lease = await gate.upgradeToExclusiveMaintenance(
+        gate.acquireMaintenanceInitiator('log-clear')
+      );
+      const beforeReopen = calls;
+      lease.reopenBeforePublication();
+
+      const reopenDeadline = Date.now() + 500;
+      while (calls === beforeReopen && Date.now() < reopenDeadline) await Bun.sleep(5);
+      expect(calls).toBeGreaterThan(beforeReopen);
+    } finally {
+      await worker.stopAndDrain();
+    }
+  });
+
+  test('automatic cleanup remains scheduled across exclusive log maintenance', async () => {
+    const gate = new MaintenanceGate();
+    let scheduledRun: (() => Promise<void>) | undefined;
+    let policyRuns = 0;
+    const runtime = new CleanupRuntime({
+      repository: {
+        reconcileExpiredClaims: () => undefined,
+        claimNext: () => null,
+        actionCounts: () => ({})
+      } as unknown as CleanupRepository,
+      service: {
+        scheduleEnabledPolicy: async () => {
+          policyRuns += 1;
+        },
+        execute: () => Promise.resolve()
+      } as unknown as CleanupService,
+      gate,
+      schedule: (run) => {
+        scheduledRun = run;
+        return () => {
+          scheduledRun = undefined;
+        };
+      }
+    });
+    runtime.start();
+    while (policyRuns === 0) await Bun.sleep(0);
+
+    const lease = await gate.upgradeToExclusiveMaintenance(
+      gate.acquireMaintenanceInitiator('log-clear')
+    );
+    lease.reopenBeforePublication();
+
+    expect(runtime.diagnostics().scheduled).toBe(true);
+    await scheduledRun?.();
+    expect(policyRuns).toBe(2);
+    runtime.stop();
+  });
+
   test('JobWorker stopAndDrain cancels future ticks and awaits the running tick', async () => {
     const gate = new MaintenanceGate();
     const started = deferred();
@@ -98,11 +168,25 @@ describe('maintenance drain adapters', () => {
         appendStarted.resolve();
         await finishAppend.promise;
       },
+      canonicalize: (path) => Promise.resolve(path),
+      captureDirectory: () => Promise.resolve(null),
       list: () => Promise.resolve([]),
       mkdir: () => Promise.resolve(),
       remove: () => Promise.resolve(),
+      removeTree: () => Promise.resolve(),
       rename: () => Promise.resolve(),
-      stat: () => Promise.resolve(null)
+      stat: (path) =>
+        Promise.resolve(
+          path === '/logs'
+            ? {
+                size: 0,
+                mtimeMs: 0,
+                isFile: false,
+                isDirectory: true,
+                isSymbolicLink: false
+              }
+            : null
+        )
     };
     const logger = new StructuredLogger({ directory: '/logs', files, gate });
     const write = logger.info('maintenance.drain');

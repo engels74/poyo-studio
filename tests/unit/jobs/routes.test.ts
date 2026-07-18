@@ -1,7 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { JobRequestError } from '../../../src/lib/server/jobs/create-request';
 import { safeJobDto } from '../../../src/lib/server/jobs/events';
-import { jobHttpError } from '../../../src/lib/server/jobs/http';
 import {
   runtimeJobCreateDelay,
   runtimeJobTimings,
@@ -55,10 +53,7 @@ describe('job HTTP boundaries', () => {
       'src/routes/api/library/[jobId]/favorite/+server.ts',
       'src/routes/api/library/[jobId]/pin/+server.ts',
       'src/routes/api/library/[jobId]/tags/+server.ts',
-      'src/routes/api/library/[jobId]/open-folder/+server.ts',
-      'src/routes/api/library/[jobId]/outputs/[outputId]/delete/+server.ts',
-      'src/routes/api/media/[outputId]/open-native/+server.ts',
-      'src/routes/api/media/[outputId]/reveal/+server.ts'
+      'src/routes/api/library/[jobId]/outputs/[outputId]/delete/+server.ts'
     ];
     for (const route of routes) {
       expect(await Bun.file(route).text()).toContain('readSameOriginJson');
@@ -70,26 +65,6 @@ describe('job HTTP boundaries', () => {
     expect(route).toContain('prepareJobCreateRequest');
     expect(route).not.toContain('CreateJobRequest');
     expect(route).not.toContain('normalizedPayload: input');
-  });
-
-  test('JOB-14 maps retired reruns to an exact safe 409 response', async () => {
-    const response = jobHttpError(
-      new JobRequestError(
-        'retired_input_requires_review',
-        'This Seedream 5 Pro job contains the retired n setting. Use Edit in studio to review current settings before creating a new paid job.',
-        409
-      )
-    );
-    expect(response.status).toBe(409);
-    const responseText = await response.clone().text();
-    expect(await response.json()).toEqual({
-      error: {
-        code: 'retired_input_requires_review',
-        message:
-          'This Seedream 5 Pro job contains the retired n setting. Use Edit in studio to review current settings before creating a new paid job.'
-      }
-    });
-    expect(responseText).not.toMatch(/stack|payload|internal/i);
   });
 
   test('JOB-14 rerun blocks before reconcile and maps repository errors safely', async () => {
@@ -110,13 +85,18 @@ describe('job HTTP boundaries', () => {
     const download = await Bun.file('src/routes/api/media/[outputId]/download/+server.ts').text();
     expect(download).toContain('attachment: true');
     const detail = await Bun.file('src/lib/components/library/JobDetailView.svelte').text();
+    expect(detail).toContain('Open in browser');
     expect(detail).toContain('download data-sveltekit-reload');
-    for (const mutation of ['open-native', 'reveal']) {
-      const source = await Bun.file(
-        `src/routes/api/media/[outputId]/${mutation}/+server.ts`
-      ).text();
-      expect(source).toContain('resolveVerifiedMediaOutput');
-      expect(source).not.toContain('localPath');
+    expect(detail).toMatch(/outputs\/\$\{outputId\}\/delete/);
+    expect(detail).toContain('const historyPageSize = 20');
+    expect(detail).toContain('job.history.slice(0, visibleHistoryCount)');
+    expect(detail).toContain('Show 20 older events');
+    for (const removedRoute of [
+      'src/routes/api/library/[jobId]/open-folder/+server.ts',
+      'src/routes/api/media/[outputId]/open-native/+server.ts',
+      'src/routes/api/media/[outputId]/reveal/+server.ts'
+    ]) {
+      expect(await Bun.file(removedRoute).exists(), removedRoute).toBe(false);
     }
   });
 

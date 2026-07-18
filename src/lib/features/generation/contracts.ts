@@ -20,7 +20,7 @@ export interface StudioBalanceSnapshot {
 export interface StudioApiKeyStatus {
   source: 'environment' | 'local' | 'none';
   status: 'configured' | 'missing' | 'unavailable' | 'error';
-  storeKind: 'environment' | 'os' | 'file' | 'unavailable';
+  storeKind: 'environment' | 'file' | 'unavailable';
   onboardingAvailable: boolean;
   environmentManaged: boolean;
   updatedAt: string | null;

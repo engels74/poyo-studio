@@ -82,37 +82,6 @@ describe('studio draft persistence', () => {
     expect(readStudioDraft('image')).toBeNull();
   });
 
-  test('migrates a version 1 draft without inventing automatic field intent', () => {
-    localStorage.setItem(
-      'poyo-studio-draft:image',
-      JSON.stringify({
-        version: 1,
-        entryKey: draft.entryKey,
-        sizeMode: draft.sizeMode,
-        values
-      })
-    );
-    expect(readStudioDraft('image')).toEqual({
-      ...draft,
-      automaticFields: [],
-      roleInputs: {}
-    });
-  });
-
-  test('migrates a version 2 draft without treating an uploaded URL as a retained source', () => {
-    localStorage.setItem(
-      'poyo-studio-draft:image',
-      JSON.stringify({
-        version: 2,
-        entryKey: draft.entryKey,
-        sizeMode: draft.sizeMode,
-        automaticFields: ['aspectRatio'],
-        values
-      })
-    );
-    expect(readStudioDraft('image')).toEqual({ ...draft, roleInputs: {} });
-  });
-
   test('rejects malformed automatic field keys', () => {
     localStorage.setItem(
       'poyo-studio-draft:image',
@@ -122,14 +91,14 @@ describe('studio draft persistence', () => {
   });
 
   test('rejects a missing entry key', () => {
-    localStorage.setItem('poyo-studio-draft:image', JSON.stringify({ version: 1, values }));
+    localStorage.setItem('poyo-studio-draft:image', JSON.stringify({ version: 3, values }));
     expect(readStudioDraft('image')).toBeNull();
   });
 
   test('rejects a missing sizeMode', () => {
     localStorage.setItem(
       'poyo-studio-draft:image',
-      JSON.stringify({ version: 1, entryKey: 'seedream-5-0-pro', values })
+      JSON.stringify({ version: 3, entryKey: 'seedream-5-0-pro', values })
     );
     expect(readStudioDraft('image')).toBeNull();
   });
@@ -245,7 +214,7 @@ describe('studio draft persistence', () => {
     expect(JSON.stringify(stored)).not.toContain('uploads.example.test');
   });
 
-  test('restores a retained source but drops legacy uploaded URLs without a source ID', () => {
+  test('restores a retained source but drops uploaded URLs without a source ID', () => {
     const entry = IMAGE_REGISTRY.entries.find(
       (candidate) => candidate.key === 'seedream-5.0-pro-edit:image-edit'
     );

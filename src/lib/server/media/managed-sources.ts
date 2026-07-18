@@ -1,6 +1,5 @@
 import type { Database } from 'bun:sqlite';
 import { unlink } from 'node:fs/promises';
-import { basename, extname } from 'node:path';
 import { type AppPaths, resolvePathWithin } from '../platform/app-paths';
 import { DatabaseRepository } from '../platform/repository';
 import { inspectCanonicalFile } from './filesystem-boundary';
@@ -40,13 +39,6 @@ type ManagedSourceRow = {
   deleted_at: string | null;
 };
 
-type LegacyReferenceRow = {
-  local_reference: string;
-  media_kind: 'image' | 'video';
-  metadata_json: string;
-  created_at: string;
-};
-
 const managedSourceId =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -54,45 +46,6 @@ function assertManagedSourceId(id: string): void {
   if (!managedSourceId.test(id)) {
     throw new Error('The managed local source identifier is not valid.');
   }
-}
-
-const legacyMimeTypes: Record<string, string> = {
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.png': 'image/png',
-  '.gif': 'image/gif',
-  '.webp': 'image/webp',
-  '.mp4': 'video/mp4',
-  '.webm': 'video/webm',
-  '.mov': 'video/quicktime',
-  '.avi': 'video/x-msvideo',
-  '.mkv': 'video/x-matroska'
-};
-
-async function inspectLegacyFile(path: string): Promise<{
-  byteSize: number;
-  checksum: string;
-  signature: string;
-}> {
-  const hasher = new Bun.CryptoHasher('sha256');
-  const signature: number[] = [];
-  let byteSize = 0;
-  const reader = Bun.file(path).stream().getReader();
-  while (true) {
-    const { done, value: bytes } = await reader.read();
-    if (done) break;
-    hasher.update(bytes);
-    byteSize += bytes.byteLength;
-    for (const byte of bytes) {
-      if (signature.length === 16) break;
-      signature.push(byte);
-    }
-  }
-  return {
-    byteSize,
-    checksum: hasher.digest('hex'),
-    signature: signature.map((byte) => byte.toString(16).padStart(2, '0')).join('')
-  };
 }
 
 export class ManagedSourceRepository extends DatabaseRepository {
@@ -134,76 +87,6 @@ export class ManagedSourceRepository extends DatabaseRepository {
     const registered = this.get(source.id);
     if (!registered) throw new Error('Managed source registration failed.');
     return registered;
-  }
-
-  async adoptLegacyReferences(): Promise<number> {
-    const references = this.database
-      .query<LegacyReferenceRow, []>(
-        `SELECT ji.local_reference,ji.media_kind,MIN(ji.metadata_json) metadata_json,MIN(j.created_at) created_at
-         FROM job_inputs ji JOIN jobs j ON j.id=ji.job_id
-         WHERE ji.local_reference IS NOT NULL AND ji.managed_source_id IS NULL
-         GROUP BY ji.local_reference,ji.media_kind
-         ORDER BY ji.local_reference`
-      )
-      .all();
-    let adopted = 0;
-    for (const reference of references) {
-      let inspected: Awaited<ReturnType<typeof inspectCanonicalFile>>;
-      try {
-        inspected = await inspectCanonicalFile(
-          this.paths.uploads,
-          reference.local_reference,
-          'Legacy managed source'
-        );
-      } catch {
-        continue;
-      }
-      if (!inspected) continue;
-      const localPath = inspected.path;
-      const extension = extname(localPath).toLowerCase();
-      const id = basename(localPath, extension);
-      if (!managedSourceId.test(id)) continue;
-      const content = await inspectLegacyFile(localPath);
-      const existing = this.getRow(id);
-      if (existing && existing.relative_path !== inspected.relativePath) continue;
-      let originalName = basename(localPath);
-      try {
-        const metadata = JSON.parse(reference.metadata_json) as { name?: unknown };
-        if (typeof metadata.name === 'string' && metadata.name.trim()) {
-          originalName = basename(metadata.name.trim()).slice(0, 255);
-        }
-      } catch {}
-      const now = this.now().toISOString();
-      this.transaction(() => {
-        this.database
-          .query(
-            `INSERT INTO managed_sources(id,original_name,media_kind,mime_type,byte_size,checksum,signature,relative_path,availability,created_at,last_verified_at,missing_at)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`
-          )
-          .run(
-            id,
-            originalName,
-            reference.media_kind,
-            legacyMimeTypes[extension] ?? 'application/octet-stream',
-            content.byteSize,
-            content.checksum,
-            content.signature,
-            inspected.relativePath,
-            'available',
-            reference.created_at,
-            now,
-            null
-          );
-        this.database
-          .query(
-            `UPDATE job_inputs SET managed_source_id=?,local_reference=NULL,availability=?
-             WHERE local_reference=? AND managed_source_id IS NULL`
-          )
-          .run(id, 'available', reference.local_reference);
-      });
-      adopted += 1;
-    }
-    return adopted;
   }
 
   get(id: string): ManagedSourceRecord | null {

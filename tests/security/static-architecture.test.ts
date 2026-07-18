@@ -66,32 +66,44 @@ describe('SEC-01/ARCH-01 static stack and browser-boundary enforcement', () => {
     }
   });
 
-  test('keeps retired-input policy runtime-neutral and consumers on direct safe boundaries', async () => {
-    const policy = await Bun.file('src/lib/features/registry/retired-inputs.ts').text();
-    expect(policy).not.toMatch(/^\s*import\b/m);
-    expect(policy).not.toMatch(
-      /\bBun\b|image-registry|source-evidence|evidence|\$lib\/server|\/server\//
-    );
-
-    const controller = await Bun.file('src/lib/features/generation/studio-controller.ts').text();
-    expect(controller).toContain("from '../registry/retired-inputs'");
-    expect(controller).not.toMatch(
-      /import(?!\s+type\b)[^\n]*from ['"]\.\.\/registry\/image-registry['"]/
-    );
-
-    for (const repository of [
-      'src/lib/server/presets/repository.ts',
-      'src/lib/server/jobs/repository.ts'
-    ]) {
-      const source = await Bun.file(repository).text();
-      expect(source, repository).toContain("from '../../features/registry/retired-inputs'");
-      expect(source, repository).not.toMatch(/import[^\n]*isRetiredImageInput[^\n]*image-registry/);
+  test('keeps shipped runtime free of host-specific integrations and secret APIs', async () => {
+    const shippedSources = [
+      ...(await sourceFiles('**/*.ts', 'src')),
+      ...(await sourceFiles('**/*.svelte', 'src'))
+    ];
+    for (const source of shippedSources) {
+      expect(source.text, source.path).not.toMatch(/\bBun\.(?:spawn|spawnSync|which|secrets)\b/);
+      expect(source.text, source.path).not.toMatch(/\bprocess\.platform\b|from ['"]node:os['"]/);
+      expect(source.text, source.path).not.toMatch(
+        /['"](?:xdg-open|explorer)['"]|Reveal in Finder|Show in File Explorer|Show in folder|Open in app|Open folder/
+      );
+      expect(source.text, source.path).not.toMatch(
+        /macOS|Windows|Linux|Keychain|operating-system|credential-backend|storage-root|output-location|open-native|open-folder|native_action/
+      );
     }
+    for (const removedRoute of [
+      'src/routes/api/settings/credential-backend/+server.ts',
+      'src/routes/api/settings/credential-backend/conflict/+server.ts',
+      'src/routes/api/settings/storage-root/+server.ts',
+      'src/routes/api/settings/output-location/+server.ts',
+      'src/routes/api/media/[outputId]/open-native/+server.ts',
+      'src/routes/api/media/[outputId]/reveal/+server.ts',
+      'src/routes/api/library/[jobId]/open-folder/+server.ts'
+    ]) {
+      expect(await Bun.file(removedRoute).exists()).toBe(false);
+    }
+  });
 
-    const workspace = await Bun.file('src/lib/components/studio/StudioWorkspace.svelte').text();
-    expect(workspace).toContain('filterRetiredExpertOverrides');
-    expect(workspace).toContain("from '$lib/features/generation/studio-controller'");
-    expect(workspace).not.toContain('retired-inputs');
-    expect(workspace).not.toContain('image-registry');
+  test('ships only the current request schema without compatibility consumers', async () => {
+    expect(await Bun.file('src/lib/features/registry/retired-inputs.ts').exists()).toBe(false);
+    const shippedSources = [
+      ...(await sourceFiles('**/*.ts', 'src')),
+      ...(await sourceFiles('**/*.svelte', 'src'))
+    ];
+    for (const source of shippedSources) {
+      expect(source.text, source.path).not.toMatch(
+        /retired-inputs|filterRetiredExpertOverrides|retired_input_requires_review/
+      );
+    }
   });
 });

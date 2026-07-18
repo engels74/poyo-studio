@@ -1,30 +1,25 @@
 <script lang="ts">
+import { untrack } from 'svelte';
 import { goto, invalidateAll } from '$app/navigation';
-import type {
-  JobDetailDto,
-  LocalDeleteChoice,
-  NativeMediaCapabilities
-} from '$lib/features/library/contracts';
+import AppIcon from '$lib/components/ui/AppIcon.svelte';
+import Badge from '$lib/components/ui/Badge.svelte';
+import LinkButton from '$lib/components/ui/LinkButton.svelte';
+import type { JobDetailDto, LocalDeleteChoice } from '$lib/features/library/contracts';
 import {
   byteSizeLabel,
   dateTimeLabel,
   elapsedLabel,
   mediaFrameAspectRatio
 } from '$lib/features/library/presentation';
-import AppIcon from '$lib/components/ui/AppIcon.svelte';
-import Badge from '$lib/components/ui/Badge.svelte';
-import LinkButton from '$lib/components/ui/LinkButton.svelte';
-import { untrack } from 'svelte';
 import MediaPreview from './MediaPreview.svelte';
 import StatusBadge from './StatusBadge.svelte';
 
 interface Props {
   job: JobDetailDto;
   context: 'jobs' | 'library';
-  mediaCapabilities: NativeMediaCapabilities;
 }
 
-let { job, context, mediaCapabilities }: Props = $props();
+let { job, context }: Props = $props();
 let pending = $state<string | null>(null);
 let feedback = $state('');
 let tags = $state(untrack(() => job.tags.join(', ')));
@@ -32,6 +27,9 @@ let deleteChoices = $state<Record<string, LocalDeleteChoice>>({});
 let promptExpanded = $state(false);
 let promptCopyStatus = $state('');
 let promptCanCollapse = $derived((job.prompt?.length ?? 0) > 220);
+const historyPageSize = 20;
+let visibleHistoryCount = $state(historyPageSize);
+let visibleHistory = $derived(job.history.slice(0, visibleHistoryCount));
 const initialComparison = untrack(() => job.outputs.slice(0, 2).map((output) => output.outputId));
 let comparisonLeftId = $state(initialComparison[0] ?? '');
 let comparisonRightId = $state(initialComparison[1] ?? initialComparison[0] ?? '');
@@ -154,21 +152,6 @@ function saveTags(): void {
   });
 }
 
-function openFolder(): void {
-  void action('folder', async () => {
-    await post(`/api/library/${job.id}/open-folder`);
-    feedback = 'Opened the containing folder.';
-  });
-}
-
-function nativeOutputAction(outputId: string, kind: 'open-native' | 'reveal'): void {
-  void action(`${kind}-${outputId}`, async () => {
-    await post(`/api/media/${outputId}/${kind}`);
-    feedback =
-      kind === 'open-native' ? 'Opened the output in its default app.' : 'Revealed the output.';
-  });
-}
-
 async function copyPrompt(): Promise<void> {
   if (job.prompt === null) return;
   try {
@@ -207,7 +190,6 @@ function removeOutput(outputId: string): void {
     </div>
     <div class="flex flex-wrap gap-2">
       <LinkButton href={`/studio/${job.modality}?fromJob=${job.id}`} variant="outline">Edit in studio</LinkButton>
-      {#if job.outputs.some((output) => output.localAvailable)}<button onclick={openFolder} disabled={pending !== null} class="focus-ring inline-flex min-h-9 items-center gap-2 rounded border border-border px-3 text-sm font-semibold"><AppIcon name="folder" size={15} /> Open folder</button>{/if}
       {#if job.poyoTaskId}<button onclick={refresh} disabled={pending !== null} class="focus-ring inline-flex min-h-9 items-center gap-2 rounded border border-border px-3 text-sm font-semibold"><AppIcon name="refresh" size={15} /> Refresh status</button>{/if}
       {#if job.attentionCode === 'submission_unknown'}
         <button onclick={retryAmbiguous} disabled={pending !== null} class="focus-ring min-h-9 rounded bg-warning px-3 text-sm font-semibold text-warning-foreground">Acknowledge risk and retry</button>
@@ -280,8 +262,6 @@ function removeOutput(outputId: string): void {
                     {#if output.localAvailable}
                       <a href={output.mediaUrl ?? '#'} target="_blank" rel="noreferrer" class="focus-ring rounded border border-border px-2.5 py-1.5 text-xs font-semibold">Open in browser</a>
                       <a href={`/api/media/${output.outputId}/download`} download data-sveltekit-reload class="focus-ring rounded border border-border px-2.5 py-1.5 text-xs font-semibold">Download copy</a>
-                      {#if mediaCapabilities.openNative}<button onclick={() => nativeOutputAction(output.outputId, 'open-native')} disabled={pending !== null} class="focus-ring rounded border border-border px-2.5 py-1.5 text-xs font-semibold">Open in app</button>{/if}
-                      {#if mediaCapabilities.reveal}<button onclick={() => nativeOutputAction(output.outputId, 'reveal')} disabled={pending !== null} class="focus-ring rounded border border-border px-2.5 py-1.5 text-xs font-semibold">{mediaCapabilities.revealLabel}</button>{/if}
                     {/if}
                     {#if output.remoteAvailable && !output.localAvailable}<button onclick={() => retryDownload(output.outputId)} disabled={pending !== null} class="focus-ring rounded border border-border px-2.5 py-1.5 text-xs font-semibold">Download again</button>{/if}
                     {#if output.remoteAvailable && output.mediaKind === 'image'}
@@ -291,7 +271,6 @@ function removeOutput(outputId: string): void {
                       <LinkButton href={`/studio/video?fromJob=${job.id}&sourceOutput=${output.outputId}`} variant="ghost">Remix video</LinkButton>
                     {/if}
                   </div>
-                  {#if output.localAvailable && !mediaCapabilities.openNative && !mediaCapabilities.reveal}<p class="mt-2 text-xs text-muted-foreground">Native file actions are unavailable on this platform.</p>{/if}
                   <details class="mt-4 border-t border-border pt-3"><summary class="cursor-pointer text-xs font-semibold">Local deletion</summary><p class="mt-2 text-xs leading-5 text-muted-foreground">Removing metadata can leave an untracked file. No option here deletes remote Poyo data.</p><div class="mt-2 flex gap-2"><select aria-label={`Deletion consequence for output ${output.outputOrder + 1}`} value={deleteChoices[output.outputId] ?? 'file'} onchange={(event) => (deleteChoices[output.outputId] = event.currentTarget.value as LocalDeleteChoice)} class="focus-ring min-w-0 flex-1 rounded border border-input bg-background px-2 text-xs"><option value="file">File only</option><option value="metadata">Metadata only</option><option value="both">File + metadata</option></select><button onclick={() => removeOutput(output.outputId)} disabled={pending !== null} class="focus-ring rounded border border-destructive/40 px-2.5 text-xs font-semibold text-destructive">Remove</button></div></details>
                 </div>
               </article>
@@ -301,10 +280,11 @@ function removeOutput(outputId: string): void {
       </section>
 
       <section aria-labelledby="history-heading" class="mt-8 border-t border-border pt-6">
-        <p class="eyebrow-label">Lifecycle</p><h2 id="history-heading" class="mt-1 text-base font-semibold">Status history</h2>
+        <div class="flex flex-wrap items-end justify-between gap-2"><div><p class="eyebrow-label">Lifecycle</p><h2 id="history-heading" class="mt-1 text-base font-semibold">Status history</h2></div><p class="text-xs text-muted-foreground">Showing {Math.min(visibleHistoryCount, job.history.length)} of {job.history.length}</p></div>
         <ol class="mt-4 space-y-0 border-l border-border pl-5">
-          {#each job.history as event (event.eventId)}<li class="relative pb-5"><span class="absolute top-1 -left-[1.47rem] size-2 rounded-full bg-border"></span><div class="flex flex-wrap items-baseline justify-between gap-2"><p class="text-sm font-semibold">{event.eventType.replaceAll('.', ' ')}</p><time class="text-xs text-muted-foreground" datetime={event.observedAt}>{dateTimeLabel(event.observedAt)}</time></div><p class="mt-1 text-xs text-muted-foreground">{event.authority === 'poyo' ? 'Poyo observation' : 'Local event'} · {event.localPhase} · {event.remoteStatus}{event.progress !== null ? ` · ${Math.round(event.progress)}%` : ''}</p></li>{/each}
+          {#each visibleHistory as event (event.eventId)}<li class="relative pb-5"><span class="absolute top-1 -left-[1.47rem] size-2 rounded-full bg-border"></span><div class="flex flex-wrap items-baseline justify-between gap-2"><p class="text-sm font-semibold">{event.eventType.replaceAll('.', ' ')}</p><time class="text-xs text-muted-foreground" datetime={event.observedAt}>{dateTimeLabel(event.observedAt)}</time></div><p class="mt-1 text-xs text-muted-foreground">{event.authority === 'poyo' ? 'Poyo observation' : 'Local event'} · {event.localPhase} · {event.remoteStatus}{event.progress !== null ? ` · ${Math.round(event.progress)}%` : ''}</p></li>{/each}
         </ol>
+        {#if visibleHistoryCount < job.history.length}<button type="button" class="focus-ring rounded border border-border px-3 py-2 text-xs font-semibold" onclick={() => (visibleHistoryCount += historyPageSize)}>Show 20 older events</button>{/if}
       </section>
     </main>
 

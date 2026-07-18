@@ -5,7 +5,6 @@ import {
   isStrictJsonValue,
   validateFieldValue
 } from './runtime-validation';
-import { isRetiredImageInput } from './retired-inputs';
 import type {
   ExpertOverride,
   GuidedImageRequest,
@@ -182,9 +181,13 @@ export function normalizeImageRequest(
   );
   const expertDiff: NormalizedPreview['expertDiff'] = [];
   for (const override of overrides) {
-    if (isRetiredImageInput(entry.publicModelId, override.key))
+    if (
+      override.key === 'n' &&
+      (entry.publicModelId === 'seedream-5.0-pro' ||
+        entry.publicModelId === 'seedream-5.0-pro-edit')
+    )
       throw new RegistryValidationError([
-        'Expert override n is retired for Seedream 5.0 Pro; current schema does not support it.'
+        'Expert override n is not supported by the current Seedream 5.0 Pro schema.'
       ]);
     if (!/^[a-z][a-z0-9_]{0,63}$/.test(override.key) || protectedKeys.test(override.key))
       throw new RegistryValidationError([`Expert override ${override.key} is protected.`]);

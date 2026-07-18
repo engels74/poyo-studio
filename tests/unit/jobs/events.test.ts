@@ -66,6 +66,28 @@ describe('durable job SSE protocol', () => {
     controller.abort();
   });
 
+  test('SSE-03 current cursors receive an immediate connection comment before new events', async () => {
+    const fixture = await createJobFixture();
+    cleanups.push(fixture.cleanup);
+    const job = createTestJob(fixture.repository, 'current-cursor');
+    const cursor = fixture.repository.eventBounds().max;
+    const controller = new AbortController();
+    const reader = createJobEventStream(
+      fixture.repository,
+      String(cursor),
+      controller.signal,
+      5
+    ).getReader();
+
+    const connected = await reader.read();
+    expect(new TextDecoder().decode(connected.value)).toBe(': connected\n\n');
+
+    fixture.repository.transition(job.id, 'submitting');
+    const delivered = await reader.read();
+    expect(decodeEventChunk(delivered.value ?? new Uint8Array()).event).toBe('job');
+    controller.abort();
+  });
+
   test('PERF-04 durable event replay is bounded and resumes from the returned cursor', async () => {
     const fixture = await createJobFixture();
     cleanups.push(fixture.cleanup);

@@ -11,12 +11,10 @@ import {
   writeFile
 } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
-import { JobRepository } from '../../../src/lib/server/jobs/repository';
 import { ManagedSourceRepository } from '../../../src/lib/server/media/managed-sources';
 import { intakeLocalSource } from '../../../src/lib/server/media/source-intake';
 import { ensureAppPaths, resolveAppPaths } from '../../../src/lib/server/platform/app-paths';
 import { openDatabase } from '../../../src/lib/server/platform/database';
-import { createTestJob } from '../../helpers/job-fixture';
 import { createTemporaryDirectory } from '../../helpers/temporary-directory';
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -28,8 +26,7 @@ afterEach(async () => {
 async function fixture() {
   const temporary = await createTemporaryDirectory('poyo-source-');
   const paths = resolveAppPaths({
-    environment: { PLS_APP_DATA_DIR: join(temporary.path, 'studio') },
-    homeDirectory: temporary.path
+    environment: { PLS_APP_DATA_DIR: join(temporary.path, 'studio') }
   });
   await ensureAppPaths(paths);
   const database = await openDatabase(paths.database);
@@ -184,39 +181,7 @@ describe('local source intake', () => {
     ).toBe('missing');
   });
 
-  test('UPLOAD-04 adopts a version-two local reference once without retaining its absolute path', async () => {
-    const { paths, database, repository } = await fixture();
-    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-    const source = await intakeLocalSource(
-      uploadRequest(png, 'image/png', 'http://127.0.0.1:5173'),
-      paths
-    );
-    const job = createTestJob(new JobRepository(database), 'legacy-source');
-    database
-      .query(
-        `INSERT INTO job_inputs(job_id,role,input_order,media_kind,local_reference,upload_url,metadata_json,availability)
-         VALUES (?, 'source-image', 0, 'image', ?, 'https://poyo.test/source.png', ?, 'available')`
-      )
-      .run(job.id, source.localPath, JSON.stringify({ name: source.originalName }));
-
-    expect(await repository.adoptLegacyReferences()).toBe(1);
-    expect(await repository.adoptLegacyReferences()).toBe(0);
-    expect(await repository.resolveAvailable(source.id)).toMatchObject({
-      id: source.id,
-      checksum: source.checksum,
-      byteSize: png.byteLength,
-      availability: 'available'
-    });
-    expect(
-      database
-        .query<{ local_reference: string | null; managed_source_id: string | null }, [string]>(
-          'SELECT local_reference,managed_source_id FROM job_inputs WHERE job_id=?'
-        )
-        .get(job.id)
-    ).toEqual({ local_reference: null, managed_source_id: source.id });
-  });
-
-  test('UPLOAD-05 rejects symlinked upload buckets and temporary roots without writing outside', async () => {
+  test('UPLOAD-04 rejects symlinked upload buckets and temporary roots without writing outside', async () => {
     const { paths } = await fixture();
     const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
     const bucket = join(paths.uploads, new Date().toISOString().slice(0, 7));
@@ -239,7 +204,7 @@ describe('local source intake', () => {
     expect(await readdir(outsideTemporary)).toEqual([]);
   });
 
-  test('UPLOAD-06 parent swaps cannot satisfy reconcile or delete an outside same-size file', async () => {
+  test('UPLOAD-05 parent swaps cannot satisfy reconcile or delete an outside same-size file', async () => {
     const { paths, repository } = await fixture();
     const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
     const source = await intakeLocalSource(
@@ -264,48 +229,14 @@ describe('local source intake', () => {
     expect(repository.get(source.id)).not.toBeNull();
   });
 
-  test('UPLOAD-07 legacy adoption refuses a source reached through a swapped parent symlink', async () => {
-    const { paths, database, repository } = await fixture();
-    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-    const source = await intakeLocalSource(
-      uploadRequest(png, 'image/png', 'http://127.0.0.1:5173'),
-      paths
-    );
-    const job = createTestJob(new JobRepository(database), 'legacy-symlink-source');
-    database
-      .query(
-        `INSERT INTO job_inputs(job_id,role,input_order,media_kind,local_reference,upload_url,metadata_json,availability)
-         VALUES (?, 'source-image', 0, 'image', ?, 'https://poyo.test/source.png', '{}', 'available')`
-      )
-      .run(job.id, source.localPath);
-    const bucket = dirname(source.localPath);
-    const outside = join(paths.root, 'outside-legacy');
-    await rename(bucket, `${bucket}-retained`);
-    await mkdir(outside);
-    await writeFile(join(outside, basename(source.localPath)), png);
-    await symlink(outside, bucket, 'dir');
-
-    expect(await repository.adoptLegacyReferences()).toBe(0);
-    expect(repository.get(source.id)).toBeNull();
-    expect(await Bun.file(join(outside, basename(source.localPath))).bytes()).toEqual(png);
-    expect(
-      database
-        .query<{ local_reference: string | null }, [string]>(
-          'SELECT local_reference FROM job_inputs WHERE job_id=?'
-        )
-        .get(job.id)?.local_reference
-    ).toBe(source.localPath);
-  });
-
-  test('UPLOAD-08 canonical ancestor aliases remain valid for intake and registration', async () => {
+  test('UPLOAD-06 canonical ancestor aliases remain valid for intake and registration', async () => {
     const temporary = await createTemporaryDirectory('poyo-source-alias-');
     const canonical = join(temporary.path, 'canonical');
     const alias = join(temporary.path, 'alias');
     await mkdir(canonical);
     await symlink(canonical, alias, 'dir');
     const paths = resolveAppPaths({
-      environment: { PLS_APP_DATA_DIR: join(alias, 'studio') },
-      homeDirectory: temporary.path
+      environment: { PLS_APP_DATA_DIR: join(alias, 'studio') }
     });
     await ensureAppPaths(paths);
     const database = await openDatabase(paths.database);

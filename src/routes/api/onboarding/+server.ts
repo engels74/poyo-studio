@@ -22,7 +22,6 @@ export const PUT: RequestHandler = async ({ request }) => {
       const apiKey = await platform.apiKey.status();
       if (apiKey.status !== 'configured' || !(await platform.apiKey.connectivityVerified())) {
         throw new CredentialBackendError(
-          'verification_failed',
           'Store an API key and successfully test the connection before completing setup.'
         );
       }

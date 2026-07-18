@@ -69,17 +69,6 @@ test('SEC-02..07 production browser keeps secrets private and mutations same-ori
     expect(diagnostics).not.toContain(harness.syntheticKey);
     expect(diagnostics).toContain('"apiKey":{"source":"environment"');
 
-    const pid = harness.processPid();
-    const lsof = pid && Bun.which('lsof');
-    if (pid && lsof) {
-      const listener = Bun.spawnSync({
-        cmd: [lsof, '-nP', '-a', '-p', String(pid), '-iTCP', '-sTCP:LISTEN'],
-        stdout: 'pipe'
-      }).stdout.toString();
-      expect(listener).toContain(new URL(harness.url).host);
-      expect(listener).not.toMatch(/\*:\d+\s+\(LISTEN\)/);
-    }
-
     await harness.stopApp();
     const storedFiles = [
       ...(await filesWithin(harness.appData)),

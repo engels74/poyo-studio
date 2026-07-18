@@ -28,8 +28,7 @@ describe('operations diagnostics', () => {
       logs: join(temporary.path, 'logs'),
       secrets: join(temporary.path, 'secrets'),
       temporary: join(temporary.path, 'tmp'),
-      source: 'project-default' as const,
-      rootKind: 'project' as const
+      source: 'project-default' as const
     };
     const logger = new StructuredLogger({ directory: paths.logs });
     const sentinel = 'sk-test_diagnostics_canary_123456';
@@ -44,9 +43,10 @@ describe('operations diagnostics', () => {
           Promise.resolve({
             source: 'local' as const,
             status: 'configured' as const,
-            storeKind: 'os' as const,
+            storeKind: 'file' as const,
             onboardingAvailable: true,
             environmentManaged: false,
+            localMutationAvailable: true,
             updatedAt: '2026-07-15T12:00:00.000Z'
           }),
         connectivityStatus: () => ({
@@ -74,7 +74,7 @@ describe('operations diagnostics', () => {
           apiKey: {
             source: 'local',
             status: 'configured',
-            storeKind: 'os',
+            storeKind: 'file',
             onboardingAvailable: true,
             environmentManaged: false
           }

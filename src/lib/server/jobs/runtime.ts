@@ -59,11 +59,6 @@ async function createRuntime(): Promise<JobRuntime> {
     coordinator,
     worker: new JobWorker(coordinator, timings.workerIntervalMs, maintenanceGate)
   };
-  maintenanceGate.registerDrain('job-worker', async () => {
-    stopWorker?.();
-    stopWorker = undefined;
-    await runtime.worker.stopAndDrain();
-  });
   return runtime;
 }
 export function getJobRuntime(): Promise<JobRuntime> {

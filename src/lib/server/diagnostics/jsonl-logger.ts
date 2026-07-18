@@ -1,38 +1,74 @@
-import { appendFile, mkdir, readdir, rename, stat, unlink } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { appendFile, lstat, mkdir, readdir, realpath, rename, rm, unlink } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
 import {
   type MaintenanceGate,
   maintenanceGate,
   type WriterPermit
 } from '../platform/maintenance-gate';
-import { redact, safeErrorSummary } from './redaction';
+import { redact } from './redaction';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 interface FileInfo {
   size: number;
   mtimeMs: number;
+  isFile?: boolean;
+  isDirectory?: boolean;
+  isSymbolicLink?: boolean;
 }
 
 export interface LoggerFileOperations {
   append(path: string, content: string): Promise<void>;
+  canonicalize(path: string): Promise<string>;
+  captureDirectory(path: string): Promise<string | null>;
   list(path: string): Promise<string[]>;
   mkdir(path: string): Promise<void>;
   remove(path: string): Promise<void>;
   rename(from: string, to: string): Promise<void>;
+  removeTree(path: string): Promise<void>;
   stat(path: string): Promise<FileInfo | null>;
 }
 
 const defaultFileOperations: LoggerFileOperations = {
   append: (path, content) => appendFile(path, content, { encoding: 'utf8', mode: 0o600 }),
+  canonicalize: (path) => realpath(path),
+  captureDirectory: async (path) => {
+    let info: Awaited<ReturnType<typeof lstat>>;
+    try {
+      info = await lstat(path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
+    }
+    if (!info.isDirectory() && !info.isSymbolicLink()) {
+      throw new Error('Log directory is unavailable.');
+    }
+    const captured = join(dirname(path), `.${basename(path)}.clear-${randomUUID()}`);
+    await rename(path, captured);
+    try {
+      await mkdir(path, { mode: 0o700 });
+    } catch (error) {
+      await rename(captured, path).catch(() => undefined);
+      throw error;
+    }
+    return captured;
+  },
   list: async (path) => readdir(path),
   mkdir: async (path) => mkdir(path, { recursive: true, mode: 0o700 }).then(() => undefined),
   remove: async (path) => unlink(path),
   rename: async (from, to) => rename(from, to),
+  removeTree: async (path) => rm(path, { force: false, recursive: true }),
   stat: async (path) => {
     try {
-      const info = await stat(path);
-      return { size: info.size, mtimeMs: info.mtimeMs };
+      const info = await lstat(path);
+      return {
+        size: info.size,
+        mtimeMs: info.mtimeMs,
+        isFile: info.isFile(),
+        isDirectory: info.isDirectory(),
+        isSymbolicLink: info.isSymbolicLink()
+      };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
       throw error;
@@ -75,6 +111,10 @@ export interface LoggerRotationSettings {
   maxAgeMs: number;
   retentionAgeMs: number;
   maxRotatedFiles: number;
+}
+
+export interface LogClearResult {
+  cleared: boolean;
 }
 
 export class StructuredLogger {
@@ -120,11 +160,43 @@ export class StructuredLogger {
     return { ...this.rotation };
   }
 
-  private activeFile(level: LogLevel): string {
+  private activeFile(directory: string, level: LogLevel): string {
     return join(
-      this.config.directory,
+      directory,
       level === 'error' && this.rotation.separateErrorFile ? 'error.jsonl' : 'app.jsonl'
     );
+  }
+
+  private async resolveManagedDirectory(create: boolean): Promise<string | null> {
+    if (create) await this.files.mkdir(this.config.directory);
+    const configured = await this.files.stat(this.config.directory);
+    if (!configured) return null;
+    if (configured.isDirectory !== true || configured.isSymbolicLink !== false) {
+      throw new Error('Log directory is unavailable.');
+    }
+    const directory = await this.files.canonicalize(this.config.directory);
+    const canonical = await this.files.stat(directory);
+    if (canonical?.isDirectory !== true || canonical.isSymbolicLink !== false) {
+      throw new Error('Log directory is unavailable.');
+    }
+    return directory;
+  }
+
+  private async pendingClearCaptures(): Promise<string[]> {
+    const parent = dirname(this.config.directory);
+    const prefix = `.${basename(this.config.directory)}.clear-`;
+    const captureId = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const names = await this.files.list(parent);
+    return names
+      .filter((name) => name.startsWith(prefix) && captureId.test(name.slice(prefix.length)))
+      .map((name) => join(parent, name));
+  }
+
+  private async removePendingClearCaptures(): Promise<void> {
+    for (const path of await this.pendingClearCaptures()) await this.files.removeTree(path);
+    if ((await this.pendingClearCaptures()).length > 0) {
+      throw new Error('Pending log deletion could not be completed.');
+    }
   }
 
   private async nextRotationPath(path: string): Promise<string> {
@@ -140,13 +212,14 @@ export class StructuredLogger {
   private async prune(path: string): Promise<void> {
     const prefix = `${basename(path)}.`;
     const now = this.now().getTime();
-    const candidates = await this.files.list(this.config.directory);
+    const directory = dirname(path);
+    const candidates = await this.files.list(directory);
     const records = (
       await Promise.all(
         candidates
           .filter((file) => file.startsWith(prefix))
           .map(async (file) => {
-            const fullPath = join(this.config.directory, file);
+            const fullPath = join(directory, file);
             return { fullPath, info: await this.files.stat(fullPath) };
           })
       )
@@ -176,7 +249,7 @@ export class StructuredLogger {
       await this.prune(path);
       this.lastRotationError = null;
     } catch (error) {
-      this.lastRotationError = safeErrorSummary(error);
+      this.lastRotationError = { name: 'Error', message: 'Log rotation failed.' };
       this.config.onRotationError?.(error);
     }
   }
@@ -198,7 +271,8 @@ export class StructuredLogger {
     }
     return this.enqueue(async () => {
       try {
-        await this.files.mkdir(this.config.directory);
+        const directory = await this.resolveManagedDirectory(true);
+        if (!directory) throw new Error('Log directory is unavailable.');
         const record = redact({
           timestamp: this.now().toISOString(),
           level,
@@ -209,7 +283,7 @@ export class StructuredLogger {
           data: context.data ?? null
         });
         const line = `${JSON.stringify(record)}\n`;
-        const path = this.activeFile(level);
+        const path = this.activeFile(directory, level);
         await this.rotateIfNeeded(path, Buffer.byteLength(line));
         await this.files.append(path, line);
       } finally {
@@ -235,6 +309,21 @@ export class StructuredLogger {
     await this.queue;
   }
 
+  recoverPendingClears(): Promise<void> {
+    return this.enqueue(() => this.removePendingClearCaptures());
+  }
+
+  async clearManagedFiles(): Promise<LogClearResult> {
+    if (!this.suspended) throw new Error('Logger must be suspended before logs are cleared.');
+    await this.queue;
+    await this.removePendingClearCaptures();
+    const captured = await this.files.captureDirectory(this.config.directory);
+    if (captured) await this.files.removeTree(captured);
+    await this.removePendingClearCaptures();
+    this.lastRotationError = null;
+    return { cleared: true };
+  }
+
   resumeBeforePublication(): void {
     if (!this.suspended) throw new Error('Logger is not suspended.');
     this.suspended = false;
@@ -242,16 +331,24 @@ export class StructuredLogger {
 
   async diagnostics(): Promise<LoggerDiagnostics> {
     await this.queue;
-    const directory = await this.files.stat(this.config.directory);
-    const names = directory ? await this.files.list(this.config.directory) : [];
-    const infos = await Promise.all(
-      names
-        .filter((name) => name.startsWith('app.jsonl') || name.startsWith('error.jsonl'))
-        .map((name) => this.files.stat(join(this.config.directory, name)))
-    );
+    let directory: string | null = null;
+    let directoryUnavailable = false;
+    try {
+      directory = await this.resolveManagedDirectory(false);
+    } catch {
+      directoryUnavailable = true;
+    }
+    const names = directory ? await this.files.list(directory) : [];
+    const infos = directory
+      ? await Promise.all(
+          names
+            .filter((name) => name.startsWith('app.jsonl') || name.startsWith('error.jsonl'))
+            .map((name) => this.files.stat(join(directory, name)))
+        )
+      : [];
 
     return {
-      status: this.lastRotationError ? 'degraded' : 'ok',
+      status: this.lastRotationError || directoryUnavailable ? 'degraded' : 'ok',
       separateErrorFile: this.rotation.separateErrorFile,
       files: infos.filter(Boolean).length,
       bytes: infos.reduce((total, info) => total + (info?.size ?? 0), 0),

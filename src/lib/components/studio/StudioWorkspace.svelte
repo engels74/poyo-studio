@@ -20,7 +20,6 @@ import {
 } from '$lib/features/generation/media-preflight';
 import {
   createStudioSubmissionSnapshot,
-  filterRetiredExpertOverrides,
   initialGuidedValues,
   initialRoleInputs,
   mediaAccept,
@@ -126,10 +125,7 @@ const initialEntry =
 if (!initialEntry) throw new Error('The studio registry has no selectable workflows.');
 const initialGuided = initialGuidedValues(initialEntry, initialData.preset?.values);
 const initialRoles = initialRoleInputs(initialEntry, initialData.preset?.values);
-const initialExpertOverrides = filterRetiredExpertOverrides(
-  initialEntry,
-  initialData.preset?.values.expertOverrides ?? []
-);
+const initialExpertOverrides = initialData.preset?.values.expertOverrides ?? [];
 const initialAutomatic = initialAutomaticFields(initialEntry, Boolean(initialData.preset));
 
 function inferSizeMode(entry: StudioEntry, values: Record<string, unknown>): SizeMode {
@@ -1396,7 +1392,7 @@ function dismissResultPreview(): void {
 async function savePreset(): Promise<void> {
   presetMessage = '';
   try {
-    const overrides = filterRetiredExpertOverrides(selectedEntry, parseExpertOverrides(expertText));
+    const overrides = parseExpertOverrides(expertText);
     const response = await fetch('/api/presets', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -1565,7 +1561,7 @@ onMount(() => {
         guided = initialGuidedValues(entry, draft.values);
         automaticFields = restoreAutomaticFields(entry, draft.automaticFields);
         roleInputs = restoreStudioDraftRoleInputs(entry, draft);
-        const overrides = filterRetiredExpertOverrides(entry, draft.values.expertOverrides ?? []);
+        const overrides = draft.values.expertOverrides ?? [];
         expertText = overrides.length
           ? JSON.stringify(
               Object.fromEntries(overrides.map((item) => [item.key, item.value])),

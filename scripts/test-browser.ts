@@ -1,5 +1,9 @@
 const suites = {
-  e2e: ['./tests/e2e/storage-onboarding.browser.ts', './tests/e2e/studio-flows.browser.ts'],
+  e2e: [
+    './tests/e2e/studio-flows.browser.ts',
+    './tests/e2e/job-history.browser.ts',
+    './tests/e2e/storage-onboarding.browser.ts'
+  ],
   security: [
     'tests/security/static-architecture.test.ts',
     './tests/security/browser-security.browser.ts'

@@ -137,11 +137,6 @@ export async function getCleanupRuntime(): Promise<CleanupRuntime> {
         intervalMs: cleanupIntervalMs(Bun.env.PLS_CLEANUP_INTERVAL_MS),
         gate: maintenanceGate
       });
-      maintenanceGate.registerDrain('cleanup-worker', async () => {
-        stopRuntime?.();
-        stopRuntime = undefined;
-        await runtime.stopAndDrain();
-      });
       return runtime;
     })
     .catch((error) => {

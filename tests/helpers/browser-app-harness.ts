@@ -1,15 +1,8 @@
 import { Database } from 'bun:sqlite';
 import { cp, mkdir, rm, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { ensureAppPaths, resolveAppPathCandidates } from '../../src/lib/server/platform/app-paths';
+import { ensureAppPaths, resolveAppPaths } from '../../src/lib/server/platform/app-paths';
 import { openDatabase } from '../../src/lib/server/platform/database';
-import {
-  createInitialProjectMarker,
-  promoteInitialProjectMarker,
-  writeRootMarker
-} from '../../src/lib/server/platform/root-selector';
-import { CredentialStateRepository } from '../../src/lib/server/settings/credential-state';
-import { PermissionFileSecretStore } from '../../src/lib/server/settings/secret-store';
 import { SettingsRepository } from '../../src/lib/server/settings/settings-repository';
 import { updateOnboarding } from '../../src/lib/server/settings/studio-settings';
 import { startStudioMockPoyoServer } from './studio-mock-poyo-server';
@@ -17,6 +10,7 @@ import { createTemporaryDirectory } from './temporary-directory';
 
 const host = '127.0.0.1';
 const cleanupBoundMs = 5_000;
+const startScript = join(process.cwd(), 'scripts', 'start.ts');
 
 export interface StageTracker {
   currentStage?: string;
@@ -271,13 +265,9 @@ async function pathIsAbsent(path: string): Promise<boolean> {
 export interface BrowserAppHarness {
   url: string;
   appData: string;
-  platformAppData: string;
   databasePath: string;
   temporaryPath: string;
   syntheticKey: string;
-  fakeOsSecretPath: string | null;
-  persistedOutputPaths: { current: string; historical: string[] } | null;
-  externalPaths: { database: string; media: string; logs: string } | null;
   mock: Awaited<ReturnType<typeof startStudioMockPoyoServer>>;
   startApp: () => Promise<void>;
   stopApp: () => Promise<void>;
@@ -288,16 +278,10 @@ export interface BrowserAppHarness {
 }
 
 export interface BrowserAppHarnessOptions {
-  /** Run from a private project copy without app-root or API-key environment overrides. */
+  /** Run from a private project copy without application-root or API-key environment overrides. */
   freshOnboarding?: boolean;
   /** Explicitly seed onboarding completion for fixtures that are not exercising first-run setup. */
   completedOnboarding?: boolean;
-  /** Keep narrower DB/media/log resources environment-managed and outside the selected root. */
-  externalResources?: boolean;
-  /** Seed a retained credential transition while using a file-backed fake OS store. */
-  credentialConflict?: boolean | 'source-less-intent' | 'changed-rollback';
-  /** Seed current and historical user output directories outside both application-root choices. */
-  persistedExternalOutputs?: boolean;
 }
 
 export async function startBrowserAppHarness(
@@ -375,46 +359,17 @@ export async function startBrowserAppHarness(
   const appData = options.freshOnboarding
     ? join(deploymentRoot, 'data')
     : join(temporary.path, 'app-data');
-  const databasePath = join(appData, 'poyo-studio.sqlite');
-  const platformAppData = resolveAppPathCandidates({
-    environment: isolatedEnvironment,
-    projectRoot: deploymentRoot
-  }).platform.root;
+  const databasePath = join(appData, 'state', 'poyo-studio.sqlite');
   const syntheticKey = ['sk', 'browser_suite_canary_never_real_123456'].join('-');
-  const credentialConflictKind =
-    options.credentialConflict === true ? 'replacement' : options.credentialConflict;
-  const fakeOsSecretPath = credentialConflictKind
-    ? join(temporary.path, 'fake-os-credential')
-    : null;
-  const persistedOutputPaths = options.persistedExternalOutputs
-    ? {
-        current: join(temporary.path, 'custom-output-current'),
-        historical: [
-          join(temporary.path, 'custom-output-history-one'),
-          join(temporary.path, 'custom-output-history-two')
-        ]
-      }
-    : null;
-  const externalPaths = options.externalResources
-    ? {
-        database: join(temporary.path, 'external', 'studio.sqlite'),
-        media: join(temporary.path, 'external', 'media'),
-        logs: join(temporary.path, 'external', 'logs')
-      }
-    : null;
   if (options.completedOnboarding ?? !options.freshOnboarding) {
     if (options.freshOnboarding) {
-      const seededPaths = resolveAppPathCandidates({
-        environment: isolatedEnvironment,
+      const seededPaths = resolveAppPaths({
+        environment: {},
         projectRoot: deploymentRoot
-      }).project;
+      });
       await ensureAppPaths(seededPaths);
-      await writeRootMarker(
-        seededPaths.root,
-        promoteInitialProjectMarker(createInitialProjectMarker())
-      );
     }
-    const seededDatabasePath = externalPaths?.database ?? databasePath;
+    const seededDatabasePath = databasePath;
     await mkdir(dirname(seededDatabasePath), { recursive: true });
     const seededDatabase = await openDatabase(seededDatabasePath);
     try {
@@ -427,91 +382,6 @@ export async function startBrowserAppHarness(
       rm(`${seededDatabasePath}-wal`, { force: true }),
       rm(`${seededDatabasePath}-shm`, { force: true })
     ]);
-  }
-  let preloadPath: string | null = null;
-  if (options.credentialConflict || options.persistedExternalOutputs) {
-    if (!options.freshOnboarding) {
-      throw new Error('Seeded local-state browser fixtures require freshOnboarding.');
-    }
-    const seededPaths = resolveAppPathCandidates({
-      environment: isolatedEnvironment,
-      projectRoot: deploymentRoot
-    }).project;
-    await ensureAppPaths(seededPaths);
-    await writeRootMarker(
-      seededPaths.root,
-      promoteInitialProjectMarker(createInitialProjectMarker())
-    );
-    const seededDatabase = await openDatabase(seededPaths.database);
-    try {
-      const settings = new SettingsRepository(seededDatabase);
-      updateOnboarding(settings, { complete: true });
-      if (persistedOutputPaths) {
-        await Promise.all(
-          [persistedOutputPaths.current, ...persistedOutputPaths.historical].map((path) =>
-            mkdir(path, { recursive: true })
-          )
-        );
-        settings.set('storage', {
-          outputDirectory: persistedOutputPaths.current,
-          previousRoots: persistedOutputPaths.historical
-        });
-      }
-      if (fakeOsSecretPath) {
-        if (credentialConflictKind !== 'source-less-intent') {
-          await new PermissionFileSecretStore(seededPaths.secrets).set(syntheticKey);
-        }
-        await Bun.write(
-          fakeOsSecretPath,
-          credentialConflictKind === 'source-less-intent'
-            ? syntheticKey
-            : 'sk-browser_changed_destination_never_real_123456',
-          {
-            mode: 0o600
-          }
-        );
-        new CredentialStateRepository(settings).save({
-          selectedBackend: 'file',
-          transition: {
-            id:
-              credentialConflictKind === 'source-less-intent'
-                ? 'browser-source-less-intent'
-                : credentialConflictKind === 'changed-rollback'
-                  ? 'browser-changed-rollback'
-                  : 'browser-replacement-conflict',
-            sourceBackend: 'file',
-            targetBackend: 'os',
-            phase:
-              credentialConflictKind === 'changed-rollback' ? 'rollback-cleanup-pending' : 'intent',
-            targetOwnership:
-              credentialConflictKind === 'replacement' ? 'replace-approved' : 'absent'
-          }
-        });
-      }
-    } finally {
-      seededDatabase.exec('PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode=DELETE;');
-      seededDatabase.close();
-    }
-    await Promise.all([
-      rm(`${seededPaths.database}-wal`, { force: true }),
-      rm(`${seededPaths.database}-shm`, { force: true })
-    ]);
-  }
-  if (fakeOsSecretPath) {
-    preloadPath = join(temporary.path, 'fake-os-secrets-preload.ts');
-    await Bun.write(
-      preloadPath,
-      `import { chmod, rm } from 'node:fs/promises';
-const path = process.env.PLS_TEST_FAKE_OS_SECRET_PATH;
-if (!path) throw new Error('Missing fake OS secret path.');
-const fakeSecrets = {
-    async get() { return (await Bun.file(path).exists()) ? await Bun.file(path).text() : null; },
-    async set({ value }: { value: string }) { await Bun.write(path, value, { mode: 0o600 }); await chmod(path, 0o600); },
-    async delete() { const existed = await Bun.file(path).exists(); await rm(path, { force: true }); return existed; }
-};
-(Bun as unknown as { secrets: typeof fakeSecrets }).secrets = fakeSecrets;
-`
-    );
   }
   let active: PipeProcess | null = null;
   let activeStdout: Promise<string> | null = null;
@@ -556,7 +426,7 @@ const fakeSecrets = {
         activeStderr = null;
       }
     }
-    const runtimeDatabasePath = externalPaths?.database ?? databasePath;
+    const runtimeDatabasePath = databasePath;
     if (primary === undefined && (await Bun.file(runtimeDatabasePath).exists())) {
       try {
         const database = new Database(runtimeDatabasePath);
@@ -586,7 +456,7 @@ const fakeSecrets = {
       )
     );
     const appProcess = spawnPipeProcess(
-      [process.execPath, ...(preloadPath ? ['--preload', preloadPath] : []), './build/index.js'],
+      [process.execPath, startScript],
       {
         ...inheritedEnvironment,
         ...isolatedEnvironment,
@@ -595,17 +465,13 @@ const fakeSecrets = {
         PORT: String(port),
         POYO_API_KEY: options.freshOnboarding ? '' : syntheticKey,
         PLS_APP_DATA_DIR: options.freshOnboarding ? '' : appData,
-        PLS_DATABASE_PATH: externalPaths?.database ?? '',
-        PLS_MEDIA_DIR: externalPaths?.media ?? '',
-        PLS_LOG_DIR: externalPaths?.logs ?? '',
         PLS_TEST_MODE: '1',
         PLS_TEST_POYO_BASE_URL: runningMock.baseUrl,
         PLS_TEST_JOB_POLL_MS: '75',
         PLS_TEST_JOB_WORKER_MS: '50',
         PLS_TEST_JOB_CREATE_MS: '1200',
         PLS_LOG_MAX_BYTES: '65536',
-        PLS_LOG_MAX_FILES: '2',
-        PLS_TEST_FAKE_OS_SECRET_PATH: fakeOsSecretPath ?? ''
+        PLS_LOG_MAX_FILES: '2'
       },
       options.freshOnboarding ? deploymentRoot : undefined
     );
@@ -716,13 +582,9 @@ const fakeSecrets = {
   return {
     url,
     appData,
-    platformAppData,
     databasePath,
     temporaryPath: temporary.path,
     syntheticKey,
-    fakeOsSecretPath,
-    persistedOutputPaths,
-    externalPaths,
     mock: runningMock,
     startApp,
     stopApp,

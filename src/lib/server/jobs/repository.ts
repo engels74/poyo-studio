@@ -1,5 +1,4 @@
 import type { Database } from 'bun:sqlite';
-import { isRetiredImageInput } from '../../features/registry/retired-inputs';
 import { DatabaseRepository } from '../platform/repository';
 import type { PoyoStatusResult, PoyoSubmitResult } from '../poyo/types';
 import { isPaidActionId, JobRequestError } from './create-request';
@@ -494,18 +493,6 @@ export class JobRepository extends DatabaseRepository {
     if (!job) throw new Error('Job not found.');
     if (job.attentionCode === 'submission_unknown')
       throw new Error('An ambiguous paid submission cannot be run again from its history record.');
-    const normalizedInput = job.normalizedPayload.input as Record<string, unknown>;
-    const containsRetiredInput = [
-      ...Object.keys(job.guidedRequest),
-      ...Object.keys(normalizedInput),
-      ...job.expertDiff.map((override) => override.key)
-    ].some((key) => isRetiredImageInput(job.publicModelId, key));
-    if (containsRetiredInput)
-      throw new JobRequestError(
-        'retired_input_requires_review',
-        'This Seedream 5 Pro job contains the retired n setting. Use Edit in studio to review current settings before creating a new paid job.',
-        409
-      );
     return this.createRefreshedRetry(job, actionId, refreshManagedSource);
   }
   getByActionId(actionId: string): JobRecord | null {
@@ -739,13 +726,7 @@ export class JobRepository extends DatabaseRepository {
       const current = this.get(jobId);
       if (!current) throw new Error('Job not found.');
       const terminal = current.remoteStatus === 'finished' || current.remoteStatus === 'failed';
-      if (terminal) {
-        this.append(current, 'status.observed', {
-          observedProgress: status.progress,
-          ignoredAfterTerminal: true
-        });
-        return current;
-      }
+      if (terminal) return current;
       const nextStatus = status.status;
       const nextTerminal = nextStatus === 'finished' || nextStatus === 'failed';
       const progress =
@@ -783,6 +764,14 @@ export class JobRepository extends DatabaseRepository {
       // would regress the recorded charge behind the "Charged X credits" UX.
       const credits = alreadyComplete ? current.actualCredits : status.creditsAmount;
       const now = this.timestamp();
+      const changed =
+        current.localPhase !== phase ||
+        current.remoteStatusRaw !== status.statusRaw ||
+        current.remoteStatus !== nextStatus ||
+        current.failureDomain !== domain ||
+        current.attentionCode !== attentionCode ||
+        current.progress !== progress ||
+        current.actualCredits !== credits;
       this.database
         .query(
           `UPDATE jobs SET local_phase=?,remote_status_raw=?,remote_status=?,failure_domain=?,attention_code=?,progress=?,actual_credits=?,last_polled_at=?,next_poll_at=?,updated_at=?,completed_at=CASE WHEN ?='complete' AND completed_at IS NULL THEN ? ELSE completed_at END WHERE id=?`
@@ -797,13 +786,13 @@ export class JobRepository extends DatabaseRepository {
           credits,
           now,
           nextTerminal ? null : new Date(this.now().getTime() + pollDelayMs).toISOString(),
-          now,
+          changed ? now : current.updatedAt,
           phase,
           now,
           jobId
         );
       const job = this.requireJob(jobId);
-      this.append(job, 'status.observed', { observedProgress: status.progress });
+      if (changed) this.append(job, 'status.observed', { observedProgress: status.progress });
       if (malformed)
         this.append(job, 'output_set.malformed', {
           reason: malformed,
