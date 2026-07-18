@@ -16,12 +16,12 @@ import { JobRepository } from '../../src/lib/server/jobs/repository';
 import {
   type BrowserAppHarness,
   type CleanupStep,
-  NamedStageTimeoutError,
-  type StageTimer,
-  type StageTracker,
   composeCleanupFailure,
   failAppHealthAfterRollback,
+  NamedStageTimeoutError,
   runNamedStage,
+  type StageTimer,
+  type StageTracker,
   startBrowserAppHarness
 } from '../helpers/browser-app-harness';
 import {
@@ -372,6 +372,34 @@ async function selectRadioValue(scope: Locator, value: string): Promise<void> {
   );
 }
 
+type InspectorSectionLabel = 'Setup' | 'Prompt' | 'Inputs' | 'Output' | 'Review';
+
+function generationCommands(page: Page): Locator {
+  return page.locator('section[aria-label="Generation commands"]');
+}
+
+async function showInspectorSection(
+  inspector: Locator,
+  label: InspectorSectionLabel
+): Promise<Locator> {
+  const tab = inspector.getByRole('tab', {
+    name: new RegExp(`^${label}(?:, needs attention)?$`)
+  });
+  const panelId = await tab.getAttribute('aria-controls');
+  if (!panelId) throw new Error(`Inspector tab ${label} does not control a panel.`);
+  const panel = inspector.locator(`#${panelId}`);
+  await tab.click();
+  await waitUntil(
+    async () => (await tab.getAttribute('aria-selected')) === 'true' && (await panel.isVisible()),
+    `Inspector section ${label} did not become selected.`
+  );
+  return panel;
+}
+
+async function waitForValidRequest(page: Page): Promise<void> {
+  await generationCommands(page).getByText('Ready to generate', { exact: true }).waitFor();
+}
+
 async function assertModelPickerUserPath(page: Page): Promise<void> {
   const showSetup = page.getByRole('button', { name: 'Show setup' });
   if ((await showSetup.count()) > 0 && (await showSetup.isVisible())) await showSetup.click();
@@ -383,18 +411,33 @@ async function assertModelPickerUserPath(page: Page): Promise<void> {
   const summary = details.locator('summary');
   expect(await details.getAttribute('open')).toBeNull();
   await summary.focus();
-  await page.keyboard.press('Enter');
-  expect(await details.getAttribute('open')).not.toBeNull();
+  await summary.press('Enter');
+  if ((await details.getAttribute('open')) === null) await summary.press('Space');
+  await waitUntil(
+    async () => (await details.getAttribute('open')) !== null,
+    'The model picker did not open from the keyboard.'
+  );
   expect(await picker.locator('section h3').count()).toBeGreaterThan(0);
   const selected = picker.locator('input[type="radio"]:checked');
   const selectedBefore = await selected.getAttribute('value');
-  const alternate = picker.locator('input[type="radio"]:not(:checked)').first();
-  await alternate.focus();
-  expect(await alternate.evaluate((element) => element === document.activeElement)).toBe(true);
+  const alternateValue = await picker
+    .locator('input[type="radio"]:not(:checked)')
+    .first()
+    .getAttribute('value');
+  if (!alternateValue) throw new Error('The model picker did not expose an alternate model.');
+  const focusAlternate = () =>
+    picker.locator('input[type="radio"]').evaluateAll((elements, value) => {
+      const alternate = elements.find(
+        (element) => element instanceof HTMLInputElement && element.value === value
+      );
+      if (!(alternate instanceof HTMLInputElement)) return false;
+      alternate.focus();
+      return alternate === document.activeElement;
+    }, alternateValue);
+  await waitUntil(focusAlternate, 'The alternate model radio could not receive focus.');
   await page.keyboard.press('Space');
   if ((await details.getAttribute('open')) !== null) {
-    const retry = picker.locator('input[type="radio"]:not(:checked)').first();
-    await retry.focus();
+    await waitUntil(focusAlternate, 'The alternate model radio could not regain focus.');
     await page.keyboard.press('Space');
   }
   await waitUntil(
@@ -460,39 +503,43 @@ async function chooseImageTextWorkflow(page: Page): Promise<void> {
   const inspector = page.locator('#parameter-inspector');
   await selectRadioValue(inspector, 'text-to-image');
   await selectRadioValue(inspector, 'flux-schnell:text-to-image');
-  await inspector
+  const promptPanel = await showInspectorSection(inspector, 'Prompt');
+  await promptPanel
     .getByRole('textbox', { name: /^Prompt/ })
     .fill('A quiet blue observatory above a calm northern sea');
-  await inspector.getByText('Request validated locally.').waitFor();
+  await waitForValidRequest(page);
 }
 
 async function assertSeedreamProSizeControls(page: Page, submitCount: () => number): Promise<void> {
   const inspector = page.locator('#parameter-inspector');
   await selectRadioValue(inspector, 'text-to-image');
   await selectRadioValue(inspector, 'seedream-5.0-pro:text-to-image');
+  const outputPanel = await showInspectorSection(inspector, 'Output');
   expect(
-    await inspector
+    await outputPanel
       .getByRole('group', { name: 'Aspect Ratio' })
       .getByRole('radio', { name: 'Automatic (1:1)' })
       .isChecked()
   ).toBe(true);
   expect(
-    await inspector
+    await outputPanel
       .getByRole('group', { name: 'Resolution' })
       .getByRole('radio', { name: 'Automatic (2K)' })
       .isChecked()
   ).toBe(true);
-  expect(await inspector.getByLabel('N', { exact: true }).count()).toBe(0);
-  expect(await inspector.getByText('Size mode', { exact: true }).count()).toBe(0);
-  expect(await inspector.getByText(/never both/i).count()).toBe(0);
-  await inspector
+  expect(await outputPanel.getByLabel('N', { exact: true }).count()).toBe(0);
+  expect(await outputPanel.getByText('Size mode', { exact: true }).count()).toBe(0);
+  expect(await outputPanel.getByText(/never both/i).count()).toBe(0);
+  const promptPanel = await showInspectorSection(inspector, 'Prompt');
+  await promptPanel
     .getByRole('textbox', { name: /^Prompt/ })
     .fill('A luminous seed drifting over a midnight landscape');
-  await inspector.getByText('Request validated locally.').waitFor();
+  await waitForValidRequest(page);
   const submitsBeforeExpertRejection = submitCount();
-  await inspector.getByText('Expert request', { exact: true }).click();
-  await inspector.getByLabel('Unverified override object').fill('{"n":6}');
-  await inspector
+  const reviewPanel = await showInspectorSection(inspector, 'Review');
+  await reviewPanel.getByText('Expert request', { exact: true }).click();
+  await reviewPanel.getByLabel('Unverified override object').fill('{"n":6}');
+  await generationCommands(page)
     .getByText(
       'Expert override n is retired for Seedream 5.0 Pro; current schema does not support it.'
     )
@@ -504,31 +551,37 @@ async function chooseImageEditWorkflow(page: Page): Promise<void> {
   const inspector = page.locator('#parameter-inspector');
   await selectRadioValue(inspector, 'image-edit');
   await selectRadioValue(inspector, 'flux-dev:image-edit');
-  await inspector
+  const promptPanel = await showInspectorSection(inspector, 'Prompt');
+  await promptPanel
     .getByRole('textbox', { name: /^Prompt/ })
     .fill('Transform the retained source into a quiet cyanotype');
-  await inspector.getByLabel('Add local file').setInputFiles({
+  const inputsPanel = await showInspectorSection(inspector, 'Inputs');
+  await inputsPanel.getByLabel('Add local file').setInputFiles({
     name: 'portrait-near-nine-sixteen.png',
     mimeType: 'image/png',
     buffer: Buffer.from(solidPng(900, 1601))
   });
-  await inspector.getByText('portrait-near-nine-sixteen.png').waitFor();
-  await inspector.getByText('900 × 1601 px').waitFor();
-  await inspector.getByRole('radio', { name: 'Automatic (9:16 from 900 × 1601)' }).waitFor();
-  await inspector.getByText('Local transfer and Poyo upload completed.').waitFor();
-  await inspector.getByText('Request validated locally.').waitFor();
+  await inputsPanel.getByText('portrait-near-nine-sixteen.png').waitFor();
+  await inputsPanel.getByText('900 × 1601 px').waitFor();
+  const outputPanel = await showInspectorSection(inspector, 'Output');
+  await outputPanel.getByRole('radio', { name: 'Automatic (9:16 from 900 × 1601)' }).waitFor();
+  await showInspectorSection(inspector, 'Inputs');
+  await inputsPanel.getByText('Local transfer and Poyo upload completed.').waitFor();
+  await waitForValidRequest(page);
 }
 
 async function createMultiOutputImage(page: Page): Promise<void> {
   const inspector = page.locator('#parameter-inspector');
   await selectRadioValue(inspector, 'text-to-image');
   await selectRadioValue(inspector, 'gpt-4o-image:text-to-image');
-  await inspector
+  const promptPanel = await showInspectorSection(inspector, 'Prompt');
+  await promptPanel
     .getByRole('textbox', { name: /^Prompt/ })
     .fill('Two cobalt paper sculptures for a related-output comparison');
-  await inspector.getByLabel('N', { exact: true }).fill('2');
-  await inspector.getByText('Request validated locally.').waitFor();
-  await inspector.getByRole('button', { name: 'Generate image' }).click();
+  const outputPanel = await showInspectorSection(inspector, 'Output');
+  await outputPanel.getByLabel('N', { exact: true }).fill('2');
+  await waitForValidRequest(page);
+  await generationCommands(page).getByRole('button', { name: 'Generate image' }).click();
   await page.getByRole('heading', { name: 'Generated image result' }).waitFor({
     timeout: 15_000
   });
@@ -678,23 +731,25 @@ async function assertRestoredProOrigin(
     `${options.savedName} restored controls`,
     productStageBoundMs,
     async () => {
+      const outputPanel = await showInspectorSection(inspector, 'Output');
       expect(
-        await inspector
+        await outputPanel
           .getByRole('group', { name: 'Aspect Ratio' })
           .getByRole('radio', { name: '1:1', exact: true })
           .isChecked({ timeout: productStageBoundMs })
       ).toBe(true);
       expect(
-        await inspector
+        await outputPanel
           .getByRole('group', { name: 'Resolution' })
           .getByRole('radio', { name: '2K', exact: true })
           .isChecked({ timeout: productStageBoundMs })
       ).toBe(true);
-      expect(await inspector.getByLabel('N', { exact: true }).count()).toBe(0);
-      await inspector
+      expect(await outputPanel.getByLabel('N', { exact: true }).count()).toBe(0);
+      const reviewPanel = await showInspectorSection(inspector, 'Review');
+      await reviewPanel
         .getByText('Expert request', { exact: true })
         .click({ timeout: productStageBoundMs });
-      return inspector
+      return reviewPanel
         .getByLabel('Unverified override object')
         .inputValue({ timeout: productStageBoundMs });
     }
@@ -703,9 +758,12 @@ async function assertRestoredProOrigin(
   expect(restoredExpertText).not.toContain('"n"');
 
   await stage(`${options.savedName} initial preview render`, productStageBoundMs, () =>
-    inspector.getByText('Request validated locally.').waitFor({ timeout: productStageBoundMs })
+    generationCommands(page)
+      .getByText('Ready to generate', { exact: true })
+      .waitFor({ timeout: productStageBoundMs })
   );
-  const prompt = inspector.getByRole('textbox', { name: /^Prompt/ });
+  const promptPanel = await showInspectorSection(inspector, 'Prompt');
+  const prompt = promptPanel.getByRole('textbox', { name: /^Prompt/ });
   const nextPrompt = `${await prompt.inputValue()} reviewed`;
   const previewResponsePromise = page.waitForResponse(
     (response) =>
@@ -740,7 +798,9 @@ async function assertRestoredProOrigin(
     productStageBoundMs,
     () =>
       Promise.all([
-        inspector.getByText('Request validated locally.').waitFor({ timeout: productStageBoundMs }),
+        generationCommands(page)
+          .getByText('Ready to generate', { exact: true })
+          .waitFor({ timeout: productStageBoundMs }),
         inspector.locator('pre').last().textContent({ timeout: productStageBoundMs })
       ])
   );
@@ -749,7 +809,7 @@ async function assertRestoredProOrigin(
 
   await stage(`${options.savedName} preset form`, productStageBoundMs, async () => {
     await inspector
-      .getByRole('button', { name: 'Save preset', exact: true })
+      .getByRole('button', { name: 'Save as preset', exact: true })
       .click({ timeout: productStageBoundMs });
     await inspector
       .getByLabel('Preset name')
@@ -807,8 +867,8 @@ async function assertRestoredProOrigin(
     injectionStarted = true;
     captured = await stage(`${options.savedName} capturedPreset`, productStageBoundMs, async () => {
       await page.evaluate(() => {
-        const textarea = document.querySelector<HTMLTextAreaElement>('#image-expert-json');
-        const name = document.querySelector<HTMLInputElement>('#image-preset-name');
+        const textarea = document.querySelector<HTMLTextAreaElement>('#image-desktop-expert-json');
+        const name = document.querySelector<HTMLInputElement>('#image-desktop-preset-name');
         if (!textarea || !name) throw new Error('Preset editor controls are unavailable.');
         textarea.value = JSON.stringify({ n: 6, future_parameter: { mode: 'kept' } });
         textarea.dispatchEvent(new Event('input', { bubbles: true }));
@@ -901,14 +961,20 @@ async function assertSupportingPresetCount(
   );
   const inspector = page.locator('#parameter-inspector');
   await stage('supporting preset controls', productStageBoundMs, async () => {
+    const outputPanel = await showInspectorSection(inspector, 'Output');
     expect(
-      await inspector.getByLabel('N', { exact: true }).inputValue({ timeout: productStageBoundMs })
+      await outputPanel
+        .getByLabel('N', { exact: true })
+        .inputValue({ timeout: productStageBoundMs })
     ).toBe('2');
   });
   await stage('supporting preset initial preview', productStageBoundMs, () =>
-    inspector.getByText('Request validated locally.').waitFor({ timeout: productStageBoundMs })
+    generationCommands(page)
+      .getByText('Ready to generate', { exact: true })
+      .waitFor({ timeout: productStageBoundMs })
   );
-  const prompt = inspector.getByRole('textbox', { name: /^Prompt/ });
+  const promptPanel = await showInspectorSection(inspector, 'Prompt');
+  const prompt = promptPanel.getByRole('textbox', { name: /^Prompt/ });
   const previewResponsePromise = page.waitForResponse(
     (response) => new URL(response.url()).pathname === '/api/requests/preview',
     { timeout: productStageBoundMs }
@@ -937,12 +1003,11 @@ async function assertSupportingPresetCount(
   const savedName = 'Supporting count resaved';
   await stage('supporting preset save', productStageBoundMs, async () => {
     await inspector
-      .getByRole('button', { name: 'Save preset', exact: true })
+      .getByRole('button', { name: 'Save as preset', exact: true })
       .click({ timeout: productStageBoundMs });
     await inspector.getByLabel('Preset name').fill(savedName, { timeout: productStageBoundMs });
     await inspector
       .getByRole('button', { name: 'Save preset', exact: true })
-      .first()
       .click({ timeout: productStageBoundMs });
     await inspector
       .getByText(`Saved preset “${savedName}”.`)
@@ -1433,7 +1498,8 @@ serial(
       await page.goto(`${harness.url}/studio/image`);
       await chooseImageTextWorkflow(page);
       const inspector = page.locator('#parameter-inspector');
-      const generate = inspector.getByRole('button', { name: 'Generate image' });
+      const commands = generationCommands(page);
+      const generate = commands.getByRole('button', { name: 'Generate image' });
 
       await page.route(
         '**/api/jobs',
@@ -1441,7 +1507,7 @@ serial(
         { times: 1 }
       );
       await generate.click();
-      await inspector.getByText('The local server rejected the request.').waitFor();
+      await commands.getByText('The local server rejected the request.').waitFor();
       expect(await generate.isEnabled()).toBe(true);
 
       await page.route(
@@ -1451,8 +1517,16 @@ serial(
         { times: 1 }
       );
       await generate.click();
-      await inspector.getByText(/response did not confirm the paid job/).waitFor();
-      const abandonDirect = inspector.getByRole('button', {
+      await commands.getByText(/response did not confirm the paid job/).waitFor();
+      const lockedBadge = commands
+        .locator('span.rounded-full')
+        .filter({ hasText: 'Action locked' });
+      await lockedBadge.waitFor();
+      expect(await lockedBadge.innerText()).toBe('Action locked');
+      expect((await lockedBadge.getAttribute('class'))?.split(' ')).toContain('text-warning');
+      expect(await commands.getByText('Ready to generate', { exact: true }).count()).toBe(0);
+      expect(await generate.isDisabled()).toBe(true);
+      const abandonDirect = commands.getByRole('button', {
         name: 'Acknowledge risk and start a new action'
       });
       await abandonDirect.waitFor({ timeout: 10_000 });
@@ -1460,11 +1534,12 @@ serial(
       await abandonDirect.click();
 
       const addBatchItem = async (prompt: string) => {
-        await inspector.getByRole('textbox', { name: /^Prompt/ }).fill(prompt);
-        await inspector.getByText('Request validated locally.').waitFor();
-        await inspector.getByRole('button', { name: 'Add to batch' }).click();
-        await inspector.getByText('Added item 1 to the local batch.').waitFor();
-        await inspector.getByRole('button', { name: 'Review batch (1)' }).click();
+        const promptPanel = await showInspectorSection(inspector, 'Prompt');
+        await promptPanel.getByRole('textbox', { name: /^Prompt/ }).fill(prompt);
+        await waitForValidRequest(page);
+        await commands.getByRole('button', { name: 'Add to batch' }).click();
+        await commands.getByText('Added item 1 to the local batch.').waitFor();
+        await commands.getByRole('button', { name: 'Review batch (1)' }).click();
         return page.getByRole('dialog', { name: 'Image batch' });
       };
       const removeBatchItem = async (dialog: Locator) => {
@@ -1509,6 +1584,121 @@ serial(
     }
   }
 );
+
+serial('STUDIO-UX setup tabs and command guards stay usable across surfaces', async () => {
+  const harness = await startBrowserAppHarness({
+    freshOnboarding: true,
+    completedOnboarding: true
+  });
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await context.newPage();
+  try {
+    await page.goto(`${harness.url}/studio/image`);
+    const inspector = page.locator('#parameter-inspector');
+    await selectRadioValue(inspector, 'text-to-image');
+    await selectRadioValue(inspector, 'seedream-4.5:text-to-image');
+    const tabs = inspector.getByRole('tab');
+    expect(await tabs.count()).toBe(5);
+    expect(await inspector.locator('[role="tabpanel"]').count()).toBe(5);
+    expect(await inspector.getByRole('tabpanel').count()).toBe(1);
+
+    const setupTab = inspector.getByRole('tab', { name: /^Setup(?:, needs attention)?$/ });
+    await setupTab.focus();
+    await page.keyboard.press('ArrowLeft');
+    const reviewTab = inspector.getByRole('tab', { name: /^Review(?:, needs attention)?$/ });
+    expect(await reviewTab.getAttribute('aria-selected')).toBe('true');
+    await waitUntil(
+      () => reviewTab.evaluate((element) => element === document.activeElement),
+      'ArrowLeft did not move focus to the wrapped Review tab.'
+    );
+    await page.keyboard.press('ArrowRight');
+    expect(await setupTab.getAttribute('aria-selected')).toBe('true');
+    await page.keyboard.press('End');
+    expect(await reviewTab.getAttribute('aria-selected')).toBe('true');
+    await page.keyboard.press('Home');
+    expect(await setupTab.getAttribute('aria-selected')).toBe('true');
+
+    const promptPanel = await showInspectorSection(inspector, 'Prompt');
+    const prompt = promptPanel.getByRole('textbox', { name: /^Prompt/ });
+    const commands = generationCommands(page);
+    await prompt.fill('A value that survives setup section navigation');
+    await page
+      .getByText(
+        'The guided request is valid. Review the exact normalized payload or generate when ready.',
+        { exact: true }
+      )
+      .waitFor();
+    const keyRequiredBadge = commands
+      .locator('span.rounded-full')
+      .filter({ hasText: 'API key required' });
+    await keyRequiredBadge.waitFor();
+    expect(await keyRequiredBadge.innerText()).toBe('API key required');
+    expect((await keyRequiredBadge.getAttribute('class'))?.split(' ')).toContain('text-warning');
+    expect(await commands.getByText('Ready to generate', { exact: true }).count()).toBe(0);
+    expect(await commands.getByRole('button', { name: 'Generate image' }).isDisabled()).toBe(true);
+
+    const outputPanel = await showInspectorSection(inspector, 'Output');
+    await selectRadioValue(outputPanel, 'custom');
+    await outputPanel.getByLabel('Custom width').waitFor();
+    const outputTab = inspector.getByRole('tab', { name: 'Output, needs attention' });
+    expect(await outputTab.count()).toBe(1);
+    await waitUntil(
+      () => commands.getByRole('button', { name: 'Add to batch' }).isDisabled(),
+      'Add to batch stayed enabled for missing custom dimensions.'
+    );
+    expect(await commands.getByRole('button', { name: 'Generate image' }).isDisabled()).toBe(true);
+    await outputPanel.getByLabel('Custom width').fill('1024');
+    expect(await outputTab.count()).toBe(1);
+    await waitUntil(
+      () => commands.getByRole('button', { name: 'Add to batch' }).isDisabled(),
+      'Add to batch stayed enabled for partial custom dimensions.'
+    );
+    await outputPanel.getByLabel('Custom height').fill('1024');
+    await waitUntil(
+      async () => (await outputTab.count()) === 0,
+      'A valid custom size did not clear the Output tab issue marker.'
+    );
+    await page
+      .getByText(
+        'The guided request is valid. Review the exact normalized payload or generate when ready.',
+        { exact: true }
+      )
+      .waitFor();
+
+    await showInspectorSection(inspector, 'Output');
+    await showInspectorSection(inspector, 'Prompt');
+    expect(await prompt.inputValue()).toBe('A value that survives setup section navigation');
+
+    expect(await commands.getByRole('button', { name: 'Add to batch' }).isEnabled()).toBe(true);
+    expect(await commands.getByRole('button', { name: 'Generate image' }).isDisabled()).toBe(true);
+
+    await page.getByRole('button', { name: 'Hide setup' }).click();
+    expect(await commands.isVisible()).toBe(true);
+    expect(await inspector.isVisible()).toBe(false);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await commands.isVisible()).toBe(true);
+    await page.getByRole('button', { name: 'Edit setup' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Image setup' });
+    await dialog.waitFor();
+    const mobilePromptTab = dialog.getByRole('tab', { name: /^Prompt(?:, needs attention)?$/ });
+    expect(await mobilePromptTab.getAttribute('aria-selected')).toBe('true');
+    expect(await dialog.getByRole('textbox', { name: /^Prompt/ }).inputValue()).toBe(
+      'A value that survives setup section navigation'
+    );
+    expect(await page.locator('#image-desktop-prompt-tab').count()).toBe(1);
+    expect(await page.locator('#image-mobile-prompt-tab').count()).toBe(1);
+    expect(await page.locator('input[name="image-desktop-creative-intent"]').count()).toBe(2);
+    expect(await page.locator('input[name="image-mobile-creative-intent"]').count()).toBe(2);
+    await page.keyboard.press('Escape');
+    expect(await commands.isVisible()).toBe(true);
+  } finally {
+    await context.close().catch(() => undefined);
+    await browser.close().catch(() => undefined);
+    await harness.cleanup();
+  }
+});
 
 serial('E2E-01..15 production studios, recovery, library, settings and accessibility', async () => {
   const tracker: StageTracker = {};
@@ -1558,19 +1748,25 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     await page.goto(harness.url);
     await page.goto(`${harness.url}/studio/image`);
     const inspector = page.locator('#parameter-inspector');
-    expect(await inspector.getByRole('textbox', { name: /^Prompt/ }).inputValue()).toBe(
+    const restoredPromptPanel = await showInspectorSection(inspector, 'Prompt');
+    expect(await restoredPromptPanel.getByRole('textbox', { name: /^Prompt/ }).inputValue()).toBe(
       'A quiet blue observatory above a calm northern sea'
     );
     expect(
       await inspector.locator('input[type="radio"][value="flux-schnell:text-to-image"]').isChecked()
     ).toBe(true);
-    await inspector.getByRole('button', { name: 'Save preset', exact: true }).click();
+    await inspector.getByRole('button', { name: 'Save as preset', exact: true }).click();
     await inspector.getByLabel('Preset name').fill('Northern observatory');
     await inspector.getByLabel('Description').fill('Synthetic browser-suite preset');
-    await inspector.getByRole('button', { name: 'Save preset', exact: true }).first().click();
+    expect(
+      await inspector.getByRole('button', { name: 'Save as preset', exact: true }).count()
+    ).toBe(1);
+    const savePreset = inspector.getByRole('button', { name: 'Save preset', exact: true });
+    expect(await savePreset.count()).toBe(1);
+    await savePreset.click();
     await inspector.getByText('Saved preset “Northern observatory”.').waitFor();
 
-    const imageGenerate = inspector.getByRole('button', {
+    const imageGenerate = generationCommands(page).getByRole('button', {
       name: 'Generate image'
     });
     await imageGenerate.dblclick();
@@ -1603,16 +1799,17 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     expect(storedImageDraft).not.toContain('/media/source.png');
     await page.reload();
     const restoredImageInspector = page.locator('#parameter-inspector');
-    await restoredImageInspector.getByText(/Restored your last setup/).waitFor();
-    await restoredImageInspector.getByText('900 × 1601 px').waitFor();
-    await restoredImageInspector
+    await generationCommands(page)
+      .getByText(/Restored your last setup/)
+      .waitFor();
+    const restoredInputsPanel = await showInspectorSection(restoredImageInspector, 'Inputs');
+    await restoredInputsPanel.getByText('900 × 1601 px').waitFor();
+    const restoredOutputPanel = await showInspectorSection(restoredImageInspector, 'Output');
+    await restoredOutputPanel
       .getByRole('radio', { name: 'Automatic (9:16 from 900 × 1601)' })
       .waitFor();
-    await restoredImageInspector.getByText('Request validated locally.').waitFor();
-    await page
-      .locator('#parameter-inspector')
-      .getByRole('button', { name: 'Generate image' })
-      .click();
+    await waitForValidRequest(page);
+    await generationCommands(page).getByRole('button', { name: 'Generate image' }).click();
     await page.getByRole('heading', { name: 'Generated image result' }).waitFor({
       timeout: 15_000
     });
@@ -1655,15 +1852,16 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     const imageSubmitCountAfterEdit = harness.mock.requests.filter(
       (request) => request.pathname === '/api/generate/submit'
     ).length;
-    const repeatedGenerate = restoredImageInspector.getByRole('button', {
+    const repeatedGenerate = generationCommands(page).getByRole('button', {
       name: 'Generate image'
     });
     expect(await repeatedGenerate.isEnabled()).toBe(true);
     harness.mock.queueOutcome('held');
-    await restoredImageInspector
+    const restoredPrompt = await showInspectorSection(restoredImageInspector, 'Prompt');
+    await restoredPrompt
       .getByRole('textbox', { name: /^Prompt/ })
       .fill('Earlier held generation finishes last');
-    await restoredImageInspector.getByText('Request validated locally.').waitFor();
+    await waitForValidRequest(page);
     await repeatedGenerate.click();
     await waitUntil(
       () =>
@@ -1672,14 +1870,15 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
         imageSubmitCountAfterEdit + 1,
       'The first repeated generation was not submitted.'
     );
-    await page.getByRole('heading', { name: 'Generated image result' }).waitFor();
+    await page.getByRole('heading', { name: 'Poyo is generating' }).waitFor();
+    expect(await page.getByRole('progressbar').getAttribute('value')).toBe('42');
     expect(await repeatedGenerate.isEnabled()).toBe(true);
 
     harness.mock.queueOutcome('success');
-    await restoredImageInspector
+    await restoredPrompt
       .getByRole('textbox', { name: /^Prompt/ })
       .fill('Later generation finishes first');
-    await restoredImageInspector.getByText('Request validated locally.').waitFor();
+    await waitForValidRequest(page);
     await repeatedGenerate.click();
     await waitUntil(
       () =>
@@ -1708,6 +1907,7 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     );
     const laterJobId = jobForPrompt('Later generation finishes first')?.id;
     if (!laterJobId) throw new Error('The later completed generation was not persisted.');
+    await page.getByRole('heading', { name: 'Generated image result' }).waitFor();
     await waitUntil(
       async () =>
         (
@@ -1733,6 +1933,41 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     );
 
     harness.mock.queueOutcome('held');
+    await restoredPrompt
+      .getByRole('textbox', { name: /^Prompt/ })
+      .fill('Held generation survives a newer failed job');
+    await waitForValidRequest(page);
+    await repeatedGenerate.click();
+    await page.getByRole('heading', { name: 'Poyo is generating' }).waitFor();
+
+    harness.mock.queueOutcome('failed');
+    await restoredPrompt
+      .getByRole('textbox', { name: /^Prompt/ })
+      .fill('Newer generation fails before held completion');
+    await waitForValidRequest(page);
+    await repeatedGenerate.click();
+    await page.getByRole('heading', { name: 'Poyo generation failed' }).waitFor({
+      timeout: 15_000
+    });
+
+    harness.mock.releaseHeldTasks();
+    await waitUntil(
+      () => jobForPrompt('Held generation survives a newer failed job')?.local_phase === 'complete',
+      'The held generation did not complete after the newer job failed.',
+      15_000
+    );
+    const survivingJobId = jobForPrompt('Held generation survives a newer failed job')?.id;
+    if (!survivingJobId) throw new Error('The surviving held generation was not persisted.');
+    await page.getByRole('heading', { name: 'Generated image result' }).waitFor();
+    await waitUntil(
+      async () =>
+        (
+          await page.getByRole('link', { name: 'View job', exact: true }).getAttribute('href')
+        )?.includes(survivingJobId) ?? false,
+      'The failed active job continued to hide the completed held result.'
+    );
+
+    harness.mock.queueOutcome('held');
     await page.goto(`${harness.url}/studio/video`);
     await page.setViewportSize({ width: 390, height: 844 });
     await assertModelPickerUserPath(page);
@@ -1741,11 +1976,12 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     await page.setViewportSize({ width: 1440, height: 900 });
     const videoInspector = page.locator('#parameter-inspector');
     await selectRadioValue(videoInspector, 'grok-imagine:text-to-video');
-    await videoInspector
+    const videoPromptPanel = await showInspectorSection(videoInspector, 'Prompt');
+    await videoPromptPanel
       .getByRole('textbox', { name: /^Prompt/ })
       .fill('A slow cinematic orbit around a glass sculpture at sunrise');
-    await videoInspector.getByText('Request validated locally.').waitFor();
-    await videoInspector.getByRole('button', { name: 'Generate video' }).click();
+    await waitForValidRequest(page);
+    await generationCommands(page).getByRole('button', { name: 'Generate video' }).click();
     await page.getByRole('heading', { name: 'Poyo is generating' }).waitFor({ timeout: 15_000 });
     expect(await page.getByText('42%').count()).toBeGreaterThan(0);
 
@@ -1757,10 +1993,10 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     await page.getByRole('heading', { name: 'Generated video result' }).waitFor({
       timeout: 15_000
     });
-    expect(harness.mock.tasks.size).toBe(imageSubmitCountAfterEdit + 3);
+    expect(harness.mock.tasks.size).toBe(imageSubmitCountAfterEdit + 5);
     expect(
       harness.mock.requests.filter((request) => request.pathname === '/api/generate/submit')
-    ).toHaveLength(imageSubmitCountAfterEdit + 3);
+    ).toHaveLength(imageSubmitCountAfterEdit + 5);
 
     await page.goto(`${harness.url}/studio/image`);
     await createMultiOutputImage(page);
@@ -1770,11 +2006,14 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     expect(await page.getByText('Flux Schnell', { exact: true }).count()).toBeGreaterThan(0);
     expect(await page.getByText(/Grok Imagine Video/).count()).toBeGreaterThan(0);
     await page.getByRole('link', { name: 'Completed' }).click();
-    expect(await page.getByText('6 tracked jobs').count()).toBe(1);
+    await page.waitForURL(
+      (url) => url.pathname === '/jobs' && url.searchParams.get('status') === 'completed'
+    );
+    await page.getByText('7 tracked jobs').waitFor();
 
     await page.goto(`${harness.url}/library`);
     await page.getByRole('heading', { name: 'Generation groups' }).waitFor();
-    expect(await page.getByText('6 grouped generations').count()).toBe(1);
+    await page.getByText('7 grouped generations').waitFor();
     await page.getByRole('link', { name: 'List view' }).click();
     await page.waitForURL(/view=list/);
     expect(await page.getByRole('link', { name: 'List view' }).getAttribute('aria-current')).toBe(
@@ -1844,33 +2083,38 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     await page.getByRole('link', { name: 'Remix image' }).first().waitFor();
     await page.getByRole('link', { name: 'Animate in Video Studio' }).first().click();
     const remixedVideoInspector = page.locator('#parameter-inspector');
-    expect(await remixedVideoInspector.getByRole('textbox', { name: /^Prompt/ }).inputValue()).toBe(
+    const remixedPromptPanel = await showInspectorSection(remixedVideoInspector, 'Prompt');
+    expect(await remixedPromptPanel.getByRole('textbox', { name: /^Prompt/ }).inputValue()).toBe(
       'Two cobalt paper sculptures for a related-output comparison'
     );
-    await remixedVideoInspector.getByText('media.poyo-fixture.example').waitFor();
+    const remixedInputsPanel = await showInspectorSection(remixedVideoInspector, 'Inputs');
+    await remixedInputsPanel.getByText('media.poyo-fixture.example').waitFor();
 
     await page.goto(`${harness.url}/studio/video`);
     const videoEditInspector = page.locator('#parameter-inspector');
     await selectRadioValue(videoEditInspector, 'video-edit');
     await selectRadioValue(videoEditInspector, 'happy-horse:video-edit');
-    await videoEditInspector
+    const videoEditPromptPanel = await showInspectorSection(videoEditInspector, 'Prompt');
+    await videoEditPromptPanel
       .getByRole('textbox', { name: /^Prompt/ })
       .fill('Regrade the source video with cool evening light');
-    await videoEditInspector
+    const videoEditInputsPanel = await showInspectorSection(videoEditInspector, 'Inputs');
+    await videoEditInputsPanel
       .locator('input[type="file"][accept^="video/"]')
       .setInputFiles('tests/fixtures/media/tiny.mp4');
-    await videoEditInspector.getByText('16 × 16 px · 0.20 s').waitFor();
-    await videoEditInspector.getByText('Local transfer and Poyo upload completed.').waitFor();
-    await videoEditInspector.getByText('sourceVideoDuration is below minimum.').waitFor();
+    await videoEditInputsPanel.getByText('16 × 16 px · 0.20 s').waitFor();
+    await videoEditInputsPanel.getByText('Local transfer and Poyo upload completed.').waitFor();
+    await generationCommands(page).getByText('sourceVideoDuration is below minimum.').waitFor();
 
     await page.goto(`${harness.url}/studio/image`);
     await chooseImageTextWorkflow(page);
     const lostResponsePrompt = 'A paid action whose local HTTP response is deliberately lost';
-    await page
-      .locator('#parameter-inspector')
+    const lostResponseInspector = page.locator('#parameter-inspector');
+    const lostResponsePromptPanel = await showInspectorSection(lostResponseInspector, 'Prompt');
+    await lostResponsePromptPanel
       .getByRole('textbox', { name: /^Prompt/ })
       .fill(lostResponsePrompt);
-    await page.locator('#parameter-inspector').getByText('Request validated locally.').waitFor();
+    await waitForValidRequest(page);
     const submitsBeforeLostResponse = harness.mock.requests.filter(
       (request) => request.pathname === '/api/generate/submit'
     ).length;
@@ -1890,10 +2134,7 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
       },
       { times: 1 }
     );
-    await page
-      .locator('#parameter-inspector')
-      .getByRole('button', { name: 'Generate image' })
-      .click();
+    await generationCommands(page).getByRole('button', { name: 'Generate image' }).click();
     await page.getByText(/Automatic resubmission is blocked to avoid duplicate spend/).waitFor();
     expect(lostResponseServer.completed).not.toBe(true);
     await page
@@ -2143,30 +2384,35 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
 
     await page.goto(`${harness.url}/studio/image`);
     const imageBatchInspector = page.locator('#parameter-inspector');
+    const imageBatchCommands = generationCommands(page);
     await selectRadioValue(imageBatchInspector, 'text-to-image');
     await selectRadioValue(imageBatchInspector, 'seedream-5.0-pro:text-to-image');
-    await imageBatchInspector
+    let imageBatchPromptPanel = await showInspectorSection(imageBatchInspector, 'Prompt');
+    await imageBatchPromptPanel
       .getByRole('textbox', { name: /^Prompt/ })
       .fill('Batch landscape study');
+    let imageBatchOutputPanel = await showInspectorSection(imageBatchInspector, 'Output');
     await selectRadioValue(
-      imageBatchInspector.getByRole('group', { name: 'Aspect Ratio' }),
+      imageBatchOutputPanel.getByRole('group', { name: 'Aspect Ratio' }),
       '16:9'
     );
-    await imageBatchInspector.getByText('Request validated locally.').waitFor();
-    await imageBatchInspector.getByRole('button', { name: 'Add to batch' }).click();
-    await imageBatchInspector.getByText('Added item 1 to the local batch.').waitFor();
-    await imageBatchInspector
+    await waitForValidRequest(page);
+    await imageBatchCommands.getByRole('button', { name: 'Add to batch' }).click();
+    await imageBatchCommands.getByText('Added item 1 to the local batch.').waitFor();
+    imageBatchPromptPanel = await showInspectorSection(imageBatchInspector, 'Prompt');
+    await imageBatchPromptPanel
       .getByRole('textbox', { name: /^Prompt/ })
       .fill('Batch portrait study');
+    imageBatchOutputPanel = await showInspectorSection(imageBatchInspector, 'Output');
     await selectRadioValue(
-      imageBatchInspector.getByRole('group', { name: 'Aspect Ratio' }),
+      imageBatchOutputPanel.getByRole('group', { name: 'Aspect Ratio' }),
       '9:16'
     );
-    await imageBatchInspector.getByText('Request validated locally.').waitFor();
-    await imageBatchInspector.getByRole('button', { name: 'Add to batch' }).click();
+    await waitForValidRequest(page);
+    await imageBatchCommands.getByRole('button', { name: 'Add to batch' }).click();
     harness.mock.queueOutcome('success');
     harness.mock.queueOutcome('failed');
-    await imageBatchInspector.getByRole('button', { name: 'Review batch (2)' }).click();
+    await imageBatchCommands.getByRole('button', { name: 'Review batch (2)' }).click();
     let imageBatchDialog = page.getByRole('dialog', { name: 'Image batch' });
     await imageBatchDialog.getByText('Batch landscape study · 16:9 · 2K').waitFor();
     await imageBatchDialog.getByText('Batch portrait study · 9:16 · 2K').waitFor();
@@ -2176,13 +2422,14 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     });
     await imageBatchDialog.getByRole('button', { name: 'Edit' }).first().click();
     await page.keyboard.press('Escape');
-    await imageBatchInspector
+    imageBatchPromptPanel = await showInspectorSection(imageBatchInspector, 'Prompt');
+    await imageBatchPromptPanel
       .getByRole('textbox', { name: /^Prompt/ })
       .fill('Batch landscape study revised');
-    await imageBatchInspector.getByText('Request validated locally.').waitFor();
-    await imageBatchInspector.getByRole('button', { name: 'Update batch item' }).click();
-    await imageBatchInspector.getByText('Updated the batch item.').waitFor();
-    await imageBatchInspector.getByRole('button', { name: 'Review batch (2)' }).click();
+    await waitForValidRequest(page);
+    await imageBatchCommands.getByRole('button', { name: 'Update batch item' }).click();
+    await imageBatchCommands.getByText('Updated the batch item.').waitFor();
+    await imageBatchCommands.getByRole('button', { name: 'Review batch (2)' }).click();
     imageBatchDialog = page.getByRole('dialog', { name: 'Image batch' });
     await imageBatchDialog.getByText('Batch landscape study revised · 16:9 · 2K').waitFor();
     await imageBatchDialog.getByRole('button', { name: 'Duplicate' }).first().click();
@@ -2199,10 +2446,7 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
       await imageBatchDialog.getByRole('link', { name: /Open result/ }).count()
     ).toBeGreaterThan(0);
     await page.reload();
-    await page
-      .locator('#parameter-inspector')
-      .getByRole('button', { name: 'Review batch (2)' })
-      .click();
+    await generationCommands(page).getByRole('button', { name: 'Review batch (2)' }).click();
     imageBatchDialog = page.getByRole('dialog', { name: 'Image batch' });
     await imageBatchDialog.getByText('complete', { exact: true }).waitFor();
     await imageBatchDialog.getByText('failed', { exact: true }).waitFor();
@@ -2221,31 +2465,37 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     }
     await page.keyboard.press('Escape');
     await imageBatchInspector.getByRole('button', { name: 'Reset', exact: true }).click();
+    await showInspectorSection(imageBatchInspector, 'Setup');
     await selectRadioValue(imageBatchInspector, 'image-edit');
     await selectRadioValue(imageBatchInspector, 'flux-dev:image-edit');
-    await imageBatchInspector
+    imageBatchPromptPanel = await showInspectorSection(imageBatchInspector, 'Prompt');
+    await imageBatchPromptPanel
       .getByRole('textbox', { name: /^Prompt/ })
       .fill('Reference batch portrait treatment');
-    await imageBatchInspector
+    const imageBatchInputsPanel = await showInspectorSection(imageBatchInspector, 'Inputs');
+    await imageBatchInputsPanel
       .getByLabel('Reference remote URL')
       .fill('https://media.poyo-fixture.example/reference.png');
-    await imageBatchInspector.getByRole('button', { name: 'Add URL' }).click();
+    await imageBatchInputsPanel.getByRole('button', { name: 'Add URL' }).click();
+    imageBatchOutputPanel = await showInspectorSection(imageBatchInspector, 'Output');
     await selectRadioValue(
-      imageBatchInspector.getByRole('group', { name: 'Aspect Ratio' }),
+      imageBatchOutputPanel.getByRole('group', { name: 'Aspect Ratio' }),
       '9:16'
     );
-    await imageBatchInspector.getByText('Request validated locally.').waitFor();
-    await imageBatchInspector.getByRole('button', { name: 'Add to batch' }).click();
-    await imageBatchInspector
+    await waitForValidRequest(page);
+    await imageBatchCommands.getByRole('button', { name: 'Add to batch' }).click();
+    imageBatchPromptPanel = await showInspectorSection(imageBatchInspector, 'Prompt');
+    await imageBatchPromptPanel
       .getByRole('textbox', { name: /^Prompt/ })
       .fill('Reference batch landscape treatment');
+    imageBatchOutputPanel = await showInspectorSection(imageBatchInspector, 'Output');
     await selectRadioValue(
-      imageBatchInspector.getByRole('group', { name: 'Aspect Ratio' }),
+      imageBatchOutputPanel.getByRole('group', { name: 'Aspect Ratio' }),
       '16:9'
     );
-    await imageBatchInspector.getByText('Request validated locally.').waitFor();
-    await imageBatchInspector.getByRole('button', { name: 'Add to batch' }).click();
-    await imageBatchInspector.getByRole('button', { name: 'Review batch (2)' }).click();
+    await waitForValidRequest(page);
+    await imageBatchCommands.getByRole('button', { name: 'Add to batch' }).click();
+    await imageBatchCommands.getByRole('button', { name: 'Review batch (2)' }).click();
     const imageEditBatchDialog = page.getByRole('dialog', { name: 'Image batch' });
     await imageEditBatchDialog
       .getByRole('button', { name: 'Submit 2 separate billed jobs' })
@@ -2261,13 +2511,14 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     await page.keyboard.press('Escape');
     await imageBatchInspector.getByRole('button', { name: 'Reset', exact: true }).click();
     await chooseImageTextWorkflow(page);
-    await imageBatchInspector
+    imageBatchPromptPanel = await showInspectorSection(imageBatchInspector, 'Prompt');
+    await imageBatchPromptPanel
       .getByRole('textbox', { name: /^Prompt/ })
       .fill('Batch item with a deliberately interrupted local submission');
-    await imageBatchInspector.getByText('Request validated locally.').waitFor();
-    await imageBatchInspector.getByRole('button', { name: 'Add to batch' }).click();
+    await waitForValidRequest(page);
+    await imageBatchCommands.getByRole('button', { name: 'Add to batch' }).click();
     await page.route('**/api/jobs', async (route) => route.abort('failed'), { times: 1 });
-    await imageBatchInspector.getByRole('button', { name: 'Review batch (1)' }).click();
+    await imageBatchCommands.getByRole('button', { name: 'Review batch (1)' }).click();
     const interruptedBatchDialog = page.getByRole('dialog', { name: 'Image batch' });
     await interruptedBatchDialog
       .getByRole('button', { name: 'Submit 1 separate billed job' })
@@ -2290,19 +2541,21 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
 
     await page.goto(`${harness.url}/studio/video`);
     const videoBatchInspector = page.locator('#parameter-inspector');
+    const videoBatchCommands = generationCommands(page);
     await videoBatchInspector.getByRole('button', { name: 'Reset', exact: true }).click();
     await selectRadioValue(videoBatchInspector, 'text-to-video');
-    await videoBatchInspector
+    const videoBatchPromptPanel = await showInspectorSection(videoBatchInspector, 'Prompt');
+    await videoBatchPromptPanel
       .getByRole('textbox', { name: /^Prompt/ })
       .fill('Video batch orbit one');
-    await videoBatchInspector.getByText('Request validated locally.').waitFor();
-    await videoBatchInspector.getByRole('button', { name: 'Add to batch' }).click();
-    await videoBatchInspector
+    await waitForValidRequest(page);
+    await videoBatchCommands.getByRole('button', { name: 'Add to batch' }).click();
+    await videoBatchPromptPanel
       .getByRole('textbox', { name: /^Prompt/ })
       .fill('Video batch orbit two');
-    await videoBatchInspector.getByText('Request validated locally.').waitFor();
-    await videoBatchInspector.getByRole('button', { name: 'Add to batch' }).click();
-    await videoBatchInspector.getByRole('button', { name: 'Review batch (2)' }).click();
+    await waitForValidRequest(page);
+    await videoBatchCommands.getByRole('button', { name: 'Add to batch' }).click();
+    await videoBatchCommands.getByRole('button', { name: 'Review batch (2)' }).click();
     const videoBatchDialog = page.getByRole('dialog', { name: 'Video batch' });
     harness.mock.queueOutcome('held');
     await videoBatchDialog.getByRole('button', { name: 'Submit 2 separate billed jobs' }).click();
@@ -2322,12 +2575,12 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     await page.goto(`${harness.url}/studio/image`);
     const failureInspector = page.locator('#parameter-inspector');
     await failureInspector.getByRole('button', { name: 'Reset', exact: true }).click();
-    expect(await failureInspector.getByRole('textbox', { name: /^Prompt/ }).inputValue()).toBe('');
+    const failurePromptPanel = await showInspectorSection(failureInspector, 'Prompt');
+    expect(await failurePromptPanel.getByRole('textbox', { name: /^Prompt/ }).inputValue()).toBe(
+      ''
+    );
     await chooseImageTextWorkflow(page);
-    await page
-      .locator('#parameter-inspector')
-      .getByRole('button', { name: 'Generate image' })
-      .click();
+    await generationCommands(page).getByRole('button', { name: 'Generate image' }).click();
     await page.getByRole('heading', { name: 'Poyo generation failed' }).waitFor({
       timeout: 15_000
     });
@@ -2340,7 +2593,7 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     await page.getByRole('button', { name: 'Edit setup' }).click();
     const dialog = page.getByRole('dialog', { name: 'Image setup' });
     await dialog.waitFor();
-    await dialog.getByRole('button', { name: 'Prompt' }).click();
+    await dialog.getByRole('tab', { name: /^Prompt(?:, needs attention)?$/ }).click();
     await dialog
       .getByRole('textbox', { name: /^Prompt/ })
       .fill('Keyboard accessible mobile prompt');

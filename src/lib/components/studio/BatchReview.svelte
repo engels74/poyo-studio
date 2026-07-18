@@ -10,6 +10,9 @@ interface Props {
   items: StudioBatchItem[];
   submitting: boolean;
   canSubmit: boolean;
+  addLabel: string;
+  addDisabled: boolean;
+  onadd: () => void;
   onedit: (item: StudioBatchItem) => void;
   onduplicate: (item: StudioBatchItem) => void;
   onremove: (item: StudioBatchItem) => void;
@@ -24,6 +27,9 @@ let {
   items,
   submitting,
   canSubmit,
+  addLabel,
+  addDisabled,
+  onadd,
   onedit,
   onduplicate,
   onremove,
@@ -54,16 +60,24 @@ function summary(item: StudioBatchItem): string {
 }
 </script>
 
-<Sheet
-  bind:open
-  title={`${modality === 'image' ? 'Image' : 'Video'} batch`}
-  description="Review locally coordinated items before Poyo receives separate jobs."
-  side="right"
-  triggerClass="focus-ring inline-flex min-h-8 w-full items-center justify-center gap-2 rounded-[var(--radius)] border border-border bg-background px-2.5 text-xs font-semibold shadow-[var(--shadow-xs)] hover:bg-muted"
-  contentClass="flex h-full w-[min(100vw,34rem)] flex-col"
+<div
+  role="group"
+  aria-label="Batch commands"
+  class="grid grid-cols-2 gap-1 rounded-[var(--radius)] border border-border bg-muted p-1"
 >
-  {#snippet trigger()}Review batch ({items.length}){/snippet}
-  <div class="flex min-h-0 flex-1 flex-col">
+  <Button size="sm" variant="outline" class="w-full" disabled={addDisabled} onclick={onadd}>
+    {addLabel}
+  </Button>
+  <Sheet
+    bind:open
+    title={`${modality === 'image' ? 'Image' : 'Video'} batch`}
+    description="Review locally coordinated items before Poyo receives separate jobs."
+    side="right"
+    triggerClass="focus-ring inline-flex min-h-8 w-full items-center justify-center gap-2 rounded-[var(--radius)] border border-border bg-background px-2.5 text-xs font-semibold shadow-[var(--shadow-xs)] hover:bg-muted"
+    contentClass="flex h-full w-[min(100vw,34rem)] flex-col"
+  >
+    {#snippet trigger()}Review batch ({items.length}){/snippet}
+    <div class="flex min-h-0 flex-1 flex-col">
     <div class="border-b border-border px-5 py-3 text-xs leading-5 text-muted-foreground">
       <p>Local batch · sequential submission · each item remains an independent recoverable job.</p>
       <p class="mt-1">Each submitted item is a separate billed Poyo job. Exact credits appear only after completion.</p>
@@ -138,5 +152,6 @@ function summary(item: StudioBatchItem): string {
       </Button>
       {#if !canSubmit}<p class="mt-2 text-center text-xs text-muted-foreground">Configure a Poyo API key before submitting this batch.</p>{/if}
     </div>
-  </div>
-</Sheet>
+    </div>
+  </Sheet>
+</div>

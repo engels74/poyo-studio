@@ -289,6 +289,25 @@ textarea {
   display: none;
 }
 
+.studio-command-dock {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--card);
+  padding: 0.75rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.studio-command-actions {
+  display: grid;
+  grid-template-columns: minmax(15rem, auto) minmax(10rem, auto);
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
 @media (max-width: 1279px) {
   .studio-layout {
     display: block;
@@ -304,6 +323,22 @@ textarea {
 
   .studio-mobile-setup {
     display: flex;
+  }
+}
+
+@media (max-width: 767px) {
+  .studio-command-dock {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .studio-command-actions {
+    grid-template-columns: minmax(0, 1.45fr) minmax(7.75rem, 0.75fr);
+  }
+}
+
+@media (max-width: 359px) {
+  .studio-command-actions {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
