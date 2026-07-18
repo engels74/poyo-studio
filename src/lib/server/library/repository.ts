@@ -596,6 +596,7 @@ export class LibraryRepository extends DatabaseRepository {
       }));
     return {
       ...jobDto(row),
+      prompt: row.prompt_text,
       poyoTaskId: row.poyo_task_id,
       correlationId: row.correlation_id,
       retryOfJobId: row.retry_of_job_id,
