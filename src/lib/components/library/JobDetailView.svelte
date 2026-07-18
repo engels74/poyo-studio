@@ -170,7 +170,7 @@ function nativeOutputAction(outputId: string, kind: 'open-native' | 'reveal'): v
 }
 
 async function copyPrompt(): Promise<void> {
-  if (!job.prompt) return;
+  if (job.prompt === null) return;
   try {
     await navigator.clipboard.writeText(job.prompt);
     promptCopyStatus = 'Prompt copied.';
@@ -314,7 +314,7 @@ function removeOutput(outputId: string): void {
       <section class="border-b border-border pb-5">
         <div class="flex items-center justify-between gap-2">
           <p class="eyebrow-label">Prompt</p>
-          {#if job.prompt}
+          {#if job.prompt !== null}
             <button type="button" onclick={() => void copyPrompt()} class="focus-ring grid size-7 shrink-0 place-items-center rounded border border-border text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Copy full prompt" title="Copy full prompt"><AppIcon name={promptCopyStatus === 'Prompt copied.' ? 'success' : 'copy'} size={13} /></button>
           {/if}
         </div>

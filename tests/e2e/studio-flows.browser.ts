@@ -2841,6 +2841,28 @@ serial(
       await page.getByText('No prompt stored.', { exact: true }).waitFor();
       expect(await page.getByRole('button', { name: 'Show full prompt' }).count()).toBe(0);
       expect(await page.getByRole('button', { name: 'Copy full prompt' }).count()).toBe(0);
+      await stage('empty legacy prompt persistence', productStageBoundMs, () => {
+        const database = new Database(harness.databasePath);
+        try {
+          database.query('UPDATE jobs SET prompt_text=? WHERE id=?').run('', fixtures.legacyJobId);
+        } finally {
+          database.close();
+        }
+      });
+      await page.reload({ timeout: productStageBoundMs, waitUntil: 'domcontentloaded' });
+      await page
+        .getByRole('heading', { name: 'Seedream 5.0 Pro' })
+        .waitFor({ timeout: productStageBoundMs });
+      expect(await page.locator('#job-prompt').textContent()).toBe('');
+      await owner.context.grantPermissions(['clipboard-read', 'clipboard-write'], {
+        origin: new URL(harness.url).origin
+      });
+      await page.evaluate(() => navigator.clipboard.writeText('clipboard sentinel'));
+      const emptyPromptCopy = page.getByRole('button', { name: 'Copy full prompt' });
+      expect(await emptyPromptCopy.count()).toBe(1);
+      await emptyPromptCopy.click();
+      await page.getByText('Prompt copied.').waitFor({ timeout: productStageBoundMs });
+      expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('');
       const readRerunSnapshot = () => {
         const database = new Database(harness.databasePath, { readonly: true });
         try {
