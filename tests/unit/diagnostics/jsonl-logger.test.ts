@@ -42,7 +42,11 @@ describe('structured JSONL logging', () => {
     expect(rotated.length).toBeLessThanOrEqual(2);
     expect(names).toContain('app.jsonl');
     expect(names).toContain('error.jsonl');
-    expect(contents.join('')).not.toContain(secret);
+    const combined = contents.join('');
+    expect(combined).not.toContain(secret);
+    for (const algorithm of ['sha1', 'sha256', 'sha384', 'sha512'] as const) {
+      expect(combined).not.toContain(new Bun.CryptoHasher(algorithm).update(secret).digest('hex'));
+    }
     for (const line of contents.join('').trim().split('\n'))
       expect(() => JSON.parse(line)).not.toThrow();
   });
