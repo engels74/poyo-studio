@@ -12,7 +12,6 @@ import {
   normalizeImageRequest,
   RegistryValidationError
 } from '../../../src/lib/features/registry/normalize';
-import { isRetiredImageInput } from '../../../src/lib/features/registry/retired-inputs';
 import { migrateDatabase } from '../../../src/lib/server/platform/database';
 import { seedImageRegistry } from '../../../src/lib/server/registry/repository';
 
@@ -143,7 +142,7 @@ describe('audited image registry', () => {
       } else expect(preview.request.input).not.toHaveProperty('enable_safety_checker');
     }
   });
-  test('REG-08 Seedream 5 Pro emits independent defaults without retired output counts', () => {
+  test('REG-08 Seedream 5 Pro emits the current independent size defaults', () => {
     const ratios = ['1:1', '4:3', '3:4', '16:9', '9:16', '2:3', '3:2', '21:9'];
     for (const key of ['seedream-5.0-pro:text-to-image', 'seedream-5.0-pro-edit:image-edit']) {
       const entry = registryEntry(key);
@@ -189,7 +188,7 @@ describe('audited image registry', () => {
         'n is not supported'
       );
       expect(() => normalizeImageRequest(entry.key, values, [{ key: 'n', value: 6 }])).toThrow(
-        'Expert override n is retired for Seedream 5.0 Pro; current schema does not support it.'
+        'Expert override n is not supported by the current Seedream 5.0 Pro schema.'
       );
     }
 
@@ -208,15 +207,6 @@ describe('audited image registry', () => {
     );
     expect(nonProExpert.expertDiff).toEqual([{ key: 'n', status: 'unverified', value: 6 }]);
     expect(nonProExpert.request.input.n).toBe(6);
-  });
-
-  test('REG-08A retired input policy matches only Seedream 5 Pro n', () => {
-    expect(isRetiredImageInput('seedream-5.0-pro', 'n')).toBe(true);
-    expect(isRetiredImageInput('seedream-5.0-pro-edit', 'n')).toBe(true);
-    expect(isRetiredImageInput('seedream-5.0-pro', 'resolution')).toBe(false);
-    expect(isRetiredImageInput('seedream-5.0-pro-edit', 'seed')).toBe(false);
-    expect(isRetiredImageInput('seedream-5.0-lite', 'n')).toBe(false);
-    expect(isRetiredImageInput('flux-schnell', 'n')).toBe(false);
   });
 
   test('REG-08B preserves union-size neighbors and Flux.2 independent requirements', () => {

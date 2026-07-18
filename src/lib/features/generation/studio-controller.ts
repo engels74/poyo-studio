@@ -8,7 +8,6 @@ import type {
   InputRole,
   VideoRegistryEntry
 } from '../registry/types';
-import { isRetiredImageInput } from '../registry/retired-inputs';
 import type { StudioEntry, StudioRoleInput } from './contracts';
 
 export type SizeMode = 'resolution' | 'aspect-ratio' | 'custom';
@@ -130,15 +129,7 @@ export function initialGuidedValues(
   }
   if (entry.output.safetyChecker) values.enableSafetyChecker = false;
   if (preset) Object.assign(values, cloneJson(preset.guided));
-  if (!entry.fields.some((field) => field.key === 'n')) delete values.n;
   return values;
-}
-
-export function filterRetiredExpertOverrides(
-  entry: Pick<StudioEntry, 'publicModelId'>,
-  overrides: readonly ExpertOverride[]
-): ExpertOverride[] {
-  return overrides.filter((override) => !isRetiredImageInput(entry.publicModelId, override.key));
 }
 
 export function initialRoleInputs(

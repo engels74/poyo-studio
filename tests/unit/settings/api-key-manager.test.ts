@@ -1,24 +1,24 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { openDatabase } from '../../../src/lib/server/platform/database';
 import {
   ApiKeyManager,
+  type ApiKeyManagerOptions,
+  CredentialBackendError,
   EnvironmentKeyActiveError
 } from '../../../src/lib/server/settings/api-key-manager';
 import { SecretMetadataRepository } from '../../../src/lib/server/settings/secret-metadata-repository';
 import type { SecretStore } from '../../../src/lib/server/settings/secret-store';
-import { SettingsRepository } from '../../../src/lib/server/settings/settings-repository';
 import { createTemporaryDirectory } from '../../helpers/temporary-directory';
 
 class MemorySecretStore implements SecretStore {
-  readonly kind = 'os' as const;
+  readonly kind = 'file' as const;
   getCalls = 0;
+  setCalls = 0;
+  deleteCalls = 0;
 
   constructor(public value: string | null = null) {}
-
-  checkAvailability(): Promise<boolean> {
-    return Promise.resolve(true);
-  }
 
   get(): Promise<string | null> {
     this.getCalls += 1;
@@ -26,11 +26,13 @@ class MemorySecretStore implements SecretStore {
   }
 
   set(secret: string): Promise<void> {
+    this.setCalls += 1;
     this.value = secret;
     return Promise.resolve();
   }
 
   delete(): Promise<boolean> {
+    this.deleteCalls += 1;
     const existed = this.value !== null;
     this.value = null;
     return Promise.resolve(existed);
@@ -45,7 +47,8 @@ afterEach(async () => {
 
 async function manager(
   environment: Record<string, string | undefined>,
-  store = new MemorySecretStore()
+  store: SecretStore = new MemorySecretStore(),
+  mutationGate?: NonNullable<ApiKeyManagerOptions['mutationGate']>
 ) {
   const temporary = await createTemporaryDirectory('poyo-key-');
   cleanups.push(temporary.cleanup);
@@ -59,43 +62,48 @@ async function manager(
       environment,
       secretStore: store,
       metadataRepository: new SecretMetadataRepository(database),
+      ...(mutationGate ? { mutationGate } : {}),
       now: () => new Date('2026-07-15T12:00:00.000Z')
     })
   };
 }
 
 describe('API key configuration', () => {
-  test('SET-01 gives the environment key absolute precedence', async () => {
+  test('SET-01 gives POYO_API_KEY absolute precedence without probing local storage', async () => {
     const environmentSecret = ['sk', 'test_environment_canary_123456'].join('-');
-    const setup = await manager(
-      { POYO_API_KEY: environmentSecret },
-      new MemorySecretStore('local')
-    );
+    const store = new MemorySecretStore('sk-test_local_canary_123456');
+    const setup = await manager({ POYO_API_KEY: `  ${environmentSecret}  ` }, store);
     try {
       const resolved = await setup.manager.resolve();
       expect(resolved.key).toBe(environmentSecret);
       expect(resolved.status).toMatchObject({
         source: 'environment',
         status: 'configured',
+        storeKind: 'environment',
         environmentManaged: true,
-        onboardingAvailable: false
+        onboardingAvailable: false,
+        localMutationAvailable: false
       });
-      expect(setup.store.getCalls).toBe(0);
+      expect(store.getCalls).toBe(0);
       await expect(setup.manager.setLocal('sk-test_other_canary_123456')).rejects.toBeInstanceOf(
         EnvironmentKeyActiveError
       );
+      await expect(setup.manager.removeLocal()).rejects.toBeInstanceOf(EnvironmentKeyActiveError);
+      expect(store.setCalls).toBe(0);
+      expect(store.deleteCalls).toBe(0);
     } finally {
       setup.database.close();
     }
   });
 
-  test('supports local onboarding and removal when environment configuration is absent', async () => {
+  test('supports verified local onboarding, connectivity, and verified removal', async () => {
     const setup = await manager({});
     try {
       expect((await setup.manager.resolve()).status.status).toBe('missing');
-      expect(await setup.manager.setLocal('sk-test_local_canary_123456')).toMatchObject({
+      expect(await setup.manager.setLocal(' sk-test_local_canary_123456 ')).toMatchObject({
         source: 'local',
         status: 'configured',
+        storeKind: 'file',
         onboardingAvailable: true
       });
       expect((await setup.manager.resolve()).key).toBe('sk-test_local_canary_123456');
@@ -111,14 +119,47 @@ describe('API key configuration', () => {
         status: 'missing'
       });
       expect(setup.manager.connectivityStatus()).toEqual({ checkedAt: null, status: null });
-      expect((await setup.manager.resolve()).key).toBeNull();
     } finally {
       setup.database.close();
     }
   });
 
-  test('serializes connectivity against key mutation and invalidates the completed result', async () => {
-    const setup = await manager({});
+  test('rejects a store write that cannot be read back unchanged', async () => {
+    const store = new MemorySecretStore();
+    store.set = async () => {
+      store.value = 'different-value';
+    };
+    const setup = await manager({}, store);
+    try {
+      await expect(setup.manager.setLocal('sk-test_expected_canary_123456')).rejects.toBeInstanceOf(
+        CredentialBackendError
+      );
+    } finally {
+      setup.database.close();
+    }
+  });
+
+  test('rejects failed and unverifiable credential deletion', async () => {
+    for (const deleteBehavior of ['reject', 'retain'] as const) {
+      const store = new MemorySecretStore('sk-test_delete_failure_canary_123456');
+      store.delete = async () => {
+        store.deleteCalls += 1;
+        if (deleteBehavior === 'reject') throw new Error('injected delete failure');
+        return true;
+      };
+      const setup = await manager({}, store);
+      try {
+        await expect(setup.manager.removeLocal()).rejects.toBeInstanceOf(CredentialBackendError);
+        expect(store.value).toBe('sk-test_delete_failure_canary_123456');
+      } finally {
+        setup.database.close();
+      }
+    }
+  });
+
+  test('serializes status and mutation behind an in-flight connectivity probe', async () => {
+    const store = new MemorySecretStore();
+    const setup = await manager({}, store);
     try {
       const firstKey = 'sk-test_first_connectivity_canary_123456';
       const secondKey = 'sk-test_second_connectivity_canary_123456';
@@ -132,18 +173,18 @@ describe('API key configuration', () => {
       const probeStarted = new Promise<void>((resolve) => {
         markProbeStarted = resolve;
       });
-      const verification = setup.manager.verifyConnectivity(async (resolved) => {
-        expect(resolved.key).toBe(firstKey);
+      const verification = setup.manager.verifyConnectivity(async () => {
         markProbeStarted();
         await probeRelease;
       });
       await probeStarted;
 
       const mutation = setup.manager.setLocal(secondKey);
+      const status = setup.manager.status();
       await Bun.sleep(5);
-      expect(setup.store.value).toBe(firstKey);
+      expect(store.value).toBe(firstKey);
       releaseProbe();
-      await Promise.all([verification, mutation]);
+      await Promise.all([verification, mutation, status]);
 
       expect((await setup.manager.resolve()).key).toBe(secondKey);
       expect(setup.manager.connectivityStatus()).toEqual({ checkedAt: null, status: null });
@@ -152,62 +193,58 @@ describe('API key configuration', () => {
     }
   });
 
-  test('records a failed probe without exposing or discarding the configured key', async () => {
-    const setup = await manager({});
+  test('uses the writer gate for resolve persistence and connectivity metadata', async () => {
+    const permits: string[] = [];
+    const setup = await manager({}, new MemorySecretStore(), {
+      status: () => ({
+        admission: 'open',
+        activeWriters: 0,
+        detachedTasks: 0,
+        writerGeneration: 0
+      }),
+      withWriterPermit: async <T>(operation: string, callback: () => Promise<T>) => {
+        permits.push(operation);
+        return callback();
+      }
+    });
     try {
-      const key = 'sk-test_failed_connectivity_canary_123456';
-      await setup.manager.setLocal(key);
-      await expect(
-        setup.manager.verifyConnectivity(async (resolved) => {
-          expect(resolved.key).toBe(key);
-          throw new Error('synthetic connectivity failure');
-        })
-      ).rejects.toThrow('synthetic connectivity failure');
-      expect(setup.manager.connectivityStatus()).toEqual({
-        checkedAt: '2026-07-15T12:00:00.000Z',
-        status: 'failed'
-      });
-      expect((await setup.manager.resolve()).key).toBe(key);
-    } finally {
-      setup.database.close();
-    }
-  });
-
-  test('does not reuse persisted connectivity for a restarted or changed credential', async () => {
-    const setup = await manager({});
-    try {
-      await setup.manager.setLocal('sk-test_restart_local_canary_123456');
+      await setup.manager.resolve();
       await setup.manager.verifyConnectivity(async () => undefined);
-      expect(await setup.manager.connectivityVerified()).toBe(true);
-
-      const restarted = new ApiKeyManager({
-        environment: { POYO_API_KEY: 'sk-test_restart_environment_canary_123456' },
-        secretStore: setup.store,
-        metadataRepository: new SecretMetadataRepository(setup.database),
-        now: () => new Date('2026-07-15T12:01:00.000Z')
-      });
-      expect(restarted.connectivityStatus()).toEqual({ checkedAt: null, status: null });
-      expect((await restarted.status()).source).toBe('environment');
-      expect(await restarted.connectivityVerified()).toBe(false);
+      expect(permits).toEqual(['credential.status-persistence', 'credential.connectivity']);
     } finally {
       setup.database.close();
     }
   });
 
-  test('SET-02 and DB-06 never persist API key material in SQLite settings or metadata', async () => {
+  test('does not persist raw or SHA-family representations of the API key', async () => {
     const sentinel = 'sk-test_database_leak_canary_123456789';
     const setup = await manager({});
     try {
       await setup.manager.setLocal(sentinel);
-      const settings = new SettingsRepository(setup.database);
-      expect(() => settings.set('api_key', sentinel)).toThrow();
-      expect(() => settings.set('appearance', { nestedToken: sentinel })).toThrow();
+      await setup.manager.verifyConnectivity(async () => undefined);
       setup.database.query('PRAGMA wal_checkpoint(TRUNCATE)').run();
     } finally {
       setup.database.close();
     }
 
-    const bytes = await Bun.file(setup.path).arrayBuffer();
-    expect(new TextDecoder().decode(bytes)).not.toContain(sentinel);
+    const databaseText = new TextDecoder().decode(await Bun.file(setup.path).arrayBuffer());
+    expect(databaseText).not.toContain(sentinel);
+    for (const algorithm of ['sha1', 'sha224', 'sha256', 'sha384', 'sha512'] as const) {
+      expect(databaseText).not.toContain(createHash(algorithm).update(sentinel).digest('hex'));
+      expect(databaseText).not.toContain(createHash(algorithm).update(sentinel).digest('base64'));
+    }
+  });
+
+  test('rejects obsolete credential store metadata instead of normalizing it', async () => {
+    const setup = await manager({});
+    try {
+      await setup.manager.resolve();
+      setup.database.query("UPDATE secret_metadata SET store_kind='os' WHERE id=1").run();
+      expect(() => new SecretMetadataRepository(setup.database).get()).toThrow(
+        'Credential metadata is invalid.'
+      );
+    } finally {
+      setup.database.close();
+    }
   });
 });

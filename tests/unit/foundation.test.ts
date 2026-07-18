@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 interface PackageManifest {
   packageManager: string;
+  scripts: Record<string, string>;
   devDependencies: Record<string, string>;
 }
 
@@ -26,6 +27,7 @@ describe('Bun SvelteKit foundation', () => {
 
     expect(Bun.version).toBe('1.3.14');
     expect(manifest.packageManager).toBe('bun@1.3.14');
+    expect(manifest.scripts.dev).toBe('bun --bun vite dev --host 127.0.0.1');
     expect(manifest.devDependencies).toMatchObject(expectedVersions);
   });
 

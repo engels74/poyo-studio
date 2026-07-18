@@ -39,16 +39,12 @@ describe('validated operations settings', () => {
           logs: join(temporary.path, 'logs'),
           secrets: join(temporary.path, 'secrets'),
           temporary: join(temporary.path, 'tmp'),
-          source: 'project-default',
-          rootKind: 'project'
+          source: 'project-default'
         },
         {
           source: 'none',
           status: 'missing',
           storeKind: 'file',
-          selectedBackend: 'file',
-          backendAvailability: { file: 'available', os: 'unchecked' },
-          transition: null,
           onboardingAvailable: true,
           environmentManaged: false,
           localMutationAvailable: true,
@@ -87,16 +83,12 @@ describe('validated operations settings', () => {
           logs: join(temporary.path, 'logs'),
           secrets: join(temporary.path, 'secrets'),
           temporary: join(temporary.path, 'tmp'),
-          source: 'project-default',
-          rootKind: 'project'
+          source: 'project-default'
         },
         {
           source: 'none',
           status: 'missing',
           storeKind: 'file',
-          selectedBackend: 'file',
-          backendAvailability: { file: 'available', os: 'unchecked' },
-          transition: null,
           onboardingAvailable: true,
           environmentManaged: false,
           localMutationAvailable: true,

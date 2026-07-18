@@ -141,7 +141,7 @@ export function readStudioDraft(modality: 'image' | 'video'): StudioDraft | null
       roleInputs?: unknown;
     };
     if (
-      (parsed?.version !== 1 && parsed?.version !== 2 && parsed?.version !== 3) ||
+      parsed?.version !== 3 ||
       typeof parsed.entryKey !== 'string' ||
       !parsed.entryKey ||
       !SIZE_MODES.includes(parsed.sizeMode as SizeMode) ||
@@ -150,15 +150,12 @@ export function readStudioDraft(modality: 'image' | 'video'): StudioDraft | null
       return null;
     }
     const automaticFields =
-      (parsed.version === 2 || parsed.version === 3) &&
       Array.isArray(parsed.automaticFields) &&
       parsed.automaticFields.every((key) => AUTOMATIC_FIELDS.includes(key as AutomaticFieldKey))
         ? (parsed.automaticFields as AutomaticFieldKey[])
-        : parsed.version === 1
-          ? []
-          : null;
+        : null;
     if (!automaticFields) return null;
-    const roleInputs = parsed.version === 3 ? parsed.roleInputs : {};
+    const roleInputs = parsed.roleInputs;
     if (!isValidStoredRoleInputs(roleInputs)) return null;
     return {
       version: 3,
@@ -233,23 +230,7 @@ export function restoreStudioDraftRoleInputs(
       .map((input) => JSON.parse(JSON.stringify(input)) as StudioRoleInput);
     if (stored.length) {
       restored[definition.role] = stored;
-      continue;
     }
-
-    const legacy = draft.values.inputRoles.find(
-      (input) => input.role === definition.role && input.source === 'remote'
-    );
-    if (!legacy) continue;
-    restored[definition.role] = legacy.urls
-      .slice(0, definition.max ?? undefined)
-      .map((url, index) => ({
-        id: `${definition.role}-${index}-${url}`,
-        role: definition.role,
-        source: 'remote',
-        url,
-        name: new URL(url).hostname,
-        mediaKind: definition.mediaKind
-      }));
   }
   return restored;
 }

@@ -90,19 +90,10 @@ function parseStrings(value: string): string[] {
 
 function parseSnapshot(value: string): CleanupActionSnapshot {
   const snapshot = (JSON.parse(value) as { preview: CleanupActionSnapshot }).preview;
-  if (snapshot.targetKind) return snapshot;
-  const legacy = snapshot as CleanupActionSnapshot & { outputId?: string; jobId?: string };
-  if (!legacy.outputId) throw new Error('Cleanup action snapshot has no target.');
-  return {
-    ...legacy,
-    targetKind: 'output',
-    targetId: legacy.outputId,
-    outputId: legacy.outputId,
-    managedSourceId: null,
-    jobId: legacy.jobId ?? null,
-    jobIds: legacy.jobId ? [legacy.jobId] : [],
-    activeReference: false
-  };
+  if (snapshot.targetKind !== 'output' && snapshot.targetKind !== 'managed-source') {
+    throw new Error('Cleanup action snapshot has no valid target.');
+  }
+  return snapshot;
 }
 
 export class CleanupRepository extends DatabaseRepository {

@@ -16,7 +16,7 @@ export interface OperationsSettings {
 }
 
 export const DEFAULT_OPERATIONS_SETTINGS: OperationsSettings = {
-  polling: { intervalMs: 5_000, staleAfterMs: 15 * 60_000 },
+  polling: { intervalMs: 10_000, staleAfterMs: 15 * 60_000 },
   downloads: { automatic: true },
   logs: {
     separateErrorFile: true,

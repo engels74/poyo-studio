@@ -95,7 +95,6 @@ type InputRow = {
   role: string;
   input_order: number;
   media_kind: 'image' | 'video';
-  local_reference: string | null;
   source_url: string | null;
   upload_url: string | null;
   metadata_json: string;
@@ -554,19 +553,15 @@ export class LibraryRepository extends DatabaseRepository {
         role: input.role,
         inputOrder: input.input_order,
         mediaKind: input.media_kind,
-        sourceKind:
-          input.managed_source_id || input.local_reference
-            ? 'local'
-            : input.source_url
-              ? 'remote'
-              : input.upload_url
-                ? 'uploaded'
-                : 'unknown',
+        sourceKind: input.managed_source_id
+          ? 'local'
+          : input.source_url
+            ? 'remote'
+            : input.upload_url
+              ? 'uploaded'
+              : 'unknown',
         sourceLabel:
-          input.managed_source_name ??
-          (input.local_reference
-            ? basename(input.local_reference)
-            : safeUrlLabel(input.source_url ?? input.upload_url)),
+          input.managed_source_name ?? safeUrlLabel(input.source_url ?? input.upload_url),
         availability: input.managed_source_availability ?? input.availability,
         managedSourceId: input.managed_source_id,
         byteSize: input.managed_source_bytes,
@@ -695,7 +690,7 @@ export class LibraryRepository extends DatabaseRepository {
     jobId: string,
     outputId: string,
     choice: LocalDeleteChoice,
-    paths: Pick<AppPaths, 'media' | 'mediaReadRoots'>
+    paths: Pick<AppPaths, 'media'>
   ): Promise<void> {
     this.requireJob(jobId);
     const output = this.database
@@ -705,25 +700,12 @@ export class LibraryRepository extends DatabaseRepository {
       .get(outputId, jobId);
     if (!output) throw new Error('Output not found.');
     if ((choice === 'file' || choice === 'both') && output.local_path) {
-      // Outputs written before the output directory changed live under a historical media root, so
-      // resolve against every readable root (as the serve path does) instead of only the active
-      // `media`. local_path is stored absolute, so exactly one root lexically contains it.
-      const roots = paths.mediaReadRoots ?? [paths.media];
-      let resolved: string | null = null;
-      for (const root of roots) {
-        try {
-          resolved = resolvePathWithin(root, output.local_path);
-          break;
-        } catch {
-          // Not under this root; try the next historical media root.
-        }
+      let resolved: string;
+      try {
+        resolved = resolvePathWithin(paths.media, output.local_path);
+      } catch {
+        throw new Error('The output file is outside managed media storage and cannot be removed.');
       }
-      // If the file is under no known root, fail loudly rather than marking the output deleted
-      // while its file is orphaned on disk (which would report a success that did not happen).
-      if (!resolved)
-        throw new Error(
-          'The output file is outside the known media locations and cannot be removed.'
-        );
       await Bun.file(resolved)
         .delete()
         .catch((error) => {

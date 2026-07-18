@@ -208,9 +208,3 @@ export interface DashboardDto {
 }
 
 export type LocalDeleteChoice = 'file' | 'metadata' | 'both';
-
-export interface NativeMediaCapabilities {
-  openNative: boolean;
-  reveal: boolean;
-  revealLabel: 'Reveal in Finder' | 'Show in File Explorer' | 'Show in folder';
-}

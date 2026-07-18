@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { JobRequestError } from '../../../src/lib/server/jobs/create-request';
 import { seedImageRegistry } from '../../../src/lib/server/registry/repository';
 import { createJobFixture, createTestJob } from '../../helpers/job-fixture';
 
@@ -8,20 +7,9 @@ afterEach(async () => {
   await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
 });
 
-const retiredRerunMessage =
-  'This Seedream 5 Pro job contains the retired n setting. Use Edit in studio to review current settings before creating a new paid job.';
 const unexpectedManagedSourceRefresh = async (): Promise<{ id: string; url: string }> => {
   throw new Error('This fixture has no managed source to refresh.');
 };
-
-function durableCounts(database: Parameters<typeof seedImageRegistry>[0]) {
-  return Object.fromEntries(
-    ['jobs', 'submission_intents', 'job_events'].map((table) => [
-      table,
-      database.query<{ count: number }, []>(`SELECT COUNT(*) count FROM ${table}`).get()?.count ?? 0
-    ])
-  );
-}
 
 describe('durable job repository invariants', () => {
   test('JOB-01 keeps local, remote, and failure axes orthogonal with atomic transitions', async () => {
@@ -38,6 +26,40 @@ describe('durable job repository invariants', () => {
     );
     expect(fixture.repository.get(job.id)?.localPhase).toBe('submission_prepared');
     expect(fixture.repository.get(job.id)?.normalizedPayload).toEqual(job.normalizedPayload);
+  });
+
+  test('JOB-01B records only meaningful Poyo status changes while advancing the poll clock', async () => {
+    const fixture = await createJobFixture();
+    cleanups.push(fixture.cleanup);
+    const job = createTestJob(fixture.repository, 'deduplicated-status');
+    const status = {
+      taskId: 'task-deduplicated-status',
+      statusRaw: 'running',
+      status: 'running' as const,
+      creditsAmount: 2,
+      files: [],
+      createdTime: 'now',
+      progress: 0,
+      errorMessage: null
+    };
+
+    fixture.setNow(new Date('2026-07-15T12:00:10Z'));
+    const first = fixture.repository.applyStatus(job.id, status, 10_000);
+    const statusEventCount = () =>
+      fixture.database
+        .query<{ count: number }, [string]>(
+          "SELECT COUNT(*) count FROM job_events WHERE job_id=? AND event_type='status.observed'"
+        )
+        .get(job.id)?.count ?? 0;
+    expect(statusEventCount()).toBe(1);
+
+    fixture.setNow(new Date('2026-07-15T12:00:20Z'));
+    const repeated = fixture.repository.applyStatus(job.id, status, 10_000);
+
+    expect(statusEventCount()).toBe(1);
+    expect(repeated.updatedAt).toBe(first.updatedAt);
+    expect(repeated.lastPolledAt).toBe('2026-07-15T12:00:20.000Z');
+    expect(repeated.nextPollAt).toBe('2026-07-15T12:00:30.000Z');
   });
 
   test('JOB-02 and DB-05 grant one one-way paid claim to competing reconcilers', async () => {
@@ -112,33 +134,40 @@ describe('durable job repository invariants', () => {
     ).toThrow('different immutable request');
   });
 
-  test('JOB-03 freezes and exactly replays a legacy ambiguous Seedream 5 Pro intent', async () => {
+  test('JOB-03 freezes and exactly replays a current ambiguous paid intent', async () => {
     const fixture = await createJobFixture();
     cleanups.push(fixture.cleanup);
     seedImageRegistry(fixture.database);
-    const guidedRequest = { prompt: 'Legacy ambiguous request', n: 6, resolution: '1K' };
-    const normalizedPayload = {
-      model: 'seedream-5.0-pro',
-      input: { prompt: 'Legacy ambiguous request', n: 6, resolution: '1K', size: '1:1' }
+    const guidedRequest = {
+      prompt: 'Ambiguous image-edit request',
+      imageUrls: ['https://assets.example/reference.png'],
+      resolution: '1K',
+      aspectRatio: '1:1'
     };
-    const expertDiff = [
-      { key: 'n', value: 6, status: 'unverified' },
-      { key: 'future_parameter', value: { mode: 'kept' }, status: 'unverified' }
-    ];
+    const normalizedPayload = {
+      model: 'seedream-5.0-pro-edit',
+      input: {
+        prompt: 'Ambiguous image-edit request',
+        image_urls: ['https://assets.example/reference.png'],
+        resolution: '1K',
+        size: '1:1'
+      }
+    };
+    const expertDiff = [{ key: 'future_parameter', value: { mode: 'kept' }, status: 'unverified' }];
     const inputs = [
       {
-        role: 'historical-reference',
+        role: 'reference',
         mediaKind: 'image' as const,
         source: 'remote' as const,
-        url: 'https://assets.example/legacy.png',
-        metadata: { name: 'legacy.png', source: 'history' }
+        url: 'https://assets.example/reference.png',
+        metadata: { name: 'reference.png', source: 'request' }
       }
     ];
     const job = fixture.repository.create({
       actionId: crypto.randomUUID(),
-      entryKey: 'seedream-5.0-pro:text-to-image',
-      workflow: 'text-to-image',
-      publicModelId: 'seedream-5.0-pro',
+      entryKey: 'seedream-5.0-pro-edit:image-edit',
+      workflow: 'image-edit',
+      publicModelId: 'seedream-5.0-pro-edit',
       guidedRequest,
       normalizedPayload,
       expertDiff,
@@ -206,76 +235,6 @@ describe('durable job repository invariants', () => {
     ).toEqual(sourceInputs);
     expect(fixture.repository.get(job.id)).toEqual(sourceBeforeRetry);
   });
-
-  test.each([
-    ['seedream-5.0-pro', 'seedream-5.0-pro:text-to-image', 'guided'],
-    ['seedream-5.0-pro', 'seedream-5.0-pro:text-to-image', 'payload'],
-    ['seedream-5.0-pro', 'seedream-5.0-pro:text-to-image', 'expert'],
-    ['seedream-5.0-pro-edit', 'seedream-5.0-pro-edit:image-edit', 'guided'],
-    ['seedream-5.0-pro-edit', 'seedream-5.0-pro-edit:image-edit', 'payload'],
-    ['seedream-5.0-pro-edit', 'seedream-5.0-pro-edit:image-edit', 'expert']
-  ] as const)(
-    'JOB-14 blocks %s %s stale %s-only n reruns without durable effects',
-    async (publicModelId, entryKey, carrier) => {
-      const fixture = await createJobFixture();
-      cleanups.push(fixture.cleanup);
-      seedImageRegistry(fixture.database);
-      const guidedRequest = {
-        prompt: 'Legacy rerun request',
-        ...(carrier === 'guided' ? { n: 6 } : {})
-      };
-      const normalizedPayload = {
-        model: publicModelId,
-        input: {
-          prompt: 'Legacy rerun request',
-          size: '1:1',
-          resolution: '2K',
-          ...(carrier === 'payload' ? { n: 6 } : {})
-        }
-      };
-      const expertDiff =
-        carrier === 'expert'
-          ? [{ key: 'n', value: 6, status: 'unverified' }]
-          : [{ key: 'future_parameter', value: 'kept', status: 'unverified' }];
-      if (carrier === 'guided') expect(guidedRequest.n).toBe(6);
-      else expect(guidedRequest).not.toHaveProperty('n');
-      if (carrier === 'payload') expect(normalizedPayload.input.n).toBe(6);
-      else expect(normalizedPayload.input).not.toHaveProperty('n');
-      expect(expertDiff.some((override) => override.key === 'n')).toBe(carrier === 'expert');
-
-      const source = fixture.repository.create({
-        actionId: crypto.randomUUID(),
-        entryKey,
-        workflow: entryKey.endsWith(':image-edit') ? 'image-edit' : 'text-to-image',
-        publicModelId,
-        guidedRequest,
-        normalizedPayload,
-        expertDiff
-      });
-      const beforeJob = fixture.repository.get(source.id);
-      const beforeCounts = durableCounts(fixture.database);
-      const rerunActionId = crypto.randomUUID();
-      let error: unknown;
-      try {
-        await fixture.repository.rerunAsNew(
-          source.id,
-          rerunActionId,
-          unexpectedManagedSourceRefresh
-        );
-      } catch (caught) {
-        error = caught;
-      }
-      expect(error).toBeInstanceOf(JobRequestError);
-      expect(error).toMatchObject({
-        code: 'retired_input_requires_review',
-        status: 409,
-        message: retiredRerunMessage
-      });
-      expect(durableCounts(fixture.database)).toEqual(beforeCounts);
-      expect(fixture.repository.get(source.id)).toEqual(beforeJob);
-      expect(fixture.repository.getByActionId(rerunActionId)).toBeNull();
-    }
-  );
 
   test('JOB-14 reruns current Pro jobs and non-Pro jobs with supported n', async () => {
     const fixture = await createJobFixture();
@@ -386,51 +345,6 @@ describe('durable job repository invariants', () => {
       expect(fixture.repository.outputs(job.id)).toHaveLength(0);
     }
   );
-
-  test('JOB-11 preserves a historical Seedream 5 Pro n output count', async () => {
-    const fixture = await createJobFixture();
-    cleanups.push(fixture.cleanup);
-    seedImageRegistry(fixture.database);
-    const job = fixture.repository.create({
-      actionId: crypto.randomUUID(),
-      entryKey: 'seedream-5.0-pro:text-to-image',
-      workflow: 'text-to-image',
-      publicModelId: 'seedream-5.0-pro',
-      guidedRequest: { prompt: 'Historical six-output request', n: 6 },
-      normalizedPayload: {
-        model: 'seedream-5.0-pro',
-        input: { prompt: 'Historical six-output request', n: 6 }
-      }
-    });
-    fixture.repository.applyStatus(
-      job.id,
-      {
-        taskId: 'legacy-six-output-task',
-        statusRaw: 'finished',
-        status: 'finished',
-        creditsAmount: 6,
-        files: Array.from({ length: 6 }, (_, index) => ({
-          url: `https://poyo.test/legacy-${index}.png`,
-          fileType: 'image',
-          label: null,
-          format: null,
-          contentType: 'image/png',
-          fileName: `legacy-${index}.png`,
-          fileSize: null
-        })),
-        createdTime: 'now',
-        progress: 100,
-        errorMessage: null
-      },
-      1000
-    );
-    expect(fixture.repository.get(job.id)).toMatchObject({
-      localPhase: 'downloading',
-      remoteStatus: 'finished',
-      attentionCode: null
-    });
-    expect(fixture.repository.outputs(job.id)).toHaveLength(6);
-  });
 
   test('JOB-DIM retains verified dimensions when a later probe has no evidence', async () => {
     const fixture = await createJobFixture();

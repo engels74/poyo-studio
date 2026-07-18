@@ -60,6 +60,8 @@ credentials.*
 
 # Logs and runtime state
 logs/
+!src/routes/api/settings/logs/
+!src/routes/api/settings/logs/+server.ts
 *.log
 *.log.*
 *.pid

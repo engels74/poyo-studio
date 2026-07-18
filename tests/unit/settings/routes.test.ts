@@ -6,15 +6,29 @@ describe('settings HTTP and page boundaries', () => {
       'src/routes/api/settings/+server.ts',
       'src/routes/api/settings/api-key/+server.ts',
       'src/routes/api/settings/api-key/connectivity/+server.ts',
-      'src/routes/api/settings/credential-backend/+server.ts',
-      'src/routes/api/settings/credential-backend/conflict/+server.ts',
-      'src/routes/api/settings/storage-root/+server.ts',
+      'src/routes/api/settings/logs/+server.ts',
       'src/routes/api/onboarding/+server.ts',
       'src/routes/api/cleanup/preview/+server.ts',
       'src/routes/api/cleanup/apply/+server.ts'
     ]) {
       expect(await Bun.file(route).text()).toContain('readSameOriginJson');
     }
+  });
+
+  test('log deletion is explicitly confirmed, drained, path-free, and recoverable', async () => {
+    const route = await Bun.file('src/routes/api/settings/logs/+server.ts').text();
+    expect(route).toContain('body.confirmed !== true');
+    expect(route).toContain('upgradeToExclusiveMaintenance');
+    expect(route).toContain('clearManagedFiles');
+    expect(route).toContain('resumeBeforePublication');
+    expect(route).toContain('reopenBeforePublication');
+    expect(route).not.toContain('platform.paths.logs');
+    expect(await Bun.file('src/lib/server/jobs/runtime.ts').text()).not.toContain(
+      "registerDrain('job-worker'"
+    );
+    expect(await Bun.file('src/lib/server/cleanup/runtime.ts').text()).not.toContain(
+      "registerDrain('cleanup-worker'"
+    );
   });
 
   test('settings and diagnostics pages use live contracts instead of milestone placeholders', async () => {
@@ -30,31 +44,30 @@ describe('settings HTTP and page boundaries', () => {
     expect(`${settings}\n${diagnostics}`).not.toContain('No audited registry loaded');
   });
 
-  test('onboarding and settings expose explicit root and credential choices with override states', async () => {
+  test('onboarding and settings keep paths and credential implementation choices behind the server', async () => {
     const welcome = await Bun.file('src/routes/welcome/+page.svelte').text();
     const settings = await Bun.file('src/routes/settings/+page.svelte').text();
-    const rootRoute = await Bun.file('src/routes/api/settings/storage-root/+server.ts').text();
     for (const page of [welcome, settings]) {
-      expect(page).toContain('Permission-protected file (default)');
-      expect(page).toContain('Operating-system store');
-      expect(page).toContain('POYO_API_KEY');
-      expect(page).toContain('PLS_APP_DATA_DIR');
+      expect(page).toContain('never');
+      expect(page).not.toContain('selectedBackend');
+      expect(page).not.toContain('credential-backend');
+      expect(page).not.toContain('storage-root');
+      expect(page).not.toContain('output-location');
+      expect(page).not.toMatch(/operating-system|keychain|macOS/i);
+      expect(page).not.toMatch(/PLS_(?:APP_DATA_DIR|DATABASE_PATH|MEDIA_DIR|LOG_DIR)/);
     }
-    expect(welcome).toContain('project data folder');
-    expect(welcome).toContain('Move data and require restart');
-    expect(settings).toContain('Move all Studio data');
-    expect(settings).toContain('Move all root-owned Studio data');
-    expect(settings).toContain('previous copy is retained pending cleanup');
-    expect(welcome).toContain('previous copy is retained pending cleanup');
-    expect(welcome).toContain('rootState.exclusionSummary');
-    expect(settings).toContain('rootState.exclusionSummary');
-    expect(settings).toContain('rootState.retention');
-    expect(rootRoute).toContain('export const GET');
-    expect(rootRoute).toContain("'cache-control': 'no-store'");
-    expect(rootRoute).not.toContain('relocation: result');
-    const credentialRoute = await Bun.file(
-      'src/routes/api/settings/credential-backend/+server.ts'
-    ).text();
-    expect(credentialRoute).toContain('status: apiKey.transition ? 202 : 200');
+    expect(welcome).toContain('Your work stays local');
+    expect(settings).toContain('Local-only data boundary');
+    expect(settings).toContain('Clear local logs');
+    expect(welcome).toContain('/api/settings/api-key');
+    expect(settings).toContain('/api/settings/api-key');
+    for (const deletedRoute of [
+      'src/routes/api/settings/credential-backend/+server.ts',
+      'src/routes/api/settings/credential-backend/conflict/+server.ts',
+      'src/routes/api/settings/storage-root/+server.ts',
+      'src/routes/api/settings/output-location/+server.ts'
+    ]) {
+      expect(await Bun.file(deletedRoute).exists()).toBe(false);
+    }
   });
 });

@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite';
 import { afterEach, describe, expect, test } from 'bun:test';
-import { lstat, mkdir } from 'node:fs/promises';
+import { chmod, lstat, mkdir, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { migrations } from '../../../migrations';
 import {
@@ -111,6 +111,25 @@ async function expectRejectedWithoutMutation(databasePath: string): Promise<void
 }
 
 describe('read-only database bootstrap preflight', () => {
+  test('creates the database and active sidecars with private permissions', async () => {
+    const databasePath = await path();
+    await mkdir(join(databasePath, '..'), { recursive: true });
+    await chmod(join(databasePath, '..'), 0o755);
+
+    const database = await openDatabase(databasePath);
+    try {
+      if (typeof process.getuid === 'function') {
+        for (const ownedFile of [databasePath, `${databasePath}-wal`, `${databasePath}-shm`]) {
+          if (await Bun.file(ownedFile).exists()) {
+            expect((await lstat(ownedFile)).mode & 0o777).toBe(0o600);
+          }
+        }
+      }
+    } finally {
+      database.close();
+    }
+  });
+
   test('does not create a missing database or its parent directory', async () => {
     const databasePath = await path();
     const parent = join(databasePath, '..');
@@ -287,5 +306,36 @@ describe('read-only database bootstrap preflight', () => {
       code: 'database_unknown'
     });
     expect(await snapshot(databasePath)).toEqual(before);
+  });
+
+  test('rejects a database symlink without touching its target or creating sidecars', async () => {
+    const target = await path();
+    await createCompatibleDatabase(target);
+    const link = `${target}-link`;
+    await symlink(target, link, 'file');
+    const before = await snapshot(target);
+
+    await expect(preflightDatabase(link)).rejects.toMatchObject({ code: 'database_not_regular' });
+
+    expect(await snapshot(target)).toEqual(before);
+    expect(await Bun.file(`${link}-wal`).exists()).toBe(false);
+    expect(await Bun.file(`${link}-shm`).exists()).toBe(false);
+  });
+
+  test('rejects an unrelated valid SQLite database without modifying it', async () => {
+    const databasePath = await path();
+    await mkdir(join(databasePath, '..'), { recursive: true });
+    const database = new Database(databasePath, { create: true, strict: true });
+    database.exec('CREATE TABLE unrelated(id INTEGER PRIMARY KEY, value TEXT);');
+    database.close();
+    const before = await snapshot(databasePath);
+
+    await expect(preflightDatabase(databasePath)).rejects.toMatchObject({
+      code: 'database_unknown'
+    });
+
+    expect(await snapshot(databasePath)).toEqual(before);
+    expect(await Bun.file(`${databasePath}-wal`).exists()).toBe(false);
+    expect(await Bun.file(`${databasePath}-shm`).exists()).toBe(false);
   });
 });

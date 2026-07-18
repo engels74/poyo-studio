@@ -47,7 +47,7 @@ export class JobCoordinator {
     this.now = options.now ?? (() => new Date());
     this.submissionLeaseMs = options.submissionLeaseMs ?? 60_000;
     this.workLeaseMs = options.workLeaseMs ?? 60_000;
-    this.pollDelayMs = options.pollDelayMs ?? 5_000;
+    this.pollDelayMs = options.pollDelayMs ?? 10_000;
     this.staleAfterMs = options.staleAfterMs ?? 15 * 60_000;
     this.automaticDownloads = options.automaticDownloads ?? true;
   }

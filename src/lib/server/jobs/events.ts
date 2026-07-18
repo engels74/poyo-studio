@@ -77,6 +77,7 @@ export function createJobEventStream(
     start(controller) {
       const initial = initialJobEvents(repository, lastEventId);
       let cursor = initial.cursor;
+      if (initial.chunks.length === 0) controller.enqueue(encoder.encode(': connected\n\n'));
       for (const chunk of initial.chunks) controller.enqueue(chunk);
       const poll = () => {
         for (const event of repository.eventsAfter(cursor)) {

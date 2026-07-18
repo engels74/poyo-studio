@@ -68,7 +68,7 @@ describe('server-authoritative paid request preparation', () => {
     }
   });
 
-  test('JOB-10 rejects retired Seedream 5 Pro n at guided and Expert paid boundaries', async () => {
+  test('JOB-10 rejects unsupported Seedream 5 Pro n at guided and Expert paid boundaries', async () => {
     const fixture = await createJobFixture();
     try {
       seedImageRegistry(fixture.database);
@@ -108,14 +108,14 @@ describe('server-authoritative paid request preparation', () => {
             {
               actionId,
               entryKey,
-              values: { prompt: 'Retired Expert count' },
+              values: { prompt: 'Unsupported Expert count' },
               expertOverrides: [{ key: 'n', value: 6 }],
               inputs
             },
             resolve
           )
         ).rejects.toThrow(
-          'Expert override n is retired for Seedream 5.0 Pro; current schema does not support it.'
+          'Expert override n is not supported by the current Seedream 5.0 Pro schema.'
         );
       }
     } finally {

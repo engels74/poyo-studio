@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import {
   assertPrivateMediaRequest,
   MediaRangeError,
-  openContainingFolder,
   parseByteRange,
   privateMediaHeaders,
   safeLocalMediaPath
@@ -60,25 +59,5 @@ describe('private local media boundary', () => {
     expect(await safeLocalMediaPath(aliasedRoot, await realpath(canonicalFile))).toBe(
       await realpath(canonicalFile)
     );
-  });
-
-  test('opens only the verified containing folder with the platform command', async () => {
-    const temporary = await createTemporaryDirectory('poyo-folder-');
-    cleanups.push(temporary.cleanup);
-    const root = join(temporary.path, 'media');
-    const file = join(root, 'job', 'output.png');
-    await mkdir(join(root, 'job'), { recursive: true });
-    await writeFile(file, 'image');
-    const commands: string[][] = [];
-    await openContainingFolder(root, file, {
-      platform: 'linux',
-      spawn: (command) => {
-        commands.push(command);
-        return {};
-      }
-    });
-    expect(commands).toHaveLength(1);
-    expect(commands[0]?.[0]).toBe('xdg-open');
-    expect(commands[0]?.[1]).toEndWith('/media/job');
   });
 });

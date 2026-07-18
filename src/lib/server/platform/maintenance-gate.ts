@@ -8,14 +8,7 @@ export class MaintenanceUnavailableError extends Error {
 const READ_ONLY_HTTP_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 export function requestRequiresWriterPermit(method: string, routeId?: string | null): boolean {
-  if (
-    method.toUpperCase() === 'POST' &&
-    (routeId === '/api/settings/storage-root' ||
-      routeId === '/api/settings/credential-backend' ||
-      routeId === '/api/settings/credential-backend/conflict')
-  ) {
-    return false;
-  }
+  if (method.toUpperCase() === 'DELETE' && routeId === '/api/settings/logs') return false;
   return !READ_ONLY_HTTP_METHODS.has(method.toUpperCase());
 }
 

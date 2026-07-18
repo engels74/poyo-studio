@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test';
 import {
   createJobRequest,
   createStudioSubmissionSnapshot,
-  filterRetiredExpertOverrides,
   initialGuidedValues,
   mediaAccept,
   nextMonotonicEventId,
@@ -38,7 +37,7 @@ describe('registry-driven studio controller', () => {
     expect(initialGuidedValues(flux)).not.toHaveProperty('enableSafetyChecker');
   });
 
-  test('STUDIO-02 shows both defaulted Seedream 5 Pro size fields and scrubs retired preset n', () => {
+  test('STUDIO-02 shows the current Seedream 5 Pro size fields without an output count', () => {
     for (const key of ['seedream-5.0-pro:text-to-image', 'seedream-5.0-pro-edit:image-edit']) {
       const seedream = imageEntry(key);
       const fresh = initialGuidedValues(seedream);
@@ -47,15 +46,6 @@ describe('registry-driven studio controller', () => {
         resolution: '2K'
       });
       expect(fresh).not.toHaveProperty('n');
-      const restored = initialGuidedValues(seedream, {
-        version: 1,
-        modality: 'image',
-        guided: { prompt: 'saved', n: 6 },
-        expertOverrides: [],
-        inputRoles: []
-      });
-      expect(restored).toMatchObject({ prompt: 'saved', aspectRatio: '1:1', resolution: '2K' });
-      expect(restored).not.toHaveProperty('n');
       expect(seedream.fields.map((field) => field.key)).not.toContain('n');
       expect(sizeModes(seedream)).toEqual([]);
       const commonFields = visibleFields(seedream, 'common', 'resolution').map(
@@ -63,17 +53,6 @@ describe('registry-driven studio controller', () => {
       );
       expect(commonFields).toEqual(expect.arrayContaining(['aspectRatio', 'resolution']));
       expect(commonFields).not.toContain('n');
-
-      expect(
-        filterRetiredExpertOverrides(seedream, [
-          { key: 'first_parameter', value: 1 },
-          { key: 'n', value: 6 },
-          { key: 'last_parameter', value: { kept: true } }
-        ])
-      ).toEqual([
-        { key: 'first_parameter', value: 1 },
-        { key: 'last_parameter', value: { kept: true } }
-      ]);
     }
 
     for (const key of ['seedream-4.5:text-to-image', 'seedream-5.0-lite:text-to-image'])
@@ -95,9 +74,6 @@ describe('registry-driven studio controller', () => {
         inputRoles: []
       }).n
     ).toBe(4);
-    expect(filterRetiredExpertOverrides(supporting, [{ key: 'n', value: 4 }])).toEqual([
-      { key: 'n', value: 4 }
-    ]);
   });
 
   test('STUDIO-03 assigns scalar and list media roles to their registry request keys', () => {

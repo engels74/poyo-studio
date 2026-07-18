@@ -1,4 +1,3 @@
-import { isRetiredImageInput } from '../registry/retired-inputs';
 import type { ExpertOverride } from '../registry/types';
 import type { StudioEntry, StudioJobDto, StudioOutputDto, StudioRoleInput } from './contracts';
 import {
@@ -368,8 +367,7 @@ export function batchItemCompatibilityIssues(item: StudioBatchItem, entry: Studi
     if (
       !EXPERT_KEY_PATTERN.test(override.key) ||
       PROTECTED_EXPERT_KEY.test(override.key) ||
-      verifiedExpertKeys.has(override.key) ||
-      (entry.output.mediaKind === 'image' && isRetiredImageInput(entry.publicModelId, override.key))
+      verifiedExpertKeys.has(override.key)
     )
       issues.push(`The saved Expert ${override.key} override is no longer supported.`);
   }

@@ -112,7 +112,7 @@ $effect(() => {
               <Dialog.Description class="mt-0.5 text-xs text-stage-muted">
                 {mediaKind === 'image'
                   ? 'Zoom with the controls or plus, minus and zero keys.'
-                  : 'Generated video with native playback controls.'}
+                  : 'Generated video with browser playback controls.'}
               </Dialog.Description>
             </div>
             <Dialog.Close class="focus-ring min-h-9 rounded px-3 text-sm font-semibold hover:bg-stage-border">

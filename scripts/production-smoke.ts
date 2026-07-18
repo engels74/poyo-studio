@@ -1,6 +1,10 @@
 import { mkdtemp, rm } from 'node:fs/promises';
-import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { resolveAppPaths } from '../src/lib/server/platform/app-paths';
+import { openDatabase } from '../src/lib/server/platform/database';
+import { SettingsRepository } from '../src/lib/server/settings/settings-repository';
+import { updateOnboarding } from '../src/lib/server/settings/studio-settings';
 
 const host = '127.0.0.1';
 const startupTimeoutMs = 15_000;
@@ -43,29 +47,26 @@ async function stopProcess(server: ReturnType<typeof Bun.spawn>): Promise<void> 
   }
 }
 
-function inspectListener(pid: number, port: number): void {
-  const lsof = Bun.which('lsof');
-  if (!lsof) {
-    console.warn('Listener inspection skipped because lsof is unavailable.');
-    return;
-  }
-
-  const result = Bun.spawnSync({
-    cmd: [lsof, '-nP', '-a', '-p', String(pid), '-iTCP', '-sTCP:LISTEN'],
-    stdout: 'pipe',
+async function assertNonLoopbackStartRejected(): Promise<void> {
+  const rejected = Bun.spawn({
+    cmd: [process.execPath, 'run', 'start'],
+    env: { ...Bun.env, HOST: '0.0.0.0' },
+    stdin: 'ignore',
+    stdout: 'ignore',
     stderr: 'pipe'
   });
-  const output = result.stdout.toString();
-  const listeners = output
-    .split('\n')
-    .filter((line) => line.includes(`:${port}`) && line.includes('(LISTEN)'));
-
-  if (result.exitCode !== 0 || listeners.length === 0) {
-    throw new Error(`Unable to inspect the production listener on port ${port}.`);
-  }
-
-  if (!listeners.every((line) => line.includes(`127.0.0.1:${port}`))) {
-    throw new Error(`Production server exposed a non-loopback listener:\n${listeners.join('\n')}`);
+  const exitCode = await Promise.race([
+    rejected.exited,
+    Bun.sleep(2_000).then(async () => {
+      await stopProcess(rejected);
+      return null;
+    })
+  ]);
+  const errorOutput = await new Response(rejected.stderr).text();
+  if (exitCode === null || exitCode === 0 || !errorOutput.includes('Non-loopback listeners')) {
+    throw new Error(
+      'The packaged start command did not reject a non-loopback HOST before startup.'
+    );
   }
 }
 
@@ -74,22 +75,23 @@ if (!(await entrypoint.exists())) {
   throw new Error('Missing build/index.js. Run `bun run build` before the production smoke test.');
 }
 
+await assertNonLoopbackStartRejected();
+
 const port = reserveLoopbackPort();
 const url = `http://${host}:${port}/`;
 const origin = url.slice(0, -1);
 const smokeDirectory = await mkdtemp(join(tmpdir(), 'poyo-production-smoke-'));
+const appData = join(smokeDirectory, 'data');
+const appPaths = resolveAppPaths({ environment: { PLS_APP_DATA_DIR: appData } });
 const server = Bun.spawn({
-  cmd: [process.execPath, './build/index.js'],
+  cmd: [process.execPath, 'run', 'start'],
   env: {
     ...Bun.env,
     HOST: host,
     ORIGIN: origin,
     PORT: String(port),
     POYO_API_KEY: '',
-    PLS_APP_DATA_DIR: join(smokeDirectory, 'data'),
-    PLS_DATABASE_PATH: '',
-    PLS_MEDIA_DIR: '',
-    PLS_LOG_DIR: ''
+    PLS_APP_DATA_DIR: appData
   },
   stdout: 'pipe',
   stderr: 'pipe'
@@ -133,18 +135,11 @@ try {
     throw new Error('Fresh production startup did not enter onboarding.');
   }
 
-  const onboardingResponse = await fetch(new URL('/api/onboarding', url), {
-    method: 'PUT',
-    headers: {
-      'content-type': 'application/json',
-      origin,
-      'sec-fetch-site': 'same-origin'
-    },
-    body: JSON.stringify({ dismiss: true }),
-    signal: AbortSignal.timeout(requestTimeoutMs)
-  });
-  if (!onboardingResponse.ok) {
-    throw new Error(`Production onboarding responded with HTTP ${onboardingResponse.status}.`);
+  const database = await openDatabase(appPaths.database);
+  try {
+    updateOnboarding(new SettingsRepository(database), { dismiss: true });
+  } finally {
+    database.close();
   }
 
   for (const [pathname, marker] of routeChecks) {
@@ -162,7 +157,6 @@ try {
     }
   }
 
-  inspectListener(server.pid, port);
   console.log(
     `Production smoke passed: onboarding and ${routeChecks.length} routes responded on the loopback listener ${url}.`
   );

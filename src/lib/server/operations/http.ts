@@ -35,8 +35,7 @@ export function operationsHttpError(error: unknown): Response {
     );
   }
   if (error instanceof CredentialBackendError) {
-    const status = error.code === 'backend_unavailable' ? 503 : 409;
-    return Response.json({ error: { code: error.code, message: error.message } }, { status });
+    return Response.json({ error: { code: error.code, message: error.message } }, { status: 409 });
   }
   if (error instanceof PoyoError) {
     return Response.json(

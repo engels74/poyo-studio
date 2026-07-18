@@ -8,8 +8,8 @@ import type { LayoutServerLoad } from './$types';
 export const load: LayoutServerLoad = async ({ url }) => {
   const platform = await getPlatformServices();
   const onboarding = await loadOnboardingState(platform);
-  // Send first-run installs into onboarding, but never trap an existing install or loop the
-  // /welcome route itself. API routes do not run layout loads, so they are unaffected.
+  // Keep browser navigation in onboarding until the user explicitly completes or dismisses it.
+  // API routes do not run layout loads, so they are unaffected.
   if (!onboarding.completed && url.pathname !== '/welcome') {
     redirect(307, '/welcome');
   }

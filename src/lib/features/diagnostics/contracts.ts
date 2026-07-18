@@ -18,7 +18,7 @@ export interface HealthDto {
   apiKey: {
     source: 'environment' | 'local' | 'none';
     status: 'configured' | 'missing' | 'unavailable' | 'error';
-    storeKind: 'environment' | 'os' | 'file' | 'unavailable';
+    storeKind: 'environment' | 'file' | 'unavailable';
     onboardingAvailable: boolean;
     environmentManaged: boolean;
   };
@@ -56,7 +56,7 @@ export interface OperationsDiagnosticsDto {
     downloads: { automatic: boolean };
     theme: { defaultMode: 'light' | 'dark' | 'system' };
     logs: HealthDto['logging']['rotation'];
-    storageSource: 'environment' | 'project-default' | 'platform-selected';
+    storageSource: 'environment' | 'project-default';
   };
   logging: HealthDto['logging'];
 }
