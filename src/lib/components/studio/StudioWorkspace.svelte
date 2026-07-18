@@ -80,6 +80,7 @@ import type {
   FieldDefinition,
   NormalizedPreview
 } from '$lib/features/registry/types';
+import { fieldValue, validateFieldValue } from '$lib/features/registry/runtime-validation';
 import BatchReview from './BatchReview.svelte';
 import ChoiceField from './ChoiceField.svelte';
 import FieldControl from './FieldControl.svelte';
@@ -89,8 +90,17 @@ interface Props {
   data: StudioLoadData;
 }
 
-type MobileStep = 'setup' | 'prompt' | 'inputs' | 'output' | 'review';
+type InspectorSection = 'setup' | 'prompt' | 'inputs' | 'output' | 'review';
+type InspectorSurface = 'desktop' | 'mobile';
 type UploadPhase = 'preflight' | 'local' | 'poyo' | 'complete' | 'error';
+
+const inspectorSections = [
+  { id: 'setup', label: 'Setup' },
+  { id: 'prompt', label: 'Prompt' },
+  { id: 'inputs', label: 'Inputs' },
+  { id: 'output', label: 'Output' },
+  { id: 'review', label: 'Review' }
+] as const satisfies readonly { id: InspectorSection; label: string }[];
 
 interface UploadProgressState {
   phase: UploadPhase;
@@ -169,7 +179,7 @@ let uploadProgress = $state<Record<string, UploadProgressState>>({});
 let inspectorWidth = $state(380);
 let inspectorCollapsed = $state(false);
 let setupOpen = $state(false);
-let mobileStep = $state<MobileStep>('setup');
+let activeInspectorSection = $state<InspectorSection>('setup');
 let showPresetForm = $state(false);
 let presetName = $state(initialData.preset?.name ?? '');
 let presetDescription = $state(initialData.preset?.description ?? '');
@@ -187,6 +197,13 @@ let outputsError = $state('');
 let selectedOutput = $state(0);
 let outputCandidateStates = $state<StudioResultCandidateStates>({});
 let loadingOutputs = $derived(Object.values(outputCandidateStates).includes('loading'));
+let activeJobOwnsStage = $derived.by(() => {
+  if (!activeJob || activeJob.id === resultJob?.id) return false;
+  const terminal = activeJob.remoteStatus === 'failed' || activeJob.localPhase === 'complete';
+  if (!terminal) return true;
+  if (outputCandidateStates[activeJob.id] === 'viewable') return false;
+  return !resultJob || compareStudioJobRecency(activeJob, resultJob) > 0;
+});
 let completedCredits = $state<number | null>(null);
 let nowMs = $state(0);
 let batch = $state<StudioBatch>({
@@ -260,9 +277,11 @@ let setupFields = $derived(
 );
 let commonFields = $derived(visibleFields(selectedEntry, 'common', sizeMode));
 let advancedFields = $derived(visibleFields(selectedEntry, 'advanced', sizeMode));
+let dimensionFields = $derived(advancedFields.filter((field) => field.kind === 'dimensions'));
+let reviewFields = $derived(advancedFields.filter((field) => field.kind !== 'dimensions'));
 let availableSizeModes = $derived(sizeModes(selectedEntry));
 let advancedChanged = $derived(
-  advancedFields.filter(
+  reviewFields.filter(
     (field) => guided[field.key] !== undefined && guided[field.key] !== field.default
   ).length
 );
@@ -283,9 +302,134 @@ let currentGuided = $derived(valuesWithRoleInputs(selectedEntry, resolvedGuided,
 let hasApiKey = $derived(data.apiKey.status === 'configured');
 let allRoleInputs = $derived(Object.values(roleInputs).flat());
 
+function fieldsHaveIssues(fields: readonly FieldDefinition[]): boolean {
+  return fields.some(
+    (field) =>
+      field.kind !== 'dimensions' &&
+      validateFieldValue(field, fieldValue(resolvedGuided, field)).length > 0
+  );
+}
+
+function customDimensionsHaveIssues(): boolean {
+  if (sizeMode !== 'custom' || !selectedEntry.fields.some((field) => field.kind === 'dimensions'))
+    return false;
+  const width = guided.width;
+  const height = guided.height;
+  if (
+    !Number.isInteger(width) ||
+    !Number.isInteger(height) ||
+    (typeof width === 'number' && width <= 0) ||
+    (typeof height === 'number' && height <= 0)
+  )
+    return true;
+  if (typeof width !== 'number' || typeof height !== 'number') return true;
+  const constraints =
+    'customDimensions' in selectedEntry.validation
+      ? selectedEntry.validation.customDimensions
+      : undefined;
+  const pixels = width * height;
+  return Boolean(
+    (constraints?.divisor && (width % constraints.divisor || height % constraints.divisor)) ||
+      (constraints?.maxEdge && Math.max(width, height) > constraints.maxEdge) ||
+      (constraints?.minPixels && pixels < constraints.minPixels) ||
+      (constraints?.maxPixels && pixels > constraints.maxPixels) ||
+      (constraints?.maxAspectRatio &&
+        Math.max(width / height, height / width) > constraints.maxAspectRatio)
+  );
+}
+
+function localSizingIssues(): string[] {
+  const issues = automaticSizingIssues(selectedEntry, roleInputs, activeAutomaticFields);
+  if (customDimensionsHaveIssues())
+    issues.push("Enter custom width and height that meet this model's size limits.");
+  return issues;
+}
+
+function expertOverridesHaveIssues(): boolean {
+  try {
+    parseExpertOverrides(expertText);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+let inspectorSectionIssues = $derived<Record<InspectorSection, boolean>>({
+  setup: fieldsHaveIssues(setupFields),
+  prompt: fieldsHaveIssues(promptFields),
+  inputs: selectedEntry.inputRoles.some((role) => {
+    const count = (roleInputs[role.role] ?? []).length;
+    return (
+      (role.required && count < role.min) ||
+      (role.max !== null && count > role.max) ||
+      Boolean(uploadError[role.role])
+    );
+  }),
+  output:
+    fieldsHaveIssues(commonFields) ||
+    customDimensionsHaveIssues() ||
+    automaticSizingIssues(selectedEntry, roleInputs, activeAutomaticFields).length > 0,
+  review: fieldsHaveIssues(reviewFields) || expertOverridesHaveIssues()
+});
+
+function inspectorTabId(surface: InspectorSurface, section: InspectorSection): string {
+  return `${data.modality}-${surface}-${section}-tab`;
+}
+
+function inspectorPanelId(surface: InspectorSurface, section: InspectorSection): string {
+  return `${data.modality}-${surface}-${section}-panel`;
+}
+
+function activateInspectorSection(section: InspectorSection): void {
+  activeInspectorSection = section;
+}
+
+function focusInspectorTab(surface: InspectorSurface, section: InspectorSection): void {
+  window.requestAnimationFrame(() => {
+    document.getElementById(inspectorTabId(surface, section))?.focus();
+  });
+}
+
+function handleInspectorTabKeydown(
+  event: KeyboardEvent,
+  surface: InspectorSurface,
+  section: InspectorSection
+): void {
+  const currentIndex = inspectorSections.findIndex((item) => item.id === section);
+  let nextIndex: number | null = null;
+  if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % inspectorSections.length;
+  else if (event.key === 'ArrowLeft')
+    nextIndex = (currentIndex - 1 + inspectorSections.length) % inspectorSections.length;
+  else if (event.key === 'Home') nextIndex = 0;
+  else if (event.key === 'End') nextIndex = inspectorSections.length - 1;
+  if (nextIndex === null) return;
+  event.preventDefault();
+  const next = inspectorSections[nextIndex]?.id;
+  if (!next) return;
+  activateInspectorSection(next);
+  focusInspectorTab(surface, next);
+}
+
+function revealFirstInvalidSection(): void {
+  const section = inspectorSections.find((item) => inspectorSectionIssues[item.id])?.id;
+  if (!section) return;
+  activateInspectorSection(section);
+  const mobile = window.matchMedia('(max-width: 1279px)').matches;
+  if (mobile) setupOpen = true;
+  else inspectorCollapsed = false;
+  window.setTimeout(() => focusInspectorTab(mobile ? 'mobile' : 'desktop', section), 0);
+}
+
 function updateGuided(key: string, value: unknown): void {
   if (value === undefined || value === '') delete guided[key];
   else guided[key] = value;
+  if (key === 'width' || key === 'height') {
+    const issues = localSizingIssues();
+    previewSequence += 1;
+    preview = null;
+    previewState = issues.length ? 'invalid' : 'validating';
+    previewIssues = issues;
+  }
   dirty = true;
   previewRevision += 1;
 }
@@ -315,6 +459,11 @@ function chooseSizeMode(next: SizeMode): void {
     delete guided.width;
     delete guided.height;
   }
+  const issues = localSizingIssues();
+  previewSequence += 1;
+  preview = null;
+  previewState = issues.length ? 'invalid' : 'validating';
+  previewIssues = issues;
   dirty = true;
   previewRevision += 1;
 }
@@ -351,7 +500,7 @@ async function requestPreview(): Promise<NormalizedPreview | null> {
   const sequence = ++previewSequence;
   previewState = 'validating';
   previewIssues = [];
-  const sizingIssues = automaticSizingIssues(selectedEntry, roleInputs, activeAutomaticFields);
+  const sizingIssues = localSizingIssues();
   if (sizingIssues.length) {
     preview = null;
     previewState = 'invalid';
@@ -393,7 +542,7 @@ async function requestPreview(): Promise<NormalizedPreview | null> {
 }
 
 function captureSubmissionSnapshot(actionId: string): StudioSubmissionSnapshot | null {
-  const sizingIssues = automaticSizingIssues(selectedEntry, roleInputs, activeAutomaticFields);
+  const sizingIssues = localSizingIssues();
   if (sizingIssues.length) {
     preview = null;
     previewState = 'invalid';
@@ -790,10 +939,14 @@ async function submit(): Promise<void> {
   };
   const revision = previewRevision;
   const snapshot = captureSubmissionSnapshot(action.actionId);
-  if (!snapshot) return;
+  if (!snapshot) {
+    revealFirstInvalidSection();
+    return;
+  }
   submitting = true;
   if (!(await validateSubmissionSnapshot(snapshot, revision))) {
     submitting = false;
+    revealFirstInvalidSection();
     return;
   }
   storePendingAction(action);
@@ -873,14 +1026,20 @@ async function addCurrentToBatch(): Promise<void> {
   const actionId = existing?.request.actionId ?? crypto.randomUUID();
   const revision = previewRevision;
   const snapshot = captureSubmissionSnapshot(actionId);
-  if (!snapshot) return;
+  if (!snapshot) {
+    revealFirstInvalidSection();
+    return;
+  }
   const batchSnapshot = {
     displayName: selectedEntry.displayName,
     sizeMode,
     automaticFields: [...automaticFieldKeys()],
     request: snapshot.request
   };
-  if (!(await validateSubmissionSnapshot(snapshot, revision))) return;
+  if (!(await validateSubmissionSnapshot(snapshot, revision))) {
+    revealFirstInvalidSection();
+    return;
+  }
   const item = createBatchItem(
     {
       modality: data.modality,
@@ -1476,36 +1635,115 @@ onMount(() => {
     window.clearInterval(balanceTick);
   };
 });
-
-function showMobileSection(section: MobileStep, mobile: boolean): boolean {
-  return !mobile || mobileStep === section;
-}
 </script>
 
 {#snippet inspectorContent(mobile: boolean)}
+  {@const surface = mobile ? 'mobile' : 'desktop'}
   <div class="flex min-h-full flex-col">
-    {#if mobile}
-      <nav class="grid grid-cols-5 border-b border-border px-2 py-2" aria-label="Studio setup steps">
-        {#each ['setup', 'prompt', 'inputs', 'output', 'review'] as step (step)}
+    <div class="border-b border-border px-4 py-3">
+      <div class="flex items-center justify-between gap-3">
+        <div class="min-w-0">
+          <p class="eyebrow-label">Studio setup</p>
+          <p class="mt-0.5 truncate text-sm font-semibold">{selectedEntry.displayName}</p>
+        </div>
+        <div class="flex shrink-0 items-center gap-1">
+          <Button variant="ghost" size="sm" onclick={resetDraft}>Reset</Button>
           <button
             type="button"
-            class="focus-ring min-h-10 rounded px-1 text-[0.6875rem] font-semibold capitalize"
-            class:bg-accent={mobileStep === step}
-            class:text-accent-foreground={mobileStep === step}
-            class:text-muted-foreground={mobileStep !== step}
-            aria-current={mobileStep === step ? 'step' : undefined}
-              onclick={() => (mobileStep = step as MobileStep)}
-          >{step}</button>
-        {/each}
-      </nav>
-    {/if}
+            class="focus-ring inline-flex min-h-8 items-center justify-center rounded-[var(--radius)] border border-border bg-background px-2.5 text-xs font-semibold shadow-[var(--shadow-xs)] hover:bg-muted"
+            aria-expanded={showPresetForm}
+            aria-controls={`${data.modality}-${surface}-preset-form`}
+            onclick={() => (showPresetForm = !showPresetForm)}
+          >Save preset</button>
+        </div>
+      </div>
+      {#if showPresetForm}
+        <div
+          id={`${data.modality}-${surface}-preset-form`}
+          class="mt-3 grid gap-2 rounded-[var(--radius)] bg-muted p-3"
+        >
+          <label
+            class="grid gap-1 text-xs font-semibold"
+            for={`${data.modality}-${surface}-preset-name`}
+          >
+            Preset name
+            <input
+              id={`${data.modality}-${surface}-preset-name`}
+              class="focus-ring h-9 rounded-[var(--radius)] border border-input bg-background px-2.5 text-sm"
+              maxlength="120"
+              bind:value={presetName}
+            />
+          </label>
+          <label
+            class="grid gap-1 text-xs font-semibold"
+            for={`${data.modality}-${surface}-preset-description`}
+          >
+            Description
+            <textarea
+              id={`${data.modality}-${surface}-preset-description`}
+              class="focus-ring rounded-[var(--radius)] border border-input bg-background px-2.5 py-2 text-sm"
+              rows="2"
+              maxlength="500"
+              bind:value={presetDescription}
+            ></textarea>
+          </label>
+          <div class="flex justify-end gap-2">
+            <Button size="sm" variant="ghost" onclick={() => (showPresetForm = false)}>Cancel</Button>
+            <Button size="sm" variant="primary" onclick={savePreset}>Save preset</Button>
+          </div>
+        </div>
+      {/if}
+      {#if presetMessage}
+        <p class="mt-2 text-xs leading-5 text-muted-foreground" role="status">{presetMessage}</p>
+      {/if}
+    </div>
+
+    <div
+      class="grid grid-cols-5 border-b border-border px-2 py-2"
+      role="tablist"
+      aria-label="Studio setup sections"
+    >
+      {#each inspectorSections as section (section.id)}
+        <button
+          id={inspectorTabId(surface, section.id)}
+          type="button"
+          role="tab"
+          class="focus-ring relative min-h-10 rounded px-1 text-[0.6875rem] font-semibold"
+          class:bg-accent={activeInspectorSection === section.id}
+          class:text-accent-foreground={activeInspectorSection === section.id}
+          class:text-muted-foreground={activeInspectorSection !== section.id}
+          aria-label={`${section.label}${inspectorSectionIssues[section.id] ? ', needs attention' : ''}`}
+          aria-selected={activeInspectorSection === section.id}
+          aria-controls={inspectorPanelId(surface, section.id)}
+          tabindex={activeInspectorSection === section.id ? 0 : -1}
+          onclick={() => activateInspectorSection(section.id)}
+          onkeydown={(event) => handleInspectorTabKeydown(event, surface, section.id)}
+        >
+          {section.label}
+          {#if inspectorSectionIssues[section.id]}
+            <span
+              class="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-destructive"
+              aria-hidden="true"
+            ></span>
+          {/if}
+        </button>
+      {/each}
+    </div>
 
     <div class="flex-1 px-5 py-5">
-      {#if showMobileSection('setup', mobile)}
-        <section aria-labelledby={`${data.modality}-workflow-heading`}>
+      <div
+        id={inspectorPanelId(surface, 'setup')}
+        role="tabpanel"
+        aria-labelledby={inspectorTabId(surface, 'setup')}
+        tabindex="0"
+        hidden={activeInspectorSection !== 'setup'}
+      >
           <p class="eyebrow-label">Essential</p>
           <div class="mt-1 flex items-center justify-between gap-3">
-            <h2 id={`${data.modality}-workflow-heading`} class="text-base font-semibold tracking-tight">Workflow and model</h2>
+            <h2
+              id={`${data.modality}-${surface}-workflow-heading`}
+              class="text-base font-semibold tracking-tight"
+            >Workflow and model</h2>
             <button
               type="button"
               class="focus-ring grid size-8 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -1541,7 +1779,7 @@ function showMobileSection(section: MobileStep, mobile: boolean): boolean {
                       <input
                         class="sr-only"
                         type="radio"
-                        name={`${data.modality}-creative-intent`}
+                        name={`${data.modality}-${surface}-creative-intent`}
                         value={intent.workflow}
                         checked={
                           intent.workflow === 'text-to-image'
@@ -1568,7 +1806,7 @@ function showMobileSection(section: MobileStep, mobile: boolean): boolean {
                       <input
                         class="sr-only"
                         type="radio"
-                        name={`${data.modality}-creative-intent`}
+                        name={`${data.modality}-${surface}-creative-intent`}
                         value={workflow}
                         checked={selectedEntry.workflow === workflow}
                         onchange={() => switchWorkflow(workflow)}
@@ -1610,13 +1848,20 @@ function showMobileSection(section: MobileStep, mobile: boolean): boolean {
               {/each}
             </div>
           {/if}
-        </section>
-      {/if}
+      </div>
 
-      {#if showMobileSection('prompt', mobile)}
-        <section class={!mobile ? 'mt-6 border-t border-border pt-5' : ''} aria-labelledby={`${data.modality}-prompt-heading`}>
+      <div
+        id={inspectorPanelId(surface, 'prompt')}
+        role="tabpanel"
+        aria-labelledby={inspectorTabId(surface, 'prompt')}
+        tabindex="0"
+        hidden={activeInspectorSection !== 'prompt'}
+      >
           <p class="eyebrow-label">Essential</p>
-          <h2 id={`${data.modality}-prompt-heading`} class="mt-1 text-sm font-semibold">Prompt</h2>
+          <h2
+            id={`${data.modality}-${surface}-prompt-heading`}
+            class="mt-1 text-sm font-semibold"
+          >Prompt</h2>
           {#if promptFields.length}
             <div class="mt-3 grid gap-4">
               {#each promptFields as field (field.key)}
@@ -1626,13 +1871,20 @@ function showMobileSection(section: MobileStep, mobile: boolean): boolean {
           {:else}
             <p class="mt-2 text-sm leading-6 text-muted-foreground">This workflow is controlled by its media roles and does not accept a prompt.</p>
           {/if}
-        </section>
-      {/if}
+      </div>
 
-      {#if showMobileSection('inputs', mobile)}
-        <section class={!mobile ? 'mt-6 border-t border-border pt-5' : ''} aria-labelledby={`${data.modality}-inputs-heading`}>
+      <div
+        id={inspectorPanelId(surface, 'inputs')}
+        role="tabpanel"
+        aria-labelledby={inspectorTabId(surface, 'inputs')}
+        tabindex="0"
+        hidden={activeInspectorSection !== 'inputs'}
+      >
           <p class="eyebrow-label">Essential</p>
-          <h2 id={`${data.modality}-inputs-heading`} class="mt-1 text-sm font-semibold">Required media</h2>
+          <h2
+            id={`${data.modality}-${surface}-inputs-heading`}
+            class="mt-1 text-sm font-semibold"
+          >Required media</h2>
           {#if selectedEntry.inputRoles.length}
             <div class="mt-3 grid gap-4">
               {#each selectedEntry.inputRoles as role (role.role)}
@@ -1684,9 +1936,12 @@ function showMobileSection(section: MobileStep, mobile: boolean): boolean {
                       {#if !hasApiKey}<p class="text-xs text-muted-foreground">Configure the API key before streaming a local source to Poyo.</p>{/if}
                     {/if}
                     <div class="flex gap-2">
-                      <label class="sr-only" for={`${entryKey}-${role.role}-url`}>{roleLabel(role.role)} remote URL</label>
+                      <label
+                        class="sr-only"
+                        for={`${entryKey}-${surface}-${role.role}-url`}
+                      >{roleLabel(role.role)} remote URL</label>
                       <input
-                        id={`${entryKey}-${role.role}-url`}
+                        id={`${entryKey}-${surface}-${role.role}-url`}
                         type="url"
                         class="focus-ring h-9 min-w-0 flex-1 rounded-[var(--radius)] border border-input bg-background px-2.5 text-xs"
                         placeholder="https://…"
@@ -1716,20 +1971,27 @@ function showMobileSection(section: MobileStep, mobile: boolean): boolean {
           {:else}
             <p class="mt-2 text-sm text-muted-foreground">No source media is required for this workflow.</p>
           {/if}
-        </section>
-      {/if}
+      </div>
 
-      {#if showMobileSection('output', mobile)}
-        <section class={!mobile ? 'mt-6 border-t border-border pt-5' : ''} aria-labelledby={`${data.modality}-output-heading`}>
+      <div
+        id={inspectorPanelId(surface, 'output')}
+        role="tabpanel"
+        aria-labelledby={inspectorTabId(surface, 'output')}
+        tabindex="0"
+        hidden={activeInspectorSection !== 'output'}
+      >
           <p class="eyebrow-label">Common</p>
-          <h2 id={`${data.modality}-output-heading`} class="mt-1 text-sm font-semibold">Output and common options</h2>
+          <h2
+            id={`${data.modality}-${surface}-output-heading`}
+            class="mt-1 text-sm font-semibold"
+          >Output and common options</h2>
           {#if availableSizeModes.length > 1}
             <fieldset class="mt-3">
               <legend class="text-xs font-semibold">Size mode</legend>
               <div class="mt-2 grid grid-cols-2 gap-1 rounded-[var(--radius)] bg-muted p-1">
                 {#each availableSizeModes as mode (mode)}
                   <label class="focus-within:ring-2 focus-within:ring-ring flex min-h-8 cursor-pointer items-center justify-center rounded px-2 text-xs font-semibold" class:bg-background={sizeMode === mode} class:shadow-[var(--shadow-xs)]={sizeMode === mode}>
-                    <input class="sr-only" type="radio" name={`${entryKey}-size-mode`} value={mode} checked={sizeMode === mode} onchange={() => chooseSizeMode(mode)} />
+                    <input class="sr-only" type="radio" name={`${entryKey}-${surface}-size-mode`} value={mode} checked={sizeMode === mode} onchange={() => chooseSizeMode(mode)} />
                     {mode === 'aspect-ratio' ? 'Aspect ratio' : mode[0]?.toUpperCase() + mode.slice(1)}
                   </label>
                 {/each}
@@ -1750,22 +2012,36 @@ function showMobileSection(section: MobileStep, mobile: boolean): boolean {
                 <FieldControl {field} value={field.key === 'dimensions' ? { width: guided.width, height: guided.height } : guided[field.key]} onchange={updateGuided} />
               {/if}
             {/each}
+            {#each dimensionFields as field (field.key)}
+              <FieldControl
+                {field}
+                value={{ width: guided.width, height: guided.height }}
+                onchange={updateGuided}
+              />
+            {/each}
           </div>
-        </section>
-      {/if}
+      </div>
 
-      {#if showMobileSection('review', mobile)}
-        <section class={!mobile ? 'mt-6 border-t border-border pt-5' : ''} aria-labelledby={`${data.modality}-review-heading`}>
+      <div
+        id={inspectorPanelId(surface, 'review')}
+        role="tabpanel"
+        aria-labelledby={inspectorTabId(surface, 'review')}
+        tabindex="0"
+        hidden={activeInspectorSection !== 'review'}
+      >
           <p class="eyebrow-label">Review</p>
-          <h2 id={`${data.modality}-review-heading`} class="mt-1 text-sm font-semibold">Advanced and expert request</h2>
-          {#if advancedFields.length}
+          <h2
+            id={`${data.modality}-${surface}-review-heading`}
+            class="mt-1 text-sm font-semibold"
+          >Advanced and expert request</h2>
+          {#if reviewFields.length}
             <details class="mt-3 border-y border-border py-3">
               <summary class="focus-ring flex cursor-pointer items-center justify-between rounded text-sm font-semibold">
                 Advanced settings
                 <Badge tone={advancedChanged ? 'info' : 'neutral'}>{advancedChanged} changed</Badge>
               </summary>
               <div class="mt-4 grid gap-4">
-                {#each advancedFields as field (field.key)}
+                {#each reviewFields as field (field.key)}
                   <FieldControl {field} value={field.key === 'dimensions' ? { width: guided.width, height: guided.height } : guided[field.key]} onchange={updateGuided} />
                 {/each}
               </div>
@@ -1774,9 +2050,12 @@ function showMobileSection(section: MobileStep, mobile: boolean): boolean {
           <details class="mt-3 border-y border-border py-3">
             <summary class="focus-ring cursor-pointer rounded text-sm font-semibold">Expert request</summary>
             <p class="mt-3 text-xs leading-5 text-muted-foreground">Overrides are unverified, cannot replace guided or protected fields, and never include credentials or local media bodies.</p>
-            <label for={`${data.modality}-expert-json`} class="mt-3 block text-xs font-semibold">Unverified override object</label>
+            <label
+              for={`${data.modality}-${surface}-expert-json`}
+              class="mt-3 block text-xs font-semibold"
+            >Unverified override object</label>
             <textarea
-              id={`${data.modality}-expert-json`}
+              id={`${data.modality}-${surface}-expert-json`}
               class="focus-ring mt-1.5 w-full rounded-[var(--radius)] border border-input bg-stage px-3 py-2 font-mono text-xs leading-5 text-stage-foreground"
               rows="5"
               placeholder={'{\n  "new_parameter": "value"\n}'}
@@ -1799,103 +2078,9 @@ function showMobileSection(section: MobileStep, mobile: boolean): boolean {
               <pre class="mt-2 max-h-56 overflow-auto rounded-[var(--radius)] bg-stage p-3 text-left font-mono text-[0.6875rem] leading-5 text-stage-foreground">{preview ? JSON.stringify(preview.request, null, 2) : 'Fix validation issues to inspect the final request.'}</pre>
             </div>
           </details>
-        </section>
-      {/if}
+      </div>
     </div>
 
-    <div class="sticky bottom-0 border-t border-border bg-card px-5 py-4 shadow-[0_-8px_20px_hsl(0_0%_0%/0.06)]">
-      {#if showPresetForm}
-        <div class="mb-3 grid gap-2 rounded-[var(--radius)] bg-muted p-3">
-          <label class="grid gap-1 text-xs font-semibold" for={`${data.modality}-preset-name`}>
-            Preset name
-            <input id={`${data.modality}-preset-name`} class="focus-ring h-9 rounded-[var(--radius)] border border-input bg-background px-2.5 text-sm" maxlength="120" bind:value={presetName} />
-          </label>
-          <label class="grid gap-1 text-xs font-semibold" for={`${data.modality}-preset-description`}>
-            Description
-            <textarea id={`${data.modality}-preset-description`} class="focus-ring rounded-[var(--radius)] border border-input bg-background px-2.5 py-2 text-sm" rows="2" maxlength="500" bind:value={presetDescription}></textarea>
-          </label>
-          <div class="flex justify-end gap-2">
-            <Button size="sm" variant="ghost" onclick={() => (showPresetForm = false)}>Cancel</Button>
-            <Button size="sm" variant="primary" onclick={savePreset}>Save preset</Button>
-          </div>
-        </div>
-      {/if}
-      {#if presetMessage}<p class="mb-2 text-xs leading-5 text-muted-foreground">{presetMessage}</p>{/if}
-      {#if restoredMessage}<p class="mb-2 text-xs leading-5 text-muted-foreground">{restoredMessage}</p>{/if}
-      {#if previewIssues.length}
-        <div class="mb-2" role="alert">
-          {#each previewIssues.slice(0, 2) as issue (issue)}<p class="text-xs leading-5 text-destructive">{issue}</p>{/each}
-        </div>
-      {:else}
-        <p class="mb-2 text-xs text-muted-foreground">
-          {previewState === 'validating' ? 'Validating request…' : preview ? 'Request validated locally.' : 'Complete required fields to validate.'}
-        </p>
-      {/if}
-      {#if recoveryExhausted}
-        <div class="mb-3 flex flex-wrap gap-2" aria-label="Unresolved paid action recovery">
-          <Button variant="outline" size="sm" onclick={() => void reconcilePendingAction()}>Check action again</Button>
-          {#if recoveryConcluded}<Button variant="ghost" size="sm" onclick={abandonPendingAction}>Acknowledge risk and start a new action</Button>{/if}
-        </div>
-      {/if}
-      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
-        <span class="text-muted-foreground">
-          {#if completedCredits !== null}
-            Charged <strong class="text-foreground">{completedCredits} credits</strong> for this generation
-          {:else}
-            Billed per generation · Poyo does not publish a pre-generation estimate, so the exact cost appears after completion
-          {/if}
-        </span>
-        <span class="flex items-center gap-1.5">
-          {#if balance}
-            <span class:text-warning={balanceStale} title={`Balance as of ${new Date(balance.fetchedAt).toLocaleString()}`}>
-              {balance.credits} credits{balanceStale ? ' · stale' : ''}
-            </span>
-          {:else}
-            <span class="text-muted-foreground">{hasApiKey ? 'Balance not loaded' : 'API key required'}</span>
-          {/if}
-          <button type="button" class="focus-ring grid size-6 place-items-center rounded text-muted-foreground hover:text-foreground disabled:opacity-50" aria-label="Refresh balance" onclick={refreshBalanceSnapshot} disabled={balanceRefreshing || !hasApiKey}>
-            <AppIcon name="refresh" size={13} />
-          </button>
-        </span>
-      </div>
-      <div class="grid grid-cols-2 gap-2">
-        <Button variant="ghost" size="sm" onclick={resetDraft}>Reset</Button>
-        <Button variant="outline" size="sm" onclick={() => (showPresetForm = !showPresetForm)}>Save preset</Button>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={!preview || submitting || submissionLocked || batchSubmitting}
-          onclick={() => void addCurrentToBatch()}
-        >
-          {editingBatchItemId ? 'Update batch item' : 'Add to batch'}
-        </Button>
-        <BatchReview
-          modality={data.modality}
-          items={batch.items}
-          submitting={batchSubmitting}
-          canSubmit={hasApiKey}
-          onedit={editBatchItem}
-          onduplicate={duplicateBatch}
-          onremove={removeBatchItem}
-          onsubmit={() => void submitBatch()}
-          onretry={(item) => void retryBatchItem(item)}
-          onreconcile={(item) => void reconcileBatchItem(item)}
-          onabandon={abandonBatchItem}
-        />
-        <Button
-          variant="primary"
-          class="col-span-2 min-h-10"
-          disabled={!preview || submitting || submissionLocked || !hasApiKey}
-          ariaDescribedby={`${data.modality}-generate-status`}
-          onclick={submit}
-        >
-          {submitting ? 'Creating Poyo task…' : `Generate ${data.modality}`}
-        </Button>
-      </div>
-      <p id={`${data.modality}-generate-status`} class="sr-only">
-        {!hasApiKey ? 'Configure a Poyo API key before generating.' : submissionLocked ? 'The previous paid action has an unresolved outcome.' : preview ? 'Ready to generate.' : 'Request validation is incomplete.'}
-      </p>
-    </div>
   </div>
 {/snippet}
 
@@ -1925,7 +2110,7 @@ function showMobileSection(section: MobileStep, mobile: boolean): boolean {
     </div>
 
     <div class="media-stage grid place-items-center px-5 py-10 text-center">
-      {#if resultJob && outputs?.some((output) => output.mediaUrl)}
+      {#if resultJob && outputs?.some((output) => output.mediaUrl) && !activeJobOwnsStage}
         {@const shown = outputs.filter((output) => output.mediaUrl)}
         {@const current = shown[Math.min(selectedOutput, shown.length - 1)]}
         {#if current && current.mediaUrl}
@@ -2041,6 +2226,108 @@ function showMobileSection(section: MobileStep, mobile: boolean): boolean {
         </div>
       </section>
     {/if}
+
+    <section class="studio-command-dock mt-3" aria-label="Generation commands">
+      <div class="min-w-0">
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+          <Badge tone={previewIssues.length ? 'warning' : preview ? 'success' : 'neutral'}>
+            {previewState === 'validating'
+              ? 'Validating'
+              : previewIssues.length
+                ? 'Needs attention'
+                : preview
+                  ? 'Ready to generate'
+                  : 'Complete setup'}
+          </Badge>
+          <span class="text-muted-foreground">
+            {completedCredits !== null
+              ? `${completedCredits} credits charged`
+              : 'Exact credits appear after completion'}
+          </span>
+          <span class="flex items-center gap-1.5">
+            {#if balance}
+              <span
+                class:text-warning={balanceStale}
+                title={`Balance as of ${new Date(balance.fetchedAt).toLocaleString()}`}
+              >{balance.credits} credits{balanceStale ? ' · stale' : ''}</span>
+            {:else}
+              <span class="text-muted-foreground">
+                {hasApiKey ? 'Balance unavailable' : 'API key required'}
+              </span>
+            {/if}
+            <button
+              type="button"
+              class="focus-ring grid size-6 place-items-center rounded text-muted-foreground hover:text-foreground disabled:opacity-50"
+              aria-label="Refresh balance"
+              onclick={refreshBalanceSnapshot}
+              disabled={balanceRefreshing || !hasApiKey}
+            >
+              <AppIcon name="refresh" size={13} />
+            </button>
+          </span>
+        </div>
+        {#if previewIssues.length}
+          <div class="mt-2" role="alert">
+            {#each previewIssues.slice(0, 2) as issue (issue)}
+              <p class="text-xs leading-5 text-destructive">{issue}</p>
+            {/each}
+          </div>
+        {:else if restoredMessage}
+          <p class="mt-2 text-xs leading-5 text-muted-foreground" role="status">
+            {restoredMessage}
+          </p>
+        {/if}
+        {#if recoveryExhausted}
+          <div class="mt-2 flex flex-wrap gap-2" aria-label="Unresolved paid action recovery">
+            <Button variant="outline" size="sm" onclick={() => void reconcilePendingAction()}>
+              Check action again
+            </Button>
+            {#if recoveryConcluded}
+              <Button variant="ghost" size="sm" onclick={abandonPendingAction}>
+                Acknowledge risk and start a new action
+              </Button>
+            {/if}
+          </div>
+        {/if}
+      </div>
+
+      <div class="studio-command-actions">
+        <BatchReview
+          modality={data.modality}
+          items={batch.items}
+          submitting={batchSubmitting}
+          canSubmit={hasApiKey}
+          addLabel={editingBatchItemId ? 'Update batch item' : 'Add to batch'}
+          addDisabled={!preview || submitting || submissionLocked || batchSubmitting}
+          onadd={() => void addCurrentToBatch()}
+          onedit={editBatchItem}
+          onduplicate={duplicateBatch}
+          onremove={removeBatchItem}
+          onsubmit={() => void submitBatch()}
+          onretry={(item) => void retryBatchItem(item)}
+          onreconcile={(item) => void reconcileBatchItem(item)}
+          onabandon={abandonBatchItem}
+        />
+        <Button
+          variant="primary"
+          class="min-h-10 w-full"
+          disabled={!preview || submitting || submissionLocked || !hasApiKey}
+          ariaDescribedby={`${data.modality}-generate-status`}
+          onclick={submit}
+        >
+          {submitting ? 'Creating Poyo task…' : `Generate ${data.modality}`}
+        </Button>
+      </div>
+      <p id={`${data.modality}-generate-status`} class="sr-only">
+        {!hasApiKey
+          ? 'Configure a Poyo API key before generating.'
+          : submissionLocked
+            ? 'The previous paid action has an unresolved outcome.'
+            : preview
+              ? 'Ready to generate.'
+              : 'Request validation is incomplete.'}
+      </p>
+    </section>
 
     <div class="studio-mobile-setup mt-3 items-center justify-between gap-4 rounded-[var(--radius)] bg-muted px-4 py-3">
       <div class="min-w-0">
