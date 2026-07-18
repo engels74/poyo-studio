@@ -142,6 +142,7 @@ export interface JobHistoryDto {
 }
 
 export interface JobDetailDto extends JobListItemDto {
+  prompt: string | null;
   poyoTaskId: string | null;
   correlationId: string;
   retryOfJobId: string | null;

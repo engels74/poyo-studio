@@ -34,7 +34,7 @@ const library: LibraryFiltersDto = {
   view: 'grid'
 };
 
-async function completedGeneration(suffix: string) {
+async function completedGeneration(suffix: string, prompt = `calm coast ${suffix}`) {
   const fixture = await createJobFixture();
   cleanups.push(fixture.cleanup);
   seedImageRegistry(fixture.database);
@@ -43,9 +43,9 @@ async function completedGeneration(suffix: string) {
     entryKey: 'flux-schnell:text-to-image',
     workflow: 'text-to-image',
     publicModelId: 'flux-schnell',
-    guidedRequest: { prompt: `calm coast ${suffix}`, aspectRatio: '1:1' },
-    normalizedPayload: { model: 'flux-schnell', input: { prompt: `calm coast ${suffix}` } },
-    prompt: `calm coast ${suffix}`,
+    guidedRequest: { prompt, aspectRatio: '1:1' },
+    normalizedPayload: { model: 'flux-schnell', input: { prompt } },
+    prompt,
     correlationId: `correlation-${suffix}`
   });
   fixture.repository.applyStatus(
@@ -94,7 +94,12 @@ async function completedGeneration(suffix: string) {
 
 describe('server-side jobs and grouped library repository', () => {
   test('filters, paginates and groups outputs without exposing local paths', async () => {
-    const { fixture, job } = await completedGeneration('first');
+    const fullPrompt = [
+      'calm coast first with a complete persisted prompt',
+      'A second line proves that prompt formatting survives the detail data path.',
+      `Unbroken containment token: ${'cobalt'.repeat(120)}`
+    ].join('\n');
+    const { fixture, job } = await completedGeneration('first', fullPrompt);
     const repository = new LibraryRepository(fixture.database);
     const jobPage = repository.listJobs({ ...jobs, status: 'completed', q: 'coast' }, 1);
     expect(jobPage.total).toBe(1);
@@ -102,12 +107,17 @@ describe('server-side jobs and grouped library repository', () => {
       id: job.id,
       displayName: 'Flux Schnell',
       outputCount: 1,
-      verifiedOutputCount: 1
+      verifiedOutputCount: 1,
+      promptExcerpt: fullPrompt.slice(0, 220)
     });
 
     const mediaPage = repository.listLibrary({ ...library, mediaKind: 'image' }, 1);
     expect(mediaPage.total).toBe(1);
-    expect(mediaPage.items[0]).toMatchObject({ jobId: job.id, outputCount: 1 });
+    expect(mediaPage.items[0]).toMatchObject({
+      jobId: job.id,
+      outputCount: 1,
+      promptExcerpt: fullPrompt.slice(0, 220)
+    });
     expect(mediaPage.items[0]?.representative).toMatchObject({
       mediaUrl: expect.stringMatching(/^\/api\/media\//),
       pixelWidth: 1080,
@@ -115,6 +125,7 @@ describe('server-side jobs and grouped library repository', () => {
     });
 
     const detail = await repository.getJobDetail(job.id);
+    expect(detail?.prompt).toBe(fullPrompt);
     expect(detail?.outputs[0]).toMatchObject({
       localAvailable: true,
       fileName: 'first.png',
