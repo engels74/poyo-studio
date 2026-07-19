@@ -67,6 +67,21 @@ describe('job HTTP boundaries', () => {
     expect(route).not.toContain('normalizedPayload: input');
   });
 
+  test('UPLOAD-08 source intake and verified snapshot complete before any Poyo client exists', async () => {
+    const route = await Bun.file('src/routes/api/sources/+server.ts').text();
+    const intakeIndex = route.indexOf('await intakeLocalSource');
+    const registerIndex = route.indexOf('await managedSources.register');
+    const verifyIndex = route.indexOf('await readVerifiedManagedSourceBlob');
+    const clientIndex = route.indexOf('await createPoyoClient');
+    const uploadIndex = route.indexOf('await client.upload');
+    expect(intakeIndex).toBeGreaterThan(-1);
+    expect(registerIndex).toBeGreaterThan(intakeIndex);
+    expect(verifyIndex).toBeGreaterThan(registerIndex);
+    expect(clientIndex).toBeGreaterThan(verifyIndex);
+    expect(uploadIndex).toBeGreaterThan(verifyIndex);
+    expect(route).toContain('readMediaPrivacySettings(platform.settings)');
+  });
+
   test('JOB-14 rerun blocks before reconcile and maps repository errors safely', async () => {
     const route = await Bun.file('src/routes/api/jobs/[jobId]/rerun/+server.ts').text();
     const rerunIndex = route.indexOf('runtime.repository.rerunAsNew');

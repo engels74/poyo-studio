@@ -1,8 +1,10 @@
 import { jobHttpError } from '$lib/server/jobs/http';
+import { readVerifiedManagedSourceBlob } from '$lib/server/jobs/managed-source-upload';
 import { ManagedSourceRepository } from '$lib/server/media/managed-sources';
-import { intakeLocalSource } from '$lib/server/media/source-intake';
+import { intakeLocalSource, neutralSourceUploadName } from '$lib/server/media/source-intake';
 import { getPlatformServices } from '$lib/server/platform/runtime';
 import { createPoyoClient } from '$lib/server/poyo/factory';
+import { readMediaPrivacySettings } from '$lib/server/settings/media-privacy-settings';
 import type { RequestHandler } from './$types';
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -10,23 +12,25 @@ export const POST: RequestHandler = async ({ request }) => {
   let managedSources: ManagedSourceRepository | undefined;
   try {
     const platform = await getPlatformServices();
-    const source = await intakeLocalSource(request, platform.paths);
+    const source = await intakeLocalSource(request, platform.paths, {
+      mediaPrivacy: readMediaPrivacySettings(platform.settings)
+    });
     sourceId = source.id;
     managedSources = new ManagedSourceRepository(platform.database, platform.paths);
-    await managedSources.register(source);
+    const registered = await managedSources.register(source);
+    const localFile = await readVerifiedManagedSourceBlob(registered);
     const client = await createPoyoClient({
       apiKeyManager: platform.apiKey,
       logger: platform.logger,
       environment: platform.environment
     });
-    const localFile = Bun.file(source.localPath);
     const uploaded = await client.upload({
       kind: 'local-file',
       file: localFile,
       mimeType: source.mimeType,
       sizeBytes: source.sizeBytes,
       mediaKind: source.mediaKind,
-      fileName: source.originalName
+      fileName: neutralSourceUploadName(source.id, source.mimeType)
     });
     return Response.json(
       {

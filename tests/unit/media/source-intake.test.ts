@@ -11,13 +11,24 @@ import {
   writeFile
 } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
+import { DEFAULT_MEDIA_PRIVACY_SETTINGS } from '../../../src/lib/features/settings/media-privacy';
+import { readVerifiedManagedSourceBlob } from '../../../src/lib/server/jobs/managed-source-upload';
 import { ManagedSourceRepository } from '../../../src/lib/server/media/managed-sources';
-import { intakeLocalSource } from '../../../src/lib/server/media/source-intake';
+import {
+  intakeLocalSource as intakeWithPrivacy,
+  neutralSourceUploadName,
+  recoverSourceIntakeTemporaries,
+  type SourceIntakeOptions
+} from '../../../src/lib/server/media/source-intake';
 import { ensureAppPaths, resolveAppPaths } from '../../../src/lib/server/platform/app-paths';
 import { openDatabase } from '../../../src/lib/server/platform/database';
 import { createTemporaryDirectory } from '../../helpers/temporary-directory';
 
 const cleanups: Array<() => Promise<void>> = [];
+const unsanitizedMedia = {
+  ...DEFAULT_MEDIA_PRIVACY_SETTINGS,
+  sanitizeLocalMedia: false
+};
 
 afterEach(async () => {
   await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
@@ -35,6 +46,17 @@ async function fixture() {
     await temporary.cleanup();
   });
   return { paths, database, repository: new ManagedSourceRepository(database, paths) };
+}
+
+function intakeLocalSource(
+  request: Request,
+  paths: ReturnType<typeof resolveAppPaths>,
+  options: SourceIntakeOptions = {}
+) {
+  return intakeWithPrivacy(request, paths, {
+    mediaPrivacy: unsanitizedMedia,
+    ...options
+  });
 }
 
 function uploadRequest(bytes: Uint8Array, type = 'image/png', origin?: string): Request {
@@ -73,6 +95,14 @@ function chunkedMultipartRequest(body: Uint8Array, boundary: string): Request {
 }
 
 describe('local source intake', () => {
+  test('UPLOAD-00 creates neutral Poyo filenames from managed IDs and validated MIME types', () => {
+    const id = 'c2cd7f71-8f80-4b22-9c18-cc2dcbbbd5bd';
+    expect(neutralSourceUploadName(id, 'image/jpeg')).toBe(`${id}.jpg`);
+    expect(neutralSourceUploadName(id, 'video/x-matroska')).toBe(`${id}.mkv`);
+    expect(() => neutralSourceUploadName('../unsafe', 'image/png')).toThrow('identifier');
+    expect(() => neutralSourceUploadName(id, 'text/plain')).toThrow('not supported');
+  });
+
   test('UPLOAD-01 requires same origin, validates signatures and atomically retains a local source', async () => {
     const { paths, repository } = await fixture();
     const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
@@ -98,6 +128,79 @@ describe('local source intake', () => {
     );
     await expect(repository.resolveAvailable('../unsafe')).rejects.toThrow('not valid');
     expect(await Array.fromAsync(new Bun.Glob('*.part').scan(paths.temporary))).toEqual([]);
+  });
+
+  test('UPLOAD-01B publishes, sizes and hashes only the sanitizer output', async () => {
+    const { paths } = await fixture();
+    const raw = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x72, 0x61, 0x77]);
+    const sanitized = new Uint8Array([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x73, 0x61, 0x66, 0x65, 0x00
+    ]);
+    const source = await intakeLocalSource(
+      uploadRequest(raw, 'image/png', 'http://127.0.0.1:5173'),
+      paths,
+      {
+        mediaPrivacy: { ...DEFAULT_MEDIA_PRIVACY_SETTINGS },
+        sanitizer: async ({ inputPath, outputPath }) => {
+          expect(await Bun.file(inputPath).bytes()).toEqual(raw);
+          await writeFile(outputPath, sanitized, { flag: 'wx', mode: 0o600 });
+        }
+      }
+    );
+    const expectedChecksum = new Bun.CryptoHasher('sha256').update(sanitized).digest('hex');
+    expect(source.sizeBytes).toBe(sanitized.byteLength);
+    expect(source.checksum).toBe(expectedChecksum);
+    expect(await Bun.file(source.localPath).bytes()).toEqual(sanitized);
+    expect(await readdir(paths.temporary)).toEqual([]);
+  });
+
+  test('UPLOAD-01C sanitizer and output verification failures leave no raw or published file', async () => {
+    const { paths } = await fixture();
+    const raw = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const request = () => uploadRequest(raw, 'image/png', 'http://127.0.0.1:5173');
+
+    await expect(
+      intakeLocalSource(request(), paths, {
+        mediaPrivacy: { ...DEFAULT_MEDIA_PRIVACY_SETTINGS },
+        sanitizer: async () => {
+          throw new Error('private tool detail');
+        }
+      })
+    ).rejects.toMatchObject({
+      code: 'source_sanitization_failed',
+      message: 'The local file could not be sanitized safely.'
+    });
+
+    await expect(
+      intakeLocalSource(request(), paths, {
+        mediaPrivacy: { ...DEFAULT_MEDIA_PRIVACY_SETTINGS },
+        sanitizer: async ({ outputPath }) => {
+          await writeFile(outputPath, new TextEncoder().encode('wrong container'), {
+            flag: 'wx',
+            mode: 0o600
+          });
+        }
+      })
+    ).rejects.toMatchObject({ code: 'source_sanitization_failed' });
+
+    const outside = join(paths.root, 'outside.png');
+    await writeFile(outside, raw, { mode: 0o644 });
+    const outsideMode = (await stat(outside)).mode & 0o777;
+    await expect(
+      intakeLocalSource(request(), paths, {
+        mediaPrivacy: { ...DEFAULT_MEDIA_PRIVACY_SETTINGS },
+        sanitizer: async ({ outputPath }) => {
+          await symlink(outside, outputPath);
+        }
+      })
+    ).rejects.toMatchObject({ code: 'source_sanitization_failed' });
+    expect((await stat(outside)).mode & 0o777).toBe(outsideMode);
+    expect(await Bun.file(outside).bytes()).toEqual(raw);
+
+    expect(await readdir(paths.temporary)).toEqual([]);
+    expect(
+      await Array.fromAsync(new Bun.Glob('**/*').scan({ cwd: paths.uploads, onlyFiles: true }))
+    ).toEqual([]);
   });
 
   test('UPLOAD-02 rejects content whose signature disagrees with its declared type', async () => {
@@ -181,6 +284,26 @@ describe('local source intake', () => {
     ).toBe('missing');
   });
 
+  test('UPLOAD-03B Poyo upload snapshots reject same-size managed-source corruption', async () => {
+    const { paths, repository } = await fixture();
+    const png = new Uint8Array([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4, 5, 6, 7, 8, 9
+    ]);
+    const intake = await intakeLocalSource(
+      uploadRequest(png, 'image/png', 'http://127.0.0.1:5173'),
+      paths
+    );
+    const source = await repository.register(intake);
+    expect(
+      new Uint8Array(await (await readVerifiedManagedSourceBlob(source)).arrayBuffer())
+    ).toEqual(png);
+
+    const corrupted = png.slice();
+    corrupted[corrupted.length - 1] = 10;
+    await writeFile(source.localPath, corrupted);
+    await expect(readVerifiedManagedSourceBlob(source)).rejects.toThrow('failed verification');
+  });
+
   test('UPLOAD-04 rejects symlinked upload buckets and temporary roots without writing outside', async () => {
     const { paths } = await fixture();
     const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -253,5 +376,25 @@ describe('local source intake', () => {
     const registered = await repository.register(source);
     expect(await realpath(registered.localPath)).toBe(await realpath(source.localPath));
     expect((await repository.resolveAvailable(source.id)).availability).toBe('available');
+  });
+
+  test('UPLOAD-07 restart recovery removes only orphaned intake temporaries without following links', async () => {
+    const { paths } = await fixture();
+    const raw = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const first = crypto.randomUUID();
+    const second = crypto.randomUUID();
+    const third = crypto.randomUUID();
+    const fourth = crypto.randomUUID();
+    await writeFile(join(paths.temporary, `${first}.raw.png`), raw, { mode: 0o600 });
+    await writeFile(join(paths.temporary, `${second}.sanitized.png`), raw, { mode: 0o600 });
+    await writeFile(join(paths.temporary, `${fourth}.oriented.jpg`), raw, { mode: 0o600 });
+    const outside = join(paths.root, 'outside-recovery.png');
+    await writeFile(outside, raw, { mode: 0o600 });
+    await symlink(outside, join(paths.temporary, `${third}.raw.png`));
+    await writeFile(join(paths.temporary, 'unrelated.part'), raw, { mode: 0o600 });
+
+    expect(await recoverSourceIntakeTemporaries(paths)).toBe(4);
+    expect(await readdir(paths.temporary)).toEqual(['unrelated.part']);
+    expect(await Bun.file(outside).bytes()).toEqual(raw);
   });
 });
