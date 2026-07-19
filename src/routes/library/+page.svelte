@@ -106,6 +106,7 @@ async function setFavorite(jobId: string, favorite: boolean): Promise<void> {
               </div>
               <p class="mt-3 line-clamp-2 min-h-10 text-sm leading-5 text-muted-foreground">{group.promptExcerpt ?? 'No prompt stored'}</p>
               <div class="mt-3 flex flex-wrap items-center gap-2"><Badge tone={group.warning ? 'warning' : 'success'}>{group.verifiedOutputCount}/{group.outputCount} local</Badge>{#if group.aspectRatio}<Badge>{group.aspectRatio}</Badge>{/if}{#if group.pinned}<Badge tone="info">Pinned</Badge>{/if}</div>
+              {#if group.warning}<p class="mt-2 text-xs font-semibold text-warning">{group.warning}</p>{/if}
               <div class="mt-3 flex flex-wrap gap-1">{#each group.tags as tag}<span class="rounded-full bg-muted px-2 py-0.5 text-[0.6875rem]">{tag}</span>{/each}</div>
               <p class="mt-3 text-xs text-muted-foreground"><time datetime={group.createdAt}>{dateTimeLabel(group.createdAt)}</time> · {byteSizeLabel(group.totalBytes)}</p>
             </div>

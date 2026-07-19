@@ -10,6 +10,11 @@ import type { CleanupConsequence, CleanupPreviewDto } from '$lib/features/cleanu
 import { byteSizeLabel, dateTimeLabel } from '$lib/features/library/presentation';
 import type { SettingsDto } from '$lib/features/settings/contracts';
 import {
+  parsePublicIpv4,
+  type PublicIpv4GuardSettings,
+  type PublicIpv4StatusDto
+} from '$lib/features/settings/public-ipv4-guard';
+import {
   apiKeyUiState,
   cleanupConsequenceLabel,
   cleanupPolicyRequest,
@@ -19,6 +24,11 @@ import {
 } from '$lib/features/settings/controller';
 import { resolveTheme, themeStorageKey } from '$lib/theme';
 import type { PageData } from './$types';
+
+type PublicIpv4GuardResponse = {
+  settings: PublicIpv4GuardSettings;
+  status: PublicIpv4StatusDto;
+};
 
 let { data }: { data: PageData } = $props();
 const initial = untrack(() => data);
@@ -33,8 +43,48 @@ let errorMessage = $state('');
 let consequence = $state<CleanupConsequence>(initial.settings.localCleanup.consequence);
 let preview = $state<CleanupPreviewDto | null>(null);
 let cleanupConfirmed = $state(false);
+let publicIpv4Guard = $state<PublicIpv4GuardSettings>(initial.publicIpv4Guard);
+let publicIpv4Status = $state<PublicIpv4StatusDto>(initial.publicIpv4Status);
+let homeIpv4Draft = $state(initial.publicIpv4Guard.homeIpv4 ?? '');
+
+let homeIpv4DraftState = $derived.by(() => {
+  if (!homeIpv4Draft.trim()) return { canonical: null, validation: '' };
+  try {
+    return { canonical: parsePublicIpv4(homeIpv4Draft), validation: '' };
+  } catch (error) {
+    return {
+      canonical: null,
+      validation: error instanceof Error ? error.message : 'Enter a valid public IPv4 address.'
+    };
+  }
+});
+let homeIpv4CanonicalDraft = $derived(homeIpv4DraftState.canonical);
+let homeIpv4Validation = $derived(homeIpv4DraftState.validation);
+let homeIpv4Dirty = $derived(
+  homeIpv4CanonicalDraft !== publicIpv4Guard.homeIpv4 ||
+    (homeIpv4CanonicalDraft === null && Boolean(homeIpv4Draft.trim()))
+);
+let homeIpv4CanSave = $derived(homeIpv4CanonicalDraft !== null && homeIpv4Dirty);
+let publicIpv4GuardCanEnable = $derived(publicIpv4Guard.homeIpv4 !== null && !homeIpv4Dirty);
+let publicIpv4GuardBadge = $derived.by(() => {
+  if (!publicIpv4Guard.enabled) return { tone: 'neutral', label: 'Off by default' } as const;
+  if (publicIpv4Status.state === 'misconfigured') {
+    return { tone: 'warning', label: 'Needs configuration' } as const;
+  }
+  if (publicIpv4Status.state === 'unavailable') {
+    return { tone: 'warning', label: 'Check unavailable' } as const;
+  }
+  if (publicIpv4Status.state === 'blocked') {
+    return { tone: 'danger', label: 'Blocking Poyo' } as const;
+  }
+  return { tone: 'success', label: 'Enabled' } as const;
+});
 
 let keyState = $derived(apiKeyUiState(settings.apiKey));
+
+$effect(() => {
+  publicIpv4Status = data.publicIpv4Status;
+});
 
 async function request<T>(path: string, method: string, body: Record<string, unknown>): Promise<T> {
   const response = await fetch(path, {
@@ -163,6 +213,59 @@ function testConnectivity(): void {
   });
 }
 
+function saveHomeIpv4(): void {
+  if (!homeIpv4CanSave) return;
+  void run('public-ip-home', async () => {
+    const result = await request<PublicIpv4GuardResponse>(
+      '/api/settings/public-ipv4-guard',
+      'PUT',
+      {
+        enabled: publicIpv4Guard.enabled,
+        homeIpv4: homeIpv4CanonicalDraft
+      }
+    );
+    publicIpv4Guard = result.settings;
+    publicIpv4Status = result.status;
+    homeIpv4Draft = result.settings.homeIpv4 ?? '';
+    message = 'Home public IPv4 saved.';
+    await invalidateAll();
+  });
+}
+
+function setPublicIpv4GuardEnabled(event: Event): void {
+  const input = event.currentTarget as HTMLInputElement;
+  const enabled = input.checked;
+  if (enabled && !publicIpv4GuardCanEnable) {
+    input.checked = false;
+    return;
+  }
+  const previous = publicIpv4Guard;
+  publicIpv4Guard = { ...publicIpv4Guard, enabled };
+  void run('public-ip-toggle', async () => {
+    try {
+      const result = await request<PublicIpv4GuardResponse>(
+        '/api/settings/public-ipv4-guard',
+        'PUT',
+        {
+          enabled,
+          homeIpv4: previous.homeIpv4
+        }
+      );
+      publicIpv4Guard = result.settings;
+      publicIpv4Status = result.status;
+      message = enabled ? 'Exact public IPv4 guard enabled.' : 'Public IPv4 guard disabled.';
+      await invalidateAll();
+    } catch (error) {
+      publicIpv4Guard = previous;
+      throw error;
+    }
+  });
+}
+
+function useCurrentPublicIpv4(): void {
+  if (publicIpv4Status.currentIpv4) homeIpv4Draft = publicIpv4Status.currentIpv4;
+}
+
 function clearPreview(): void {
   preview = null;
   cleanupConfirmed = false;
@@ -242,6 +345,85 @@ function applyCleanup(): void {
             </form>
           {/if}
           <div class="mt-5 flex flex-wrap items-center gap-2"><button onclick={testConnectivity} disabled={pending !== null || !keyState.canTest} class="focus-ring inline-flex min-h-9 items-center gap-2 rounded border border-border px-3 text-sm font-semibold disabled:opacity-50"><AppIcon name="wifi" size={15} /> Test connection</button>{#if keyState.canRemove}<button onclick={removeApiKey} disabled={pending !== null} class="focus-ring min-h-9 rounded border border-destructive/40 px-3 text-sm font-semibold text-destructive">Remove local key</button>{/if}<span class="text-xs text-muted-foreground">{connectivity.checkedAt ? `${connectivity.status === 'ok' ? 'Passed' : 'Failed'} ${dateTimeLabel(connectivity.checkedAt)}` : 'Not checked'}{account ? ` · ${account}` : ''}</span></div>
+        </section>
+
+        <section id="public-ip-guard" class="scroll-mt-24 py-6" aria-labelledby="public-ip-guard-heading">
+          <div class="flex flex-wrap items-start justify-between gap-4">
+            <div class="max-w-2xl">
+              <div class="flex flex-wrap items-center gap-2">
+                <h3 id="public-ip-guard-heading" class="section-heading">Exact public IPv4 guardrail</h3>
+                <Badge tone={publicIpv4GuardBadge.tone}>
+                  {publicIpv4GuardBadge.label}
+                </Badge>
+              </div>
+              <p class="mt-2 text-sm leading-6 text-muted-foreground">
+                This is an exact known-IP comparison, not a VPN detector. When enabled, the server checks its own outbound public IPv4 immediately before each Poyo request and blocks if it matches the saved home address.
+              </p>
+              {#if publicIpv4Status.state === 'misconfigured'}
+                <p class="mt-3 rounded border border-warning/40 bg-warning/10 px-3 py-2 text-xs leading-5" role="alert">
+                  The saved guard settings are invalid, so all Poyo requests are blocked. Disable the guard or save a valid home public IPv4.
+                </p>
+              {/if}
+            </div>
+            <div class="text-right text-xs">
+              <p class="text-muted-foreground">Current server outbound IPv4</p>
+              <p class="mt-1 font-mono font-semibold">{publicIpv4Status.currentIpv4 ?? 'Unavailable'}</p>
+            </div>
+          </div>
+
+          <div class="mt-5 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+            <label class="text-xs font-semibold" for="home-public-ipv4">
+              Normal/home public IPv4
+              <input
+                id="home-public-ipv4"
+                bind:value={homeIpv4Draft}
+                inputmode="decimal"
+                autocomplete="off"
+                spellcheck="false"
+                aria-describedby="home-public-ipv4-help"
+                aria-invalid={Boolean(homeIpv4Validation)}
+                class="focus-ring mt-1.5 h-10 w-full rounded border border-input bg-background px-3 font-mono text-sm"
+                placeholder="8.8.4.4"
+              />
+            </label>
+            <div class="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onclick={useCurrentPublicIpv4}
+                disabled={!publicIpv4Status.currentIpv4 || pending !== null}
+                class="focus-ring min-h-10 rounded border border-border px-3 text-sm font-semibold disabled:opacity-50"
+              >Use current IP</button>
+              <button
+                type="button"
+                onclick={saveHomeIpv4}
+                disabled={!homeIpv4CanSave || pending !== null}
+                class="focus-ring min-h-10 rounded bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+              >{pending === 'public-ip-home' ? 'Saving…' : 'Save address'}</button>
+            </div>
+          </div>
+          <p id="home-public-ipv4-help" class={`mt-2 text-xs leading-5 ${homeIpv4Validation ? 'text-warning' : 'text-muted-foreground'}`}>
+            {homeIpv4Validation || (homeIpv4Dirty && homeIpv4CanonicalDraft ? 'Unsaved changes. Save this address before enabling the guard.' : homeIpv4Draft.trim() ? 'Saved in canonical dotted-decimal form. “Use current IP” changes only this draft until you save.' : 'Enter the public IPv4 used by your normal/home connection.')}
+          </p>
+
+          <label class="mt-5 flex items-start gap-3 text-sm">
+            <input
+              type="checkbox"
+              checked={publicIpv4Guard.enabled}
+              disabled={pending !== null || (!publicIpv4Guard.enabled && !publicIpv4GuardCanEnable)}
+              onchange={setPublicIpv4GuardEnabled}
+              class="focus-ring mt-0.5 size-4"
+            />
+            <span>
+              <strong>Block Poyo requests on the saved home IPv4</strong>
+              <span class="mt-1 block text-xs leading-5 text-muted-foreground">
+                If the address check is unavailable while enabled, the server fails closed before contacting Poyo. Save a valid address before enabling.
+              </span>
+            </span>
+          </label>
+
+          <p class="mt-5 border-t border-border pt-4 text-xs leading-5 text-muted-foreground">
+            Exact IPv4 comparison cannot protect against a changed or dynamic home IP, IPv6 traffic, lookup-provider failure, split tunnelling, or a network change in the brief interval after a check.
+          </p>
         </section>
 
         <section id="storage" class="py-6" aria-labelledby="storage-heading">

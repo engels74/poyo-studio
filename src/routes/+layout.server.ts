@@ -22,7 +22,11 @@ export const load: LayoutServerLoad = async ({ url }) => {
   const themeDefault =
     platform.settings.get<OperationsSettings>('operations')?.value.theme?.defaultMode ?? 'light';
   return {
-    shellSummary: { activeJobs, balance: latestBalance(platform.database) },
+    shellSummary: {
+      activeJobs,
+      balance: latestBalance(platform.database),
+      publicIpv4Status: await platform.publicIpv4.status()
+    },
     onboarding,
     themeDefault
   };

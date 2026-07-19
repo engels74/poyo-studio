@@ -467,6 +467,7 @@ export async function startBrowserAppHarness(
         PLS_APP_DATA_DIR: options.freshOnboarding ? '' : appData,
         PLS_TEST_MODE: '1',
         PLS_TEST_POYO_BASE_URL: runningMock.baseUrl,
+        PLS_TEST_PUBLIC_IPV4_URL: `${runningMock.baseUrl}/ip`,
         PLS_TEST_JOB_POLL_MS: '75',
         PLS_TEST_JOB_WORKER_MS: '50',
         PLS_TEST_JOB_CREATE_MS: '1200',

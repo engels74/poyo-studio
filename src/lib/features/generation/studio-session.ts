@@ -11,6 +11,8 @@ export interface StudioJobEventUpdate {
   failureDomain: string;
   progress: number | null;
   observedAt: string;
+  attentionCode?: string | null;
+  ipGuardReason?: 'match' | 'unavailable' | 'misconfigured' | null;
 }
 
 function timestamp(value: string | null): number {
@@ -54,6 +56,8 @@ export function applyStudioJobEvent(
     localPhase: update.localPhase,
     remoteStatus: update.remoteStatus,
     failureDomain: update.failureDomain,
+    attentionCode: update.attentionCode ?? current.attentionCode,
+    ipGuardReason: update.ipGuardReason ?? current.ipGuardReason ?? null,
     progress: update.progress,
     updatedAt: update.observedAt,
     completedAt:

@@ -40,6 +40,7 @@ export interface JobListItemDto {
   remoteStatus: string;
   failureDomain: string;
   attentionCode: string | null;
+  ipGuardReason: 'match' | 'unavailable' | 'misconfigured' | null;
   progress: number | null;
   estimatedCredits: number | null;
   actualCredits: number | null;

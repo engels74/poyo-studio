@@ -1449,6 +1449,8 @@ function updateFromJobEvent(event: MessageEvent<string>): void {
       localPhase: update.localPhase,
       remoteStatus: update.remoteStatus,
       failureDomain: update.failureDomain,
+      attentionCode: update.attentionCode ?? batchItem.job.attentionCode,
+      ipGuardReason: update.ipGuardReason ?? batchItem.job.ipGuardReason ?? null,
       progress: update.progress,
       updatedAt: update.observedAt
     });
@@ -2149,6 +2151,12 @@ onMount(() => {
           <h2 id={`${data.modality}-stage-heading`} class="mt-2 text-xl font-semibold tracking-tight text-stage-foreground">
             {submissionUnknown
               ? 'Submission outcome needs reconciliation'
+              : activeJob.attentionCode === 'ip_guard_blocked'
+                ? activeJob.ipGuardReason === 'unavailable'
+                  ? 'IP check unavailable'
+                  : activeJob.ipGuardReason === 'misconfigured'
+                    ? 'IP guard settings invalid'
+                    : 'Blocked by IP guard'
               : activeJob.remoteStatus === 'failed'
                 ? 'Poyo generation failed'
                 : activeJob.localPhase === 'complete'
@@ -2164,6 +2172,14 @@ onMount(() => {
           <p class="mx-auto mt-2 max-w-md text-sm leading-6 text-stage-muted">
             {submissionUnknown
               ? 'This request will not be submitted again automatically because doing so could spend credits twice.'
+              : activeJob.attentionCode === 'ip_guard_blocked'
+                ? activeJob.poyoTaskId
+                  ? 'Monitoring is paused. Poyo may still be processing the accepted task; correct the network or Settings, then refresh status from the job page.'
+                  : activeJob.ipGuardReason === 'unavailable'
+                    ? 'Poyo was not contacted because the server could not verify its public IPv4. Refresh IP status or review Settings, then create a new run.'
+                    : activeJob.ipGuardReason === 'misconfigured'
+                      ? 'Poyo was not contacted because the saved IP guard settings are invalid. Disable or correct the guard in Settings, then create a new run.'
+                      : 'Poyo was not contacted. Change networks or update the IP guard in Settings, then create a new run.'
               : activeJob.remoteStatus === 'failed'
                 ? 'Poyo authoritatively reported that the remote generation failed. No local download was attempted.'
                 : activeJob.failureDomain === 'poll'
