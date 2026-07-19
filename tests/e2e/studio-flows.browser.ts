@@ -2258,8 +2258,13 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     await videoBatchCommands.getByRole('button', { name: 'Review batch (2)' }).click();
     const videoBatchDialog = page.getByRole('dialog', { name: 'Video batch' });
     harness.mock.queueOutcome('held');
+    harness.mock.queueOutcome('held');
     await videoBatchDialog.getByRole('button', { name: 'Submit 2 separate billed jobs' }).click();
-    await videoBatchDialog.getByText('running', { exact: true }).waitFor({ timeout: 15_000 });
+    await waitUntil(
+      async () => (await videoBatchDialog.getByText('running', { exact: true }).count()) === 2,
+      'Both video batch items did not reach a durable running state before restart.',
+      15_000
+    );
     await harness.stopApp();
     await page.getByText('Live updates reconnecting').waitFor({ timeout: 8_000 });
     await harness.startApp();
