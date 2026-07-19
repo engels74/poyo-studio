@@ -2,6 +2,7 @@ import { type MaintenanceGate, maintenanceGate } from '../platform/maintenance-g
 import { PoyoError } from '../poyo/errors';
 import type {
   PoyoBalanceResult,
+  PoyoRequestOptions,
   PoyoStatusResult,
   PoyoSubmitRequest,
   PoyoSubmitResult
@@ -10,8 +11,10 @@ import type { OutputDownloader } from './downloader';
 import type { JobRepository } from './repository';
 import type { JobRecord, WorkClaim } from './types';
 
+const SUBMISSION_CLAIM_LOST_BEFORE_DISPATCH = 'submission_claim_lost_before_dispatch';
+
 export interface JobPoyoGateway {
-  submit(request: PoyoSubmitRequest): Promise<PoyoSubmitResult>;
+  submit(request: PoyoSubmitRequest, options?: PoyoRequestOptions): Promise<PoyoSubmitResult>;
   getStatus(taskId: string): Promise<PoyoStatusResult>;
   getBalance(): Promise<PoyoBalanceResult>;
 }
@@ -124,14 +127,39 @@ export class JobCoordinator {
       this.submissionLeaseMs
     );
     if (!claim) return { job: this.requireJob(jobId), balanceSource: null };
-    if (!this.options.repository.markSubmissionTransmitted(jobId, claim.token))
-      return { job: this.requireJob(jobId), balanceSource: null };
     try {
-      const result = await this.options.poyo.submit(claim.payload);
+      const result = await this.options.poyo.submit(claim.payload, {
+        beforeDispatch: () => {
+          if (!this.options.repository.markSubmissionTransmitted(jobId, claim.token)) {
+            throw new PoyoError({
+              category: 'submission',
+              technicalCode: SUBMISSION_CLAIM_LOST_BEFORE_DISPATCH,
+              message: 'Submission claim ownership was lost before dispatch.',
+              retryable: false,
+              operation: 'submit'
+            });
+          }
+        }
+      });
       this.options.repository.acknowledgeSubmission(jobId, claim.token, result);
       return { job: this.requireJob(jobId), balanceSource: 'after_submission' };
     } catch (error) {
       if (
+        error instanceof PoyoError &&
+        error.technicalCode === SUBMISSION_CLAIM_LOST_BEFORE_DISPATCH
+      ) {
+        return { job: this.requireJob(jobId), balanceSource: null };
+      }
+      if (error instanceof PoyoError && error.category === 'policy') {
+        const rejected = this.options.repository.rejectUntransmittedPolicy(
+          jobId,
+          claim.token,
+          error.technicalCode
+        );
+        if (!rejected) {
+          this.options.repository.markSubmissionUnknown(jobId, claim.token, error.technicalCode);
+        }
+      } else if (
         error instanceof PoyoError &&
         !['network', 'provider', 'rate_limit'].includes(error.category)
       )
@@ -161,6 +189,9 @@ export class JobCoordinator {
       if (updated.remoteStatus === 'failed') await this.refreshBalance('remote_failure');
       return updated;
     } catch (error) {
+      if (error instanceof PoyoError && error.category === 'policy') {
+        return this.options.repository.recordPollBlocked(jobId, error.technicalCode);
+      }
       const age = this.now().getTime() - Date.parse(job.lastPolledAt ?? job.createdAt);
       return this.options.repository.recordPollFailure(
         jobId,

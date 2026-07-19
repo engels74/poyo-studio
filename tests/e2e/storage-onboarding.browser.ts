@@ -9,6 +9,26 @@ import {
 
 setDefaultTimeout(60_000);
 
+type BrowserHarness = Awaited<ReturnType<typeof startBrowserAppHarness>>;
+
+async function submitPaidGeneration(page: Page, prompt: string) {
+  return page.evaluate(async (paidPrompt) => {
+    const response = await fetch('/api/jobs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        actionId: crypto.randomUUID(),
+        entryKey: 'flux-schnell:text-to-image',
+        values: { prompt: paidPrompt },
+        expertOverrides: [],
+        inputs: []
+      })
+    });
+    const body = (await response.json()) as { job?: { id?: string } };
+    return { status: response.status, jobId: body.job?.id };
+  }, prompt);
+}
+
 async function continueThroughAppearanceAndDefaults(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Continue' }).click();
   await page.getByRole('heading', { name: 'Choose your appearance' }).waitFor();
@@ -30,6 +50,157 @@ async function expectNoLegacyStorageControls(page: Page): Promise<void> {
 async function expectNoLegacyStorageLanguage(page: Page): Promise<void> {
   const text = (await page.textContent('body')) ?? '';
   expect(text).not.toMatch(/operating-system|keychain|credential backend/i);
+}
+
+async function exercisePublicIpv4Guard(harness: BrowserHarness, page: Page): Promise<void> {
+  await page.getByText('IP guard off', { exact: true }).filter({ visible: true }).waitFor();
+  expect(await page.getByText('8.8.4.4', { exact: true }).count()).toBeGreaterThan(0);
+  await Promise.all([
+    page.waitForURL('**/settings#public-ip-guard'),
+    page.getByRole('link', { name: 'Configure exact IP guard' }).filter({ visible: true }).click()
+  ]);
+  expect(new URL(page.url()).hash).toBe('#public-ip-guard');
+
+  const input = page.getByLabel('Normal/home public IPv4');
+  await input.fill('192.168.1.2');
+  await page.getByText(/globally routable public IPv4/).waitFor();
+  expect(await page.getByRole('button', { name: 'Save address' }).isDisabled()).toBe(true);
+
+  await page.getByRole('button', { name: 'Use current IP' }).click();
+  expect(await input.inputValue()).toBe('8.8.4.4');
+  await page.getByRole('button', { name: 'Save address' }).click();
+  await page.getByText('Home public IPv4 saved.', { exact: true }).waitFor();
+  const toggle = page.getByLabel('Block Poyo requests on the saved home IPv4');
+  expect(await toggle.isEnabled()).toBe(true);
+  await toggle.check();
+  await page.getByText('Exact public IPv4 guard enabled.', { exact: true }).waitFor();
+
+  const poyoCallsBeforeBlock = harness.mock.requests.length;
+  const blocked = await page.request.post(`${harness.url}/api/account/balance`, {
+    headers: { origin: harness.url, 'sec-fetch-site': 'same-origin' },
+    data: {}
+  });
+  expect(blocked.status()).toBe(400);
+  expect(harness.mock.requests.length).toBe(poyoCallsBeforeBlock);
+  await page.goto(`${harness.url}/`);
+  await page.getByText('Home IP detected', { exact: true }).filter({ visible: true }).waitFor();
+
+  const poyoCallsBeforeGeneration = harness.mock.requests.length;
+  const guardedGeneration = await submitPaidGeneration(page, 'Guarded paid generation fixture');
+  expect(guardedGeneration.status).toBe(202);
+  expect(guardedGeneration.jobId).toBeTruthy();
+  await page.goto(`${harness.url}/jobs/${guardedGeneration.jobId}`);
+  await page.getByText('Blocked by IP guard.', { exact: true }).waitFor();
+  expect(harness.mock.requests.length).toBe(poyoCallsBeforeGeneration);
+
+  await page.goto(`${harness.url}/settings#public-ip-guard`);
+  await toggle.uncheck();
+  await page.getByText('Public IPv4 guard disabled.', { exact: true }).waitFor();
+  harness.mock.setPublicIpv4('9.9.9.9');
+  await page
+    .getByRole('button', { name: 'Refresh outbound public IPv4 status' })
+    .filter({ visible: true })
+    .click();
+  await page.getByText('9.9.9.9', { exact: true }).filter({ visible: true }).first().waitFor();
+  await page.getByRole('button', { name: 'Use current IP' }).click();
+  expect(await input.inputValue()).toBe('9.9.9.9');
+  await input.fill('1.1.1.1');
+  await page.getByText('Unsaved changes. Save this address before enabling the guard.').waitFor();
+  expect(await toggle.isDisabled()).toBe(true);
+  await page.getByRole('button', { name: 'Save address' }).click();
+  await page.getByText('Home public IPv4 saved.', { exact: true }).waitFor();
+  expect(await toggle.isEnabled()).toBe(true);
+  await toggle.check();
+  await page.getByText('Exact public IPv4 guard enabled.', { exact: true }).waitFor();
+  await page.getByText('IP differs from home', { exact: true }).filter({ visible: true }).waitFor();
+
+  harness.mock.queueOutcome('held');
+  const submitsBeforeAllow = harness.mock.requests.filter(
+    (request) => request.pathname === '/api/generate/submit'
+  ).length;
+  const allowedGeneration = await submitPaidGeneration(page, 'Allowed paid generation fixture');
+  expect(allowedGeneration.status).toBe(202);
+  expect(allowedGeneration.jobId).toBeTruthy();
+  await page.goto(`${harness.url}/jobs/${allowedGeneration.jobId}`);
+  await page.getByText('Poyo task linked', { exact: true }).waitFor();
+  expect(
+    harness.mock.requests.filter((request) => request.pathname === '/api/generate/submit')
+  ).toHaveLength(submitsBeforeAllow + 1);
+  harness.mock.releaseHeldTasks();
+  await page.goto(`${harness.url}/settings#public-ip-guard`);
+
+  harness.mock.setPublicIpv4Delay(350);
+  const refresh = page
+    .getByRole('button', { name: 'Refresh outbound public IPv4 status' })
+    .filter({ visible: true });
+  await refresh.click();
+  const checking = page
+    .locator('[aria-live="polite"]')
+    .filter({ hasText: 'Checking public IP' })
+    .filter({ visible: true });
+  await checking.waitFor();
+  expect(await checking.getAttribute('aria-atomic')).toBe('true');
+  expect(await refresh.isDisabled()).toBe(true);
+  await page.getByText('IP differs from home', { exact: true }).filter({ visible: true }).waitFor();
+  harness.mock.setPublicIpv4Delay(0);
+  const poyoCallsBeforeAllow = harness.mock.requests.length;
+  const allowed = await page.request.post(`${harness.url}/api/account/balance`, {
+    headers: { origin: harness.url, 'sec-fetch-site': 'same-origin' },
+    data: {}
+  });
+  expect(allowed.ok()).toBe(true);
+  expect(harness.mock.requests.length).toBe(poyoCallsBeforeAllow + 1);
+
+  harness.mock.setPublicIpv4Unavailable(true);
+  await page
+    .getByRole('button', { name: 'Refresh outbound public IPv4 status' })
+    .filter({ visible: true })
+    .click();
+  await page
+    .getByText('Public IP unavailable', { exact: true })
+    .filter({ visible: true })
+    .waitFor();
+  const poyoCallsBeforeUnavailable = harness.mock.requests.length;
+  const unavailable = await page.request.post(`${harness.url}/api/account/balance`, {
+    headers: { origin: harness.url, 'sec-fetch-site': 'same-origin' },
+    data: {}
+  });
+  expect(unavailable.status()).toBe(400);
+  expect(harness.mock.requests.length).toBe(poyoCallsBeforeUnavailable);
+  harness.mock.setPublicIpv4Unavailable(false);
+
+  await harness.stopApp();
+  await harness.startApp();
+  await page.goto(`${harness.url}/settings#public-ip-guard`);
+  expect(await page.getByLabel('Block Poyo requests on the saved home IPv4').isChecked()).toBe(
+    true
+  );
+
+  await page.setViewportSize({ width: 760, height: 800 });
+  await page.reload();
+  await page.getByText('IP differs from home', { exact: true }).filter({ visible: true }).waitFor();
+  expect(
+    await page.getByRole('button', { name: 'Refresh outbound public IPv4 status' }).isVisible()
+  ).toBe(true);
+
+  const persistedToggle = page.getByLabel('Block Poyo requests on the saved home IPv4');
+  const persistedInput = page.getByLabel('Normal/home public IPv4');
+  await persistedInput.fill('');
+  await page.getByText('Disable the guard before clearing the saved home public IPv4.').waitFor();
+  expect(await page.getByRole('button', { name: 'Save address' }).isDisabled()).toBe(true);
+  await persistedInput.fill('1.1.1.1');
+  await persistedToggle.uncheck();
+  await page.getByText('Public IPv4 guard disabled.', { exact: true }).waitFor();
+  await persistedInput.fill('');
+  await page.getByText('Unsaved change. Save to clear the stored home public IPv4.').waitFor();
+  await page.getByRole('button', { name: 'Save address' }).click();
+  await page.getByText('Home public IPv4 cleared.', { exact: true }).waitFor();
+  expect(await persistedToggle.isDisabled()).toBe(true);
+  await page.reload();
+  expect(await page.getByLabel('Normal/home public IPv4').inputValue()).toBe('');
+  expect(await page.getByLabel('Block Poyo requests on the saved home IPv4').isDisabled()).toBe(
+    true
+  );
 }
 
 test('fresh onboarding keeps storage informational and completes through one local credential path', async () => {
@@ -153,7 +324,7 @@ test('fresh onboarding keeps storage informational and completes through one loc
   }
 });
 
-test('environment-managed onboarding exposes authority without secrets or paths and can be dismissed', async () => {
+test('environment-managed onboarding and the persisted exact IPv4 guard work without secret exposure', async () => {
   const harness = await startBrowserAppHarness();
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
@@ -194,6 +365,8 @@ test('environment-managed onboarding exposes authority without secrets or paths 
     await page.waitForURL((url) => url.pathname === '/');
     await page.reload();
     expect(new URL(page.url()).pathname).toBe('/');
+
+    await exercisePublicIpv4Guard(harness, page);
 
     expect((await page.textContent('body')) ?? '').not.toContain(harness.syntheticKey);
     expect(issues.pageErrors).toEqual([]);

@@ -28,14 +28,22 @@ const createdTime = '2026-07-15T12:00:00.000Z';
 export async function startStudioMockPoyoServer(): Promise<{
   baseUrl: string;
   requests: RecordedPoyoRequest[];
+  ipRequests: string[];
   tasks: Map<string, MockTask>;
   queueOutcome: (outcome: MockTaskOutcome) => void;
   releaseHeldTasks: () => void;
+  setPublicIpv4: (ipv4: string) => void;
+  setPublicIpv4Delay: (delayMs: number) => void;
+  setPublicIpv4Unavailable: (unavailable: boolean) => void;
   stop: () => Promise<void>;
 }> {
   const requests: RecordedPoyoRequest[] = [];
   const tasks = new Map<string, MockTask>();
   const outcomes: MockTaskOutcome[] = [];
+  const ipRequests: string[] = [];
+  let publicIpv4 = '8.8.4.4';
+  let publicIpv4DelayMs = 0;
+  let publicIpv4Unavailable = false;
   const image = await Bun.file('tests/fixtures/media/tiny.png').bytes();
   const video = await Bun.file('tests/fixtures/media/tiny.mp4').bytes();
 
@@ -44,6 +52,13 @@ export async function startStudioMockPoyoServer(): Promise<{
     port: 0,
     fetch: async (request) => {
       const url = new URL(request.url);
+      if (url.pathname === '/ip') {
+        ipRequests.push(url.pathname);
+        if (publicIpv4DelayMs > 0) await Bun.sleep(publicIpv4DelayMs);
+        return publicIpv4Unavailable
+          ? new Response('unavailable', { status: 503 })
+          : new Response(publicIpv4, { headers: { 'content-type': 'text/plain' } });
+      }
       if (url.pathname.startsWith('/media/')) {
         const isVideo = url.pathname.endsWith('.mp4');
         const body = isVideo ? video : image;
@@ -198,10 +213,20 @@ export async function startStudioMockPoyoServer(): Promise<{
   return {
     baseUrl: `http://${server.hostname}:${server.port}`,
     requests,
+    ipRequests,
     tasks,
     queueOutcome: (outcome) => outcomes.push(outcome),
     releaseHeldTasks: () => {
       for (const task of tasks.values()) task.released = true;
+    },
+    setPublicIpv4: (ipv4) => {
+      publicIpv4 = ipv4;
+    },
+    setPublicIpv4Delay: (delayMs) => {
+      publicIpv4DelayMs = delayMs;
+    },
+    setPublicIpv4Unavailable: (unavailable) => {
+      publicIpv4Unavailable = unavailable;
     },
     stop: async () => server.stop(true)
   };

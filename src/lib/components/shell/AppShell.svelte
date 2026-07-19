@@ -1,7 +1,7 @@
 <script lang="ts">
-import { afterNavigate } from '$app/navigation';
+import { afterNavigate, invalidateAll } from '$app/navigation';
 import { page } from '$app/state';
-import { onMount, type Snippet } from 'svelte';
+import { onMount, untrack, type Snippet } from 'svelte';
 import AppIcon from '$lib/components/ui/AppIcon.svelte';
 import Badge from '$lib/components/ui/Badge.svelte';
 import Sheet from '$lib/components/ui/Sheet.svelte';
@@ -14,25 +14,35 @@ import {
   navigationGroups
 } from '$lib/navigation';
 import { dateLabel } from '$lib/features/library/presentation';
+import type { PublicIpv4StatusDto } from '$lib/features/settings/public-ipv4-guard';
 import ThemeToggle from './ThemeToggle.svelte';
+import PublicIpv4Status from './PublicIpv4Status.svelte';
 
 interface Props {
   children: Snippet;
   summary: {
     activeJobs: number;
     balance: { email: string | null; credits: number; fetchedAt: string } | null;
+    publicIpv4Status: PublicIpv4StatusDto;
   };
 }
 
-let { children, summary = { activeJobs: 0, balance: null } }: Props = $props();
+let { children, summary }: Props = $props();
 let sidebarCollapsed = $state(false);
 let mobileMoreOpen = $state(false);
 let routeAnnouncement = $state('');
 let initialNavigation = true;
+let publicIpv4Status = $state(untrack(() => summary.publicIpv4Status));
+let checkingPublicIpv4 = $state(false);
 
 let pathname = $derived(page.url.pathname);
 let routeTitle = $derived(getRouteTitle(pathname));
 let studioRoute = $derived(isStudioPath(pathname));
+
+$effect(() => {
+  const next = summary.publicIpv4Status;
+  if (!untrack(() => checkingPublicIpv4)) publicIpv4Status = next;
+});
 
 function toggleSidebar(): void {
   sidebarCollapsed = !sidebarCollapsed;
@@ -41,6 +51,36 @@ function toggleSidebar(): void {
 
 function closeMobileMore(): void {
   mobileMoreOpen = false;
+}
+
+function markPublicIpv4Unavailable(): void {
+  publicIpv4Status = {
+    state: 'unavailable',
+    currentIpv4: null,
+    checkedAt: new Date().toISOString(),
+    availability: 'unavailable'
+  };
+}
+
+async function refreshPublicIpv4(): Promise<void> {
+  if (checkingPublicIpv4) return;
+  checkingPublicIpv4 = true;
+  try {
+    const response = await fetch('/api/public-ipv4', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}'
+    });
+    const result = (await response.json()) as { status?: PublicIpv4StatusDto };
+    if (response.ok && result.status) {
+      publicIpv4Status = result.status;
+      await invalidateAll();
+    } else markPublicIpv4Unavailable();
+  } catch {
+    markPublicIpv4Unavailable();
+  } finally {
+    checkingPublicIpv4 = false;
+  }
 }
 
 onMount(() => {
@@ -116,6 +156,15 @@ afterNavigate(() => {
     </nav>
 
     <div class="border-t border-border px-2 py-2">
+      {#if !sidebarCollapsed}
+        <div class="sidebar-utility mb-1 rounded-[var(--radius)] px-2.5 py-2 text-muted-foreground">
+          <PublicIpv4Status
+            status={publicIpv4Status}
+            checking={checkingPublicIpv4}
+            onrefresh={() => void refreshPublicIpv4()}
+          />
+        </div>
+      {/if}
       <a
         href="/jobs"
         class="sidebar-utility focus-ring flex min-h-10 items-center gap-3 rounded-[var(--radius)] px-2.5 text-muted-foreground no-underline hover:bg-background/70 hover:text-foreground"
@@ -172,6 +221,14 @@ afterNavigate(() => {
         </h1>
       </div>
       <div class="flex shrink-0 items-center gap-2">
+        <div class={sidebarCollapsed ? '' : 'lg:hidden'}>
+          <PublicIpv4Status
+            status={publicIpv4Status}
+            checking={checkingPublicIpv4}
+            compact
+            onrefresh={() => void refreshPublicIpv4()}
+          />
+        </div>
         <Badge tone="neutral" class="hidden sm:inline-flex">
           <AppIcon name="server" size={13} />
           Local session

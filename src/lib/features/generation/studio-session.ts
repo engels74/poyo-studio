@@ -11,6 +11,22 @@ export interface StudioJobEventUpdate {
   failureDomain: string;
   progress: number | null;
   observedAt: string;
+  attentionCode?: string | null;
+  ipGuardReason?: 'match' | 'unavailable' | 'misconfigured' | null;
+}
+
+export function mergeStudioJobEventAttention(
+  current: Pick<StudioJobDto, 'attentionCode' | 'ipGuardReason'>,
+  update: Pick<StudioJobEventUpdate, 'attentionCode' | 'ipGuardReason'>
+): Pick<StudioJobDto, 'attentionCode' | 'ipGuardReason'> {
+  return {
+    attentionCode: Object.hasOwn(update, 'attentionCode')
+      ? (update.attentionCode ?? null)
+      : current.attentionCode,
+    ipGuardReason: Object.hasOwn(update, 'ipGuardReason')
+      ? (update.ipGuardReason ?? null)
+      : (current.ipGuardReason ?? null)
+  };
 }
 
 function timestamp(value: string | null): number {
@@ -54,6 +70,7 @@ export function applyStudioJobEvent(
     localPhase: update.localPhase,
     remoteStatus: update.remoteStatus,
     failureDomain: update.failureDomain,
+    ...mergeStudioJobEventAttention(current, update),
     progress: update.progress,
     updatedAt: update.observedAt,
     completedAt:

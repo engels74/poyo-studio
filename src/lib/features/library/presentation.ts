@@ -143,6 +143,7 @@ export function statusLabel(
   remoteStatus: string,
   attentionCode: string | null
 ): string {
+  if (attentionCode === 'ip_guard_blocked') return 'Blocked by IP guard';
   if (attentionCode === 'submission_unknown') return 'Submission outcome unknown';
   if (attentionCode === 'stale') return 'Stale — status delayed';
   if (remoteStatus === 'failed') return 'Poyo generation failed';
@@ -153,6 +154,28 @@ export function statusLabel(
   if (remoteStatus === 'running') return 'Generating';
   if (remoteStatus === 'not_started') return 'Queued by Poyo';
   return localPhase.replaceAll('_', ' ');
+}
+
+export function attentionDescription(
+  attentionCode: string | null,
+  ipGuardReason: 'match' | 'unavailable' | 'misconfigured' | null = null,
+  hasRemoteTask = false
+): string {
+  if (attentionCode === 'ip_guard_blocked') {
+    if (hasRemoteTask) {
+      return 'IP guard paused monitoring. Remote processing may still continue; correct the network or Settings, then refresh status.';
+    }
+    if (ipGuardReason === 'unavailable') {
+      return 'Poyo was not contacted because the server could not verify its public IPv4. Refresh IP status or review Settings, then create a new run.';
+    }
+    return ipGuardReason === 'misconfigured'
+      ? 'Poyo was not contacted because the saved IP guard settings are invalid. Disable or correct the guard in Settings, then create a new run.'
+      : 'Poyo was not contacted. Change networks or update the IP guard in Settings, then create a new run.';
+  }
+  if (attentionCode === 'submission_unknown')
+    return 'The submission outcome is unknown; retrying could spend credits twice.';
+  if (attentionCode === 'stale') return 'Status monitoring is delayed.';
+  return attentionCode?.replaceAll('_', ' ') ?? 'Review this job.';
 }
 
 export function statusTone(

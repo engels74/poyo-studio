@@ -77,6 +77,7 @@ export interface StudioJobDto {
   remoteStatus: string;
   failureDomain: string;
   attentionCode: string | null;
+  ipGuardReason?: 'match' | 'unavailable' | 'misconfigured' | null;
   poyoTaskId: string | null;
   progress: number | null;
   estimatedCredits: number | null;

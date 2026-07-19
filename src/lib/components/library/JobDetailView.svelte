@@ -7,6 +7,7 @@ import LinkButton from '$lib/components/ui/LinkButton.svelte';
 import type { JobDetailDto, LocalDeleteChoice } from '$lib/features/library/contracts';
 import {
   byteSizeLabel,
+  attentionDescription,
   dateTimeLabel,
   elapsedLabel,
   mediaFrameAspectRatio
@@ -193,13 +194,20 @@ function removeOutput(outputId: string): void {
       {#if job.poyoTaskId}<button onclick={refresh} disabled={pending !== null} class="focus-ring inline-flex min-h-9 items-center gap-2 rounded border border-border px-3 text-sm font-semibold"><AppIcon name="refresh" size={15} /> Refresh status</button>{/if}
       {#if job.attentionCode === 'submission_unknown'}
         <button onclick={retryAmbiguous} disabled={pending !== null} class="focus-ring min-h-9 rounded bg-warning px-3 text-sm font-semibold text-warning-foreground">Acknowledge risk and retry</button>
-      {:else}
+      {:else if !(job.attentionCode === 'ip_guard_blocked' && job.poyoTaskId)}
         <button onclick={rerun} disabled={pending !== null} class="focus-ring min-h-9 rounded bg-primary px-3 text-sm font-semibold text-primary-foreground">Run again</button>
       {/if}
     </div>
   </header>
 
   {#if job.attentionCode === 'submission_unknown'}<div class="mt-4 rounded border border-warning/40 bg-warning/10 p-4 text-sm"><strong>Submission outcome is unknown.</strong> Status checks are safe. A new paid retry is available only after you explicitly accept the risk that Poyo may charge for both requests.</div>{/if}
+  {#if job.attentionCode === 'ip_guard_blocked'}
+    <div class="mt-4 rounded border border-warning/40 bg-warning/10 p-4 text-sm">
+      <strong>{job.poyoTaskId ? 'Monitoring paused by IP guard.' : job.ipGuardReason === 'unavailable' ? 'IP check unavailable.' : job.ipGuardReason === 'misconfigured' ? 'IP guard settings invalid.' : 'Blocked by IP guard.'}</strong>
+      <p class="mt-1 leading-6">{attentionDescription(job.attentionCode, job.ipGuardReason ?? null, Boolean(job.poyoTaskId))}</p>
+      <a href="/settings#public-ip-guard" class="focus-ring mt-2 inline-block rounded font-semibold underline underline-offset-2">Review IP guard settings</a>
+    </div>
+  {/if}
   {#if feedback}<p class="mt-4 rounded border border-border bg-muted px-4 py-3 text-sm" role="status">{feedback}</p>{/if}
 
   <div class="mt-6 grid gap-8 xl:grid-cols-[minmax(0,1.45fr)_minmax(18rem,0.55fr)]">

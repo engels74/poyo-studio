@@ -1,8 +1,10 @@
+import { safeJobEventAttention, sanitizeDurableJobEventPayload } from './event-attention';
 import type { JobRepository } from './repository';
 import type { JobRecord } from './types';
 
 const encoder = new TextEncoder();
 export function safeJobDto(job: JobRecord) {
+  const attention = safeJobEventAttention(job.attentionCode);
   return {
     id: job.id,
     entryKey: job.entryKey,
@@ -12,7 +14,7 @@ export function safeJobDto(job: JobRecord) {
     remoteStatusRaw: job.remoteStatusRaw,
     remoteStatus: job.remoteStatus,
     failureDomain: job.failureDomain,
-    attentionCode: job.attentionCode,
+    ...attention,
     poyoTaskId: job.poyoTaskId,
     progress: job.progress,
     estimatedCredits: job.estimatedCredits,
@@ -25,6 +27,12 @@ export function safeJobDto(job: JobRecord) {
     updatedAt: job.updatedAt,
     completedAt: job.completedAt
   };
+}
+function safeJobEvent(event: ReturnType<JobRepository['eventsAfter']>[number]) {
+  const sanitized = sanitizeDurableJobEventPayload(event.payload);
+  return sanitized.attention
+    ? { ...event, ...sanitized.attention, payload: sanitized.payload }
+    : { ...event, payload: sanitized.payload };
 }
 function encode(event: string, id: number, data: unknown): Uint8Array {
   return encoder.encode(`event: ${event}\nid: ${id}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -63,7 +71,7 @@ export function initialJobEvents(
   return {
     mode: 'replay',
     cursor: events.at(-1)?.eventId ?? parsed,
-    chunks: events.map((event) => encode('job', event.eventId, event))
+    chunks: events.map((event) => encode('job', event.eventId, safeJobEvent(event)))
   };
 }
 export function createJobEventStream(
@@ -81,7 +89,7 @@ export function createJobEventStream(
       for (const chunk of initial.chunks) controller.enqueue(chunk);
       const poll = () => {
         for (const event of repository.eventsAfter(cursor)) {
-          controller.enqueue(encode('job', event.eventId, event));
+          controller.enqueue(encode('job', event.eventId, safeJobEvent(event)));
           cursor = event.eventId;
         }
       };
