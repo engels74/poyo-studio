@@ -1,4 +1,6 @@
+import type { Database } from 'bun:sqlite';
 import { afterEach, describe, expect, test } from 'bun:test';
+import { renameSync, symlinkSync } from 'node:fs';
 import {
   mkdir,
   readdir,
@@ -243,6 +245,198 @@ describe('local source intake', () => {
     });
     expect(await readdir(paths.temporary)).toEqual([]);
     expect(await Bun.file(destination).bytes()).toEqual(collision);
+  });
+
+  test('UPLOAD-01E registration failure removes the published file before a row exists', async () => {
+    const { paths, database, repository } = await fixture();
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const source = await intakeLocalSource(
+      uploadRequest(png, 'image/png', 'http://127.0.0.1:5173'),
+      paths
+    );
+
+    await expect(
+      repository.register({ ...source, sizeBytes: source.sizeBytes + 1 })
+    ).rejects.toThrow('could not be verified');
+    expect(await Bun.file(source.localPath).exists()).toBe(false);
+    expect(
+      database
+        .query<{ id: string }, [string]>('SELECT id FROM managed_sources WHERE id=?')
+        .get(source.id)
+    ).toBeNull();
+  });
+
+  test('UPLOAD-01F invalid registration IDs do not transfer file custody', async () => {
+    const { paths, database, repository } = await fixture();
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const source = await intakeLocalSource(
+      uploadRequest(png, 'image/png', 'http://127.0.0.1:5173'),
+      paths
+    );
+
+    await expect(repository.register({ ...source, id: '../invalid' })).rejects.toThrow('not valid');
+    expect(await Bun.file(source.localPath).bytes()).toEqual(png);
+    expect(
+      database.query<{ count: number }, []>('SELECT COUNT(*) count FROM managed_sources').get()
+        ?.count
+    ).toBe(0);
+    await unlink(source.localPath);
+  });
+
+  test('UPLOAD-01G pre-insert cleanup refuses outside and symlink paths', async () => {
+    const { paths, database, repository } = await fixture();
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const source = await intakeLocalSource(
+      uploadRequest(png, 'image/png', 'http://127.0.0.1:5173'),
+      paths
+    );
+    const outside = join(paths.root, 'outside-registration.png');
+    await rename(source.localPath, outside);
+
+    await expect(repository.register({ ...source, localPath: outside })).rejects.toBeInstanceOf(
+      AggregateError
+    );
+    expect(await Bun.file(outside).bytes()).toEqual(png);
+    await symlink(outside, source.localPath);
+    await expect(repository.register(source)).rejects.toBeInstanceOf(AggregateError);
+    expect(await Bun.file(outside).bytes()).toEqual(png);
+    expect(
+      database.query<{ count: number }, []>('SELECT COUNT(*) count FROM managed_sources').get()
+        ?.count
+    ).toBe(0);
+  });
+
+  test('UPLOAD-01H ID collisions reclaim only the unregistered intake', async () => {
+    const { paths, database, repository } = await fixture();
+    const pngA = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]);
+    const pngB = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 2]);
+    const sourceA = await intakeLocalSource(
+      uploadRequest(pngA, 'image/png', 'http://127.0.0.1:5173'),
+      paths
+    );
+    const registeredA = await repository.register(sourceA);
+    const sourceB = await intakeLocalSource(
+      uploadRequest(pngB, 'image/png', 'http://127.0.0.1:5173'),
+      paths
+    );
+
+    await expect(repository.register({ ...sourceB, id: sourceA.id })).rejects.toThrow();
+    expect(await Bun.file(sourceB.localPath).exists()).toBe(false);
+    expect(await Bun.file(sourceA.localPath).bytes()).toEqual(pngA);
+    expect(repository.get(sourceA.id)).toEqual(registeredA);
+    expect(
+      database.query<{ count: number }, []>('SELECT COUNT(*) count FROM managed_sources').get()
+        ?.count
+    ).toBe(1);
+  });
+
+  test('UPLOAD-01I relative-path collisions preserve the existing owner and file', async () => {
+    const { paths, database, repository } = await fixture();
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const source = await intakeLocalSource(
+      uploadRequest(png, 'image/png', 'http://127.0.0.1:5173'),
+      paths
+    );
+    const registered = await repository.register(source);
+
+    await expect(repository.register({ ...source, id: crypto.randomUUID() })).rejects.toThrow();
+    expect(await Bun.file(source.localPath).bytes()).toEqual(png);
+    expect(repository.get(source.id)).toEqual(registered);
+    expect(
+      database.query<{ count: number }, []>('SELECT COUNT(*) count FROM managed_sources').get()
+        ?.count
+    ).toBe(1);
+  });
+
+  test('UPLOAD-01J path changes expose registration and cleanup failures in stable order', async () => {
+    const { paths, database } = await fixture();
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const source = await intakeLocalSource(
+      uploadRequest(png, 'image/png', 'http://127.0.0.1:5173'),
+      paths
+    );
+    const outside = join(paths.root, 'outside-path-change.png');
+    await writeFile(outside, png);
+    const retained = `${source.localPath}.retained`;
+    let changed = false;
+    const databaseProxy = new Proxy(database, {
+      get(target, property) {
+        if (property !== 'query') return Reflect.get(target, property, target);
+        return (sql: string) => {
+          const statement = target.query(sql);
+          if (!sql.includes('FROM managed_sources WHERE relative_path=?')) return statement;
+          return new Proxy(statement, {
+            get(statementTarget, statementProperty) {
+              const value = Reflect.get(statementTarget, statementProperty, statementTarget);
+              if (statementProperty !== 'get') {
+                return typeof value === 'function' ? value.bind(statementTarget) : value;
+              }
+              return (...parameters: unknown[]) => {
+                const result = Reflect.apply(value, statementTarget, parameters);
+                if (!changed) {
+                  changed = true;
+                  renameSync(source.localPath, retained);
+                  symlinkSync(outside, source.localPath);
+                }
+                return result;
+              };
+            }
+          });
+        };
+      }
+    }) as Database;
+    const repository = new ManagedSourceRepository(databaseProxy, paths);
+    const registrationError = new Error('Managed source copy could not be verified.');
+    let captured: unknown;
+
+    try {
+      await repository.register({ ...source, sizeBytes: source.sizeBytes + 1 });
+    } catch (error) {
+      captured = error;
+    }
+
+    expect(captured).toBeInstanceOf(AggregateError);
+    const aggregate = captured as AggregateError;
+    expect(aggregate.message).toBe('Managed source registration and cleanup failed.');
+    expect(aggregate.errors).toHaveLength(2);
+    expect(aggregate.errors[0]).toEqual(registrationError);
+    expect(aggregate.errors[1]).toBeInstanceOf(Error);
+    expect((aggregate.errors[1] as Error).message).toMatch(/non-symlink|path changed/);
+    expect(aggregate.cause).toBe(aggregate.errors[0]);
+    expect(await Bun.file(outside).bytes()).toEqual(png);
+    expect(await Bun.file(retained).bytes()).toEqual(png);
+  });
+
+  test('UPLOAD-01K post-insert failures discard the inserted row and its file', async () => {
+    const { paths, database } = await fixture();
+    class FailedGetRepository extends ManagedSourceRepository {
+      override get(): null {
+        return null;
+      }
+    }
+    const repository = new FailedGetRepository(database, paths);
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const source = await intakeLocalSource(
+      uploadRequest(png, 'image/png', 'http://127.0.0.1:5173'),
+      paths
+    );
+
+    await expect(repository.register(source)).rejects.toThrow('registration failed');
+    expect(
+      database
+        .query<{ id: string }, [string]>('SELECT id FROM managed_sources WHERE id=?')
+        .get(source.id)
+    ).toBeNull();
+    expect(await Bun.file(source.localPath).exists()).toBe(false);
+
+    const normalRepository = new ManagedSourceRepository(database, paths);
+    const retained = await intakeLocalSource(
+      uploadRequest(png, 'image/png', 'http://127.0.0.1:5173'),
+      paths
+    );
+    await normalRepository.register(retained);
+    expect(await normalRepository.discardUnreferenced(retained.id)).toBe(true);
+    expect(await Bun.file(retained.localPath).exists()).toBe(false);
   });
 
   test('UPLOAD-02 rejects content whose signature disagrees with its declared type', async () => {

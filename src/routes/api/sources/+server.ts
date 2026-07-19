@@ -8,16 +8,16 @@ import { readMediaPrivacySettings } from '$lib/server/settings/media-privacy-set
 import type { RequestHandler } from './$types';
 
 export const POST: RequestHandler = async ({ request }) => {
-  let sourceId: string | undefined;
+  let registeredSourceId: string | undefined;
   let managedSources: ManagedSourceRepository | undefined;
   try {
     const platform = await getPlatformServices();
     const source = await intakeLocalSource(request, platform.paths, {
       mediaPrivacy: readMediaPrivacySettings(platform.settings)
     });
-    sourceId = source.id;
     managedSources = new ManagedSourceRepository(platform.database, platform.paths);
     const registered = await managedSources.register(source);
+    registeredSourceId = registered.id;
     const localFile = await readVerifiedManagedSourceBlob(registered);
     const client = await createPoyoClient({
       apiKeyManager: platform.apiKey,
@@ -27,20 +27,20 @@ export const POST: RequestHandler = async ({ request }) => {
     const uploaded = await client.upload({
       kind: 'local-file',
       file: localFile,
-      mimeType: source.mimeType,
-      sizeBytes: source.sizeBytes,
-      mediaKind: source.mediaKind,
-      fileName: neutralSourceUploadName(source.id, source.mimeType)
+      mimeType: registered.mimeType,
+      sizeBytes: registered.byteSize,
+      mediaKind: registered.mediaKind,
+      fileName: neutralSourceUploadName(registered.id, registered.mimeType)
     });
     return Response.json(
       {
         source: {
-          id: source.id,
-          name: source.originalName,
-          mediaKind: source.mediaKind,
-          mimeType: source.mimeType,
-          sizeBytes: source.sizeBytes,
-          availability: 'available'
+          id: registered.id,
+          name: registered.originalName,
+          mediaKind: registered.mediaKind,
+          mimeType: registered.mimeType,
+          sizeBytes: registered.byteSize,
+          availability: registered.availability
         },
         upload: {
           url: uploaded.fileUrl,
@@ -51,8 +51,8 @@ export const POST: RequestHandler = async ({ request }) => {
       { status: 201 }
     );
   } catch (error) {
-    if (sourceId && managedSources) {
-      await managedSources.discardUnreferenced(sourceId).catch(() => undefined);
+    if (registeredSourceId && managedSources) {
+      await managedSources.discardUnreferenced(registeredSourceId).catch(() => undefined);
     }
     return jobHttpError(error);
   }
