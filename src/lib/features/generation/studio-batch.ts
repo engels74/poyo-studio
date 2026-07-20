@@ -289,6 +289,7 @@ function isBatchItem(value: unknown, modality: 'image' | 'video'): value is Stud
     boundedString(request.actionId, 64) &&
     UUID_PATTERN.test(request.actionId) &&
     boundedString(request.entryKey, 256) &&
+    (modality !== 'video' || canonicalizeVideoSelection(request.entryKey) !== null) &&
     isRecord(request.values) &&
     isJsonValue(request.values) &&
     (request.values.audioUrl === undefined || isUrl(request.values.audioUrl)) &&
@@ -310,12 +311,13 @@ function safeStoredBatch(batch: StudioBatch): StudioBatch {
   for (const item of stored.items) {
     if (stored.modality === 'video') {
       const selection = canonicalizeVideoSelection(item.request.entryKey);
-      if (!selection) continue;
-      item.request.entryKey = selection.entryKey;
-      if (selection.migrated) {
-        delete item.request.values.aspectRatio;
-        item.automaticFields = item.automaticFields.filter((field) => field !== 'aspectRatio');
-        item.sizeMode = 'resolution';
+      if (selection) {
+        item.request.entryKey = selection.entryKey;
+        if (selection.migrated) {
+          delete item.request.values.aspectRatio;
+          item.automaticFields = item.automaticFields.filter((field) => field !== 'aspectRatio');
+          item.sizeMode = 'resolution';
+        }
       }
     }
     for (const input of item.request.inputs) {

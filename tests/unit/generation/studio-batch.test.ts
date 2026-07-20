@@ -293,6 +293,42 @@ describe('studio batch persistence and state', () => {
     });
   });
 
+  test('BATCH-04 rejects blank video selections without persisting uploaded source details', () => {
+    const item = createBatchItem(
+      {
+        modality: 'video',
+        displayName: 'Invalid video item',
+        sizeMode: 'resolution',
+        automaticFields: [],
+        request: {
+          ...request,
+          entryKey: '   ',
+          values: { prompt: 'Animate' },
+          inputs: [
+            {
+              role: 'reference',
+              source: 'uploaded',
+              mediaKind: 'image',
+              url: 'https://uploads.test/private-source.png',
+              localSourceId: sourceId,
+              metadata: {
+                name: '/Users/alice/private/source.png',
+                expiresAt: '2026-07-18T00:00:00.000Z'
+              }
+            }
+          ]
+        }
+      },
+      { itemId: 'item-1', actionId: request.actionId, now: '2026-07-17T00:00:00.000Z' }
+    );
+    const storageKey = 'poyo-studio-batch:video';
+    const existing = JSON.stringify({ sentinel: true });
+    localStorage.setItem(storageKey, existing);
+
+    expect(writeStudioBatch('video', { version: 1, modality: 'video', items: [item] })).toBe(false);
+    expect(localStorage.getItem(storageKey)).toBe(existing);
+  });
+
   test('BATCH-05 rejects malformed, oversized, and over-capacity storage', () => {
     localStorage.setItem('poyo-studio-batch:image', '{bad');
     expect(readStudioBatch('image')).toBeNull();
