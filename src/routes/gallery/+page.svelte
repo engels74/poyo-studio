@@ -99,7 +99,7 @@ async function setFavorite(jobId: string, favorite: boolean): Promise<void> {
       <button class="focus-ring min-h-9 rounded bg-primary px-3 text-sm font-semibold text-primary-foreground" type="submit">Filter</button>
       <div class="flex flex-wrap gap-2 md:col-span-full">
         <a href={href({ favorite: !data.filters.favorite, cursor: null })} class="focus-ring inline-flex min-h-8 items-center gap-2 rounded border border-border px-3 text-xs font-semibold" aria-current={data.filters.favorite ? 'page' : undefined}><AppIcon name="heart" size={14} /> Favorites</a>
-        {#each data.filterOptions.tags as tag}<a href={href({ tag: data.filters.tag === tag.toLocaleLowerCase() ? '' : tag.toLocaleLowerCase(), cursor: null })} class="focus-ring rounded-full bg-muted px-3 py-1 text-xs font-medium">{tag}</a>{/each}
+        {#each data.filterOptions.tags as tag}<a href={href({ tag: data.filters.tag === tag ? '' : tag, cursor: null })} class="focus-ring rounded-full bg-muted px-3 py-1 text-xs font-medium">{tag}</a>{/each}
         <a href={`/gallery?view=${data.filters.view}`} class="focus-ring ml-auto rounded px-2 py-1 text-xs font-semibold text-muted-foreground hover:text-foreground">Clear filters</a>
       </div>
     </form>

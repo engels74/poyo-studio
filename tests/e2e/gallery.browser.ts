@@ -4,6 +4,7 @@ import { cp, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { chromium, type Locator } from 'playwright';
 import { JobRepository } from '../../src/lib/server/jobs/repository';
+import { LibraryRepository } from '../../src/lib/server/library/repository';
 import { resolveAppPaths } from '../../src/lib/server/platform/app-paths';
 import {
   pageHasNoHorizontalOverflow,
@@ -160,6 +161,7 @@ async function seedGallery(harness: BrowserAppHarness): Promise<SeededGallery> {
       fileName: 'gallery-unavailable.png',
       prompt: 'An unavailable output remains a canonical job fallback.'
     });
+    new LibraryRepository(database).replaceTags(newest.jobId, ['ISTANBUL']);
     return { newest, video, long, unavailable };
   } finally {
     database.exec('PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode=DELETE;');
@@ -232,6 +234,27 @@ test('Gallery viewer preserves context across mixed media, focus, actions and re
     expect(articleText[1]).toContain(labels.video);
     expect(articleText[2]).toContain('Gallery Long Image');
     expect(articleText[3]).toContain(labels.unavailable);
+
+    const tagChip = page.getByRole('link', { name: 'ISTANBUL', exact: true });
+    const tagHref = await tagChip.getAttribute('href');
+    if (!tagHref) throw new Error('Expected the seeded gallery tag link.');
+    expect(new URL(tagHref, harness.url).searchParams.get('tag')).toBe('ISTANBUL');
+
+    await Promise.all([
+      page.waitForURL((url) => url.searchParams.get('tag') === 'ISTANBUL'),
+      tagChip.click()
+    ]);
+    await page.waitForFunction(() => document.querySelectorAll('article').length === 1);
+    expect(await articles.count()).toBe(1);
+    expect((await articles.first().textContent()) ?? '').toContain(labels.newest);
+
+    const activeTagHref = await tagChip.getAttribute('href');
+    if (!activeTagHref) throw new Error('Expected the active gallery tag link.');
+    expect(new URL(activeTagHref, harness.url).searchParams.has('tag')).toBe(false);
+    await Promise.all([page.waitForURL((url) => !url.searchParams.has('tag')), tagChip.click()]);
+    await page.waitForFunction(() => document.querySelectorAll('article').length === 4);
+    expect(await articles.count()).toBe(4);
+
     expect(
       await articles
         .filter({ hasText: labels.newest })
