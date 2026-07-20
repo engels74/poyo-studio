@@ -3,6 +3,7 @@ import {
   assertMediaToolsReady,
   MediaPrerequisiteError,
   probeMediaTools,
+  runMediaProbeCommand,
   type MediaCommandRunner
 } from '../../../src/lib/server/media/media-sanitizer';
 import { MediaToolReadinessService } from '../../../src/lib/server/media/media-tool-readiness';
@@ -103,8 +104,28 @@ describe('media tool readiness', () => {
     ]);
     for (const call of calls) {
       expect(call.timeoutMs).toBe(3_000);
-      expect(call.maxBufferBytes).toBe(16 * 1024);
+      expect(call.maxBufferBytes).toBe(64 * 1024);
     }
+  });
+
+  test('accepts version output above 16 KiB while preserving the 64 KiB probe bound', async () => {
+    const acceptedBytes = 32 * 1024;
+    const versionLine = 'ffmpeg version 8.1.2 Copyright\n';
+    const result = await runMediaProbeCommand({
+      cmd: [
+        'bun',
+        '-e',
+        `const prefix = ${JSON.stringify(versionLine)}; process.stdout.write(prefix + 'x'.repeat(${acceptedBytes} - Buffer.byteLength(prefix)))`
+      ]
+    });
+    expect(result.stdout.byteLength).toBe(acceptedBytes);
+    expect(new TextDecoder().decode(result.stdout)).toStartWith(versionLine);
+
+    await expect(
+      runMediaProbeCommand({
+        cmd: ['bun', '-e', `process.stdout.write('x'.repeat(${64 * 1024 + 1}))`]
+      })
+    ).rejects.toMatchObject({ code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' });
   });
 
   test('blocks only affected protected media with a bounded prerequisite error', async () => {
