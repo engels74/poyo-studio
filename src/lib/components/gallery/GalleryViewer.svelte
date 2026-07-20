@@ -55,6 +55,7 @@ function ignoresArrowShortcut(target: EventTarget | null): boolean {
 
 function handleKeydown(event: KeyboardEvent): void {
   if (!open) return;
+  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
   if (ignoresArrowShortcut(event.target)) return;
   if (event.key === 'ArrowLeft') moveSelection(-1);
   else if (event.key === 'ArrowRight') moveSelection(1);

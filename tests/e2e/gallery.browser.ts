@@ -359,6 +359,36 @@ test('Gallery viewer preserves context across mixed media, focus, actions and re
     await previous.click();
     await expectSelection(dialog, { label: labels.newest, position: '1 of 3', mediaKind: 'image' });
 
+    const modifiedArrowTarget = dialog.getByRole('button', { name: 'Close' });
+    expect(
+      await modifiedArrowTarget.evaluate((button) => {
+        const event = new KeyboardEvent('keydown', {
+          key: 'ArrowRight',
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true
+        });
+        button.dispatchEvent(event);
+        return event.defaultPrevented;
+      })
+    ).toBe(false);
+    await expectSelection(dialog, { label: labels.newest, position: '1 of 3', mediaKind: 'image' });
+    await next.click();
+    expect(
+      await modifiedArrowTarget.evaluate((button) => {
+        const event = new KeyboardEvent('keydown', {
+          key: 'ArrowLeft',
+          altKey: true,
+          bubbles: true,
+          cancelable: true
+        });
+        button.dispatchEvent(event);
+        return event.defaultPrevented;
+      })
+    ).toBe(false);
+    await expectSelection(dialog, { label: labels.video, position: '2 of 3', mediaKind: 'video' });
+    await previous.click();
+
     await page.keyboard.press('ArrowRight');
     await expectSelection(dialog, {
       label: labels.video,
