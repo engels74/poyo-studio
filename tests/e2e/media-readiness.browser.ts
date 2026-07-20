@@ -127,6 +127,46 @@ test('missing tools gate protected files, then sanitization-off permits two rece
   }
 });
 
+test('a preserved-only receipt reports the verified metadata category', async () => {
+  const harness = await startBrowserAppHarness();
+  const browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+
+  try {
+    await page.goto(`${harness.url}/settings#media-privacy`);
+    await page.getByLabel('Remove XMP metadata').uncheck();
+    await page.getByRole('button', { name: 'Save settings' }).click();
+    await page.getByText('Settings saved.', { exact: true }).waitFor();
+
+    const sourcePath = `${harness.temporaryPath}/preserved-xmp.png`;
+    await Bun.write(sourcePath, Bun.file('tests/fixtures/media/tiny.png'));
+    const metadataWrite = Bun.spawnSync({
+      cmd: ['exiftool', '-overwrite_original', '-XMP-dc:Creator=Private Author', sourcePath],
+      stdout: 'pipe',
+      stderr: 'pipe'
+    });
+    expect(metadataWrite.exitCode).toBe(0);
+
+    await page.goto(`${harness.url}/studio/image`);
+    const inputs = await chooseImageEdit(page, 'flux-dev:image-edit');
+    await inputs.getByLabel('Add local file').setInputFiles({
+      name: 'preserved-xmp.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from(await Bun.file(sourcePath).arrayBuffer())
+    });
+
+    await inputs.getByText('Local transfer and Poyo upload completed.', { exact: true }).waitFor();
+    await inputs
+      .getByText('Privacy check complete · 1 metadata category preserved', { exact: true })
+      .waitFor();
+    await inputs.getByText('What changed', { exact: true }).click();
+    await inputs.getByText('Preserved: XMP.', { exact: true }).waitFor();
+  } finally {
+    await browser.close();
+    await harness.cleanup();
+  }
+});
+
 test('upload enforcement re-probes after a ready page load and rejects an outdated tool', async () => {
   const harness = await startBrowserAppHarness({ mediaToolShims: {} });
   const browser = await chromium.launch({ headless: true });

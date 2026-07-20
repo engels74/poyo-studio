@@ -379,6 +379,10 @@ function studioToolIssue(tool: MediaToolReadinessDto): string {
 
 function sanitizationSummary(receipt: MediaSanitizationReceiptDto): string {
   if (!receipt.applied) return 'No metadata cleanup applied';
+  if (!receipt.removedCategories.length && receipt.preservedCategories.length) {
+    const count = receipt.preservedCategories.length;
+    return `Privacy check complete · ${count} metadata ${count === 1 ? 'category' : 'categories'} preserved`;
+  }
   if (!receipt.removedCategories.length) {
     return 'Privacy check complete · No selected metadata was found';
   }
