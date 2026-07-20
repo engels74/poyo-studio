@@ -6,8 +6,12 @@ import {
 import { buildPricingSignature } from '../../../src/lib/features/pricing/estimate';
 import { IMAGE_REGISTRY_VERSION } from '../../../src/lib/features/registry/image-registry';
 import { latestBalance } from '../../../src/lib/server/account/balance';
-import { initialJobEvents, safeJobDto } from '../../../src/lib/server/jobs/events';
-import type { JobRepository } from '../../../src/lib/server/jobs/repository';
+import {
+  decodeEventChunk,
+  initialJobEvents,
+  safeJobDto
+} from '../../../src/lib/server/jobs/events';
+import { JobRepository } from '../../../src/lib/server/jobs/repository';
 import { seedImageRegistry } from '../../../src/lib/server/registry/repository';
 import { createJobFixture } from '../../helpers/job-fixture';
 
@@ -584,5 +588,30 @@ describe('outstanding paid-action projection and safe delivery', () => {
       source: 'manual',
       fetchedAt: expect.any(String)
     });
+  });
+
+  test('uses one canonical timestamp for terminal charge delivery', async () => {
+    const fixture = await createJobFixture();
+    cleanups.push(fixture.cleanup);
+    seedImageRegistry(fixture.database);
+    const base = Date.parse('2026-07-20T12:00:00.000Z');
+    let tick = 0;
+    const repository = new JobRepository(fixture.database, () => new Date(base + tick++));
+    const job = createPricedJob(repository, 'settlement-clock', { credits: 6 });
+    acknowledge(repository, job.id, 'settlement-clock');
+    terminal(repository, job.id, 'settlement-clock', 6);
+
+    const stored = repository.get(job.id);
+    const charge = repository.taskCharge(job.id);
+    if (!stored || !charge) throw new Error('Expected a settled charged job.');
+    expect(stored.lastPolledAt).toBe(charge.settledAt);
+    expect(safeJobDto(stored).taskCharge).toEqual(charge);
+
+    const chunk = initialJobEvents(repository, null).chunks[0];
+    if (!chunk) throw new Error('Expected a snapshot event.');
+    const snapshot = decodeEventChunk(chunk).data as {
+      jobs: Array<{ id: string; taskCharge: unknown }>;
+    };
+    expect(snapshot.jobs.find((candidate) => candidate.id === job.id)?.taskCharge).toEqual(charge);
   });
 });

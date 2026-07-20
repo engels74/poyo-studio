@@ -439,7 +439,8 @@ export class JobRepository extends DatabaseRepository {
   private append(
     job: JobRecord,
     eventType: string,
-    payload: Record<string, unknown> | null = null
+    payload: Record<string, unknown> | null = null,
+    observedAt = this.timestamp()
   ): number {
     return Number(
       this.database
@@ -455,7 +456,7 @@ export class JobRepository extends DatabaseRepository {
           job.failureDomain,
           job.progress,
           JSON.stringify(packDurableJobEventPayload(payload, job.attentionCode)),
-          this.timestamp()
+          observedAt
         ).lastInsertRowid
     );
   }
@@ -1222,10 +1223,15 @@ export class JobRepository extends DatabaseRepository {
               settledAt: now
             })
           : null;
-        this.append(job, 'status.observed', {
-          observedProgress: status.progress,
-          ...(taskCharge ? { taskCharge } : {})
-        });
+        this.append(
+          job,
+          'status.observed',
+          {
+            observedProgress: status.progress,
+            ...(taskCharge ? { taskCharge } : {})
+          },
+          now
+        );
       }
       if (malformed)
         this.append(job, 'output_set.malformed', {
