@@ -40,10 +40,20 @@ describe('media tool readiness', () => {
     ['imagemagick', 'magick', 'Version: ImageMagick 8.0.0 Q16', 'ready', '8.0.0'],
     ['ffmpeg', 'ffmpeg', 'ffmpeg version 8.0.1 Copyright', 'outdated', '8.0.1'],
     ['ffmpeg', 'ffmpeg', 'ffmpeg version 8.1 Copyright', 'ready', '8.1'],
+    ['ffmpeg', 'ffmpeg', 'ffmpeg version n8.0.1 Copyright', 'outdated', '8.0.1'],
+    ['ffmpeg', 'ffmpeg', 'ffmpeg version n8.1.2 Copyright', 'ready', '8.1.2'],
+    ['ffmpeg', 'ffmpeg', 'ffmpeg version n8.1.2-29-g1234 Copyright', 'ready', '8.1.2'],
     ['ffmpeg', 'ffmpeg', 'ffmpeg version 9.0-static Copyright', 'ready', '9.0'],
+    ['ffmpeg', 'ffmpeg', 'ffmpeg version N-125705-g1234 Copyright', 'error', null],
+    ['ffmpeg', 'ffmpeg', 'ffmpeg version git-2026-07-20-1234 Copyright', 'error', null],
     ['ffprobe', 'ffprobe', 'ffprobe version 8.0 Copyright', 'outdated', '8.0'],
     ['ffprobe', 'ffprobe', 'ffprobe version 8.1.2 Copyright', 'ready', '8.1.2'],
-    ['ffprobe', 'ffprobe', 'ffprobe version 9.0 Copyright', 'ready', '9.0']
+    ['ffprobe', 'ffprobe', 'ffprobe version n8.0.1 Copyright', 'outdated', '8.0.1'],
+    ['ffprobe', 'ffprobe', 'ffprobe version n8.1.2 Copyright', 'ready', '8.1.2'],
+    ['ffprobe', 'ffprobe', 'ffprobe version n8.1.2-29-g1234 Copyright', 'ready', '8.1.2'],
+    ['ffprobe', 'ffprobe', 'ffprobe version 9.0-static Copyright', 'ready', '9.0'],
+    ['ffprobe', 'ffprobe', 'ffprobe version N-125705-g1234 Copyright', 'error', null],
+    ['ffprobe', 'ffprobe', 'ffprobe version git-2026-07-20-1234 Copyright', 'error', null]
   ] as const)(
     'classifies %s version output',
     async (tool, executable, output, status, detectedVersion) => {

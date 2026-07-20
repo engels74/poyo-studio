@@ -241,14 +241,14 @@ const MEDIA_TOOLS: MediaToolDefinition[] = [
     label: 'FFmpeg',
     minimumVersion: '8.1',
     command: ['ffmpeg', '-version'],
-    versionPattern: /ffmpeg version (\d+(?:\.\d+)+)/
+    versionPattern: /^ffmpeg version n?(\d+(?:\.\d+)+)(?=$|[\s-])/
   },
   {
     name: 'ffprobe',
     label: 'ffprobe',
     minimumVersion: '8.1',
     command: ['ffprobe', '-version'],
-    versionPattern: /ffprobe version (\d+(?:\.\d+)+)/
+    versionPattern: /^ffprobe version n?(\d+(?:\.\d+)+)(?=$|[\s-])/
   }
 ];
 
