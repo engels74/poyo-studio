@@ -2162,7 +2162,7 @@ onMount(() => {
               </div>
             {/if}
             <div class="flex flex-wrap items-center justify-center gap-2">
-              <LinkButton href={`/jobs?selected=${resultJob.id}`} variant="outline" class="border-stage-border bg-stage-elevated text-stage-foreground hover:bg-stage-border">View job</LinkButton>
+              <LinkButton href={`/jobs?selected=${resultJob.id}`} target="_blank" rel="noopener noreferrer" variant="outline" class="border-stage-border bg-stage-elevated text-stage-foreground hover:bg-stage-border">View job</LinkButton>
               <a href={current.mediaUrl} target="_blank" rel="noopener" class="focus-ring inline-flex min-h-9 items-center gap-2 rounded-[var(--radius)] border border-stage-border bg-stage-elevated px-3.5 text-sm font-semibold text-stage-foreground hover:bg-stage-border">Open</a>
               <a href={current.mediaUrl} download={current.fileName ?? ''} class="focus-ring inline-flex min-h-9 items-center gap-2 rounded-[var(--radius)] border border-stage-border bg-stage-elevated px-3.5 text-sm font-semibold text-stage-foreground hover:bg-stage-border">Download</a>
               <Button variant="ghost" class="text-stage-muted hover:bg-stage-elevated hover:text-stage-foreground" onclick={dismissResultPreview}>Remix</Button>
@@ -2228,7 +2228,7 @@ onMount(() => {
             </div>
           {/if}
           <div class="mt-6 flex flex-wrap justify-center gap-2">
-            <LinkButton href={`/jobs?selected=${activeJob.id}`} variant="outline" class="border-stage-border bg-stage-elevated text-stage-foreground hover:bg-stage-border">View job details</LinkButton>
+            <LinkButton href={`/jobs?selected=${activeJob.id}`} target="_blank" rel="noopener noreferrer" variant="outline" class="border-stage-border bg-stage-elevated text-stage-foreground hover:bg-stage-border">View job details</LinkButton>
             {#if activeJob.localPhase === 'complete'}<Button variant="ghost" class="text-stage-muted hover:bg-stage-elevated hover:text-stage-foreground" onclick={() => (activeJob = null)}>Remix settings</Button>{/if}
           </div>
         </div>
