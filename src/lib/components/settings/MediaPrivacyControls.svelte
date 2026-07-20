@@ -68,7 +68,7 @@ let unavailableTools = $derived(mediaTools.tools.filter((tool) => tool.status !=
               : 'Media protection needs setup'
             : 'Media protection is off'}
         </p>
-        <p class="mt-1 text-xs leading-5 text-muted-foreground">
+        <p class="mt-1 text-xs leading-5 text-foreground">
           {mediaPrivacy.sanitizeLocalMedia
             ? allReady
               ? 'Ready to clean metadata from image and video uploads.'
