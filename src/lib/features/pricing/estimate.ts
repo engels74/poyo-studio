@@ -265,11 +265,10 @@ export function boundedObservedMedian(
     .sort((left, right) => left - right);
   if (eligible.length < minimum) return null;
   const middle = Math.floor(eligible.length / 2);
-  const median =
-    eligible.length % 2 === 1
-      ? eligible[middle]
-      : ((eligible[middle - 1] ?? 0) + (eligible[middle] ?? 0)) / 2;
-  return median === undefined ? null : median;
+  if (eligible.length % 2 === 1) return eligible[middle] ?? null;
+  const lower = eligible[middle - 1];
+  const upper = eligible[middle];
+  return lower === undefined || upper === undefined ? null : (lower + upper) / 2;
 }
 
 export function estimateObservedMedian(
