@@ -1778,7 +1778,7 @@ onMount(() => {
                   <p>
                     {receipt.orientationNormalized
                       ? 'Image orientation normalized.'
-                      : 'Image orientation was already standard.'}
+                      : 'Image orientation was not changed.'}
                   </p>
                 {/if}
               </div>

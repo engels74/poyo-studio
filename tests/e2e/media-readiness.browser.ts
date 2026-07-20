@@ -127,21 +127,28 @@ test('missing tools gate protected files, then sanitization-off permits two rece
   }
 });
 
-test('a preserved-only receipt reports the verified metadata category', async () => {
+test('a preserved-only receipt reports verified metadata and unchanged orientation', async () => {
   const harness = await startBrowserAppHarness();
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
 
   try {
     await page.goto(`${harness.url}/settings#media-privacy`);
+    await page.getByLabel('Remove EXIF metadata').uncheck();
     await page.getByLabel('Remove XMP metadata').uncheck();
     await page.getByRole('button', { name: 'Save settings' }).click();
     await page.getByText('Settings saved.', { exact: true }).waitFor();
 
-    const sourcePath = `${harness.temporaryPath}/preserved-xmp.png`;
+    const sourcePath = `${harness.temporaryPath}/preserved-metadata.png`;
     await Bun.write(sourcePath, Bun.file('tests/fixtures/media/tiny.png'));
     const metadataWrite = Bun.spawnSync({
-      cmd: ['exiftool', '-overwrite_original', '-XMP-dc:Creator=Private Author', sourcePath],
+      cmd: [
+        'exiftool',
+        '-overwrite_original',
+        '-Orientation#=6',
+        '-XMP-dc:Creator=Private Author',
+        sourcePath
+      ],
       stdout: 'pipe',
       stderr: 'pipe'
     });
@@ -150,17 +157,18 @@ test('a preserved-only receipt reports the verified metadata category', async ()
     await page.goto(`${harness.url}/studio/image`);
     const inputs = await chooseImageEdit(page, 'flux-dev:image-edit');
     await inputs.getByLabel('Add local file').setInputFiles({
-      name: 'preserved-xmp.png',
+      name: 'preserved-metadata.png',
       mimeType: 'image/png',
       buffer: Buffer.from(await Bun.file(sourcePath).arrayBuffer())
     });
 
     await inputs.getByText('Local transfer and Poyo upload completed.', { exact: true }).waitFor();
     await inputs
-      .getByText('Privacy check complete · 1 metadata category preserved', { exact: true })
+      .getByText('Privacy check complete · 2 metadata categories preserved', { exact: true })
       .waitFor();
     await inputs.getByText('What changed', { exact: true }).click();
-    await inputs.getByText('Preserved: XMP.', { exact: true }).waitFor();
+    await inputs.getByText('Preserved: EXIF, XMP.', { exact: true }).waitFor();
+    await inputs.getByText('Image orientation was not changed.', { exact: true }).waitFor();
   } finally {
     await browser.close();
     await harness.cleanup();
