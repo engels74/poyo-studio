@@ -250,6 +250,10 @@ export function normalizeVideoRequest(
       throw new RegistryValidationError([
         `Use the guided field for verified parameter ${override.key}.`
       ]);
+    if (entry.publicModelId === 'wan2.7-image-to-video' && override.key === 'aspect_ratio')
+      throw new RegistryValidationError([
+        'Expert override aspect_ratio is not supported for Wan 2.7 image-to-video.'
+      ]);
     if (!isStrictJsonValue(override.value))
       throw new RegistryValidationError([`Expert override ${override.key} must be strict JSON.`]);
     input[override.key] = override.value;

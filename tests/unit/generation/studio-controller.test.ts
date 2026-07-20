@@ -12,7 +12,8 @@ import {
   readPaidSubmissionResponse,
   sizeModes,
   valuesWithRoleInputs,
-  visibleFields
+  visibleFields,
+  workflowLabel
 } from '../../../src/lib/features/generation/studio-controller';
 import { IMAGE_REGISTRY_ENTRIES } from '../../../src/lib/features/registry/image-registry';
 import { VIDEO_REGISTRY_ENTRIES } from '../../../src/lib/features/registry/video-registry';
@@ -43,7 +44,7 @@ describe('registry-driven studio controller', () => {
       const fresh = initialGuidedValues(seedream);
       expect(fresh).toMatchObject({
         aspectRatio: '1:1',
-        resolution: '2K'
+        resolution: '1K'
       });
       expect(fresh).not.toHaveProperty('n');
       expect(seedream.fields.map((field) => field.key)).not.toContain('n');
@@ -151,6 +152,31 @@ describe('registry-driven studio controller', () => {
     const role = imageEntry('flux-2-pro-edit:image-edit').inputRoles[0];
     if (!role) throw new Error('Missing reference role.');
     expect(mediaAccept(role)).toBe('image/jpeg,image/png,image/gif,image/webp');
+  });
+
+  test('STUDIO-05 includes remote audio roles in the paid request envelope', () => {
+    const entry = videoEntry('wan2.7-image-to-video:image-to-video');
+    expect(workflowLabel(entry.workflow)).toBe('Animate an image');
+    const request = createJobRequest(
+      '019b0000-0000-7000-8000-000000000002',
+      entry,
+      { duration: 2, resolution: '720p' },
+      [],
+      {
+        audio: [
+          {
+            id: 'audio',
+            role: 'audio',
+            source: 'remote',
+            url: 'https://assets.test/soundtrack.mp3',
+            name: 'soundtrack.mp3',
+            mediaKind: 'audio'
+          }
+        ]
+      }
+    );
+    expect(request.values.audioUrl).toBe('https://assets.test/soundtrack.mp3');
+    expect(request.inputs).toEqual([]);
   });
 
   test('STUDIO-06 persists browser-probed media metadata with the submitted input record', () => {

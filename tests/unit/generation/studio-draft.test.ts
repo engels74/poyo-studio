@@ -77,6 +77,30 @@ describe('studio draft persistence', () => {
     expect(readStudioDraft('video')?.entryKey).toBe('kling-video');
   });
 
+  test('canonicalizes the legacy WAN video draft and removes its retired ratio state', () => {
+    localStorage.setItem(
+      'poyo-studio-draft:video',
+      JSON.stringify({
+        ...draft,
+        entryKey: 'wan2.7-image-to-video:frame-to-video',
+        values: {
+          ...values,
+          modality: 'video',
+          guided: { prompt: 'Animate', aspectRatio: '16:9', resolution: '720p' }
+        },
+        roleInputs: {},
+        automaticFields: ['aspectRatio'],
+        sizeMode: 'aspect-ratio'
+      })
+    );
+    expect(readStudioDraft('video')).toMatchObject({
+      entryKey: 'wan2.7-image-to-video:image-to-video',
+      sizeMode: 'resolution',
+      automaticFields: [],
+      values: { guided: { prompt: 'Animate', resolution: '720p' } }
+    });
+  });
+
   test('rejects a wrong version', () => {
     localStorage.setItem('poyo-studio-draft:image', JSON.stringify({ ...draft, version: 4 }));
     expect(readStudioDraft('image')).toBeNull();

@@ -10,7 +10,7 @@ import type {
   VideoWorkflow
 } from './types';
 
-export const VIDEO_REGISTRY_VERSION = 'video-2026-07-19.1';
+export const VIDEO_REGISTRY_VERSION = 'video-2026-07-20.1';
 export const VIDEO_VERIFIED_AT = OFFICIAL_SOURCE_MANIFEST.verifiedAt;
 const videoFormats = ['video/mp4', 'video/webm', 'video/quicktime'];
 const imageFormats = ['image/jpeg', 'image/png', 'image/webp'];
@@ -497,7 +497,7 @@ const pages: Page[] = [
     family: 'Wan 2.7 Video',
     models: [
       { id: 'wan2.7-text-to-video', workflows: ['text-to-video'] },
-      { id: 'wan2.7-image-to-video', workflows: ['frame-to-video'] },
+      { id: 'wan2.7-image-to-video', workflows: ['image-to-video'] },
       { id: 'wan2.7-reference-to-video', workflows: ['reference-to-video'] },
       { id: 'wan2.7-edit-video', workflows: ['video-edit'] }
     ],
@@ -602,17 +602,17 @@ function rolesFor(page: Page, modelId: string, workflow: VideoWorkflow): InputRo
   if (workflow === 'text-to-video' && page.family === 'Wan 2.7 Video')
     return [mediaRole('audio', 'audioUrl', 'audio_url', 'audio', false, 0, 1)];
   if (workflow === 'image-to-video') {
-    if (['Hailuo 2.3', 'Kling 2.1', 'Kling 2.5 Turbo Pro'].includes(page.family))
-      return [mediaRole('start-frame', 'startImageUrl', 'start_image_url', 'image', true, 1, 1)];
-    return [mediaRole('image', 'imageUrls', 'image_urls', 'image', true, 1, 1)];
-  }
-  if (workflow === 'frame-to-video') {
     if (page.family === 'Wan 2.7 Video')
       return [
         mediaRole('start-frame', 'imageUrls', 'image_urls', 'image', true, 1, 2),
         mediaRole('source-video', 'videoUrl', 'video_url', 'video', false, 0, 1),
         mediaRole('audio', 'audioUrl', 'audio_url', 'audio', false, 0, 1)
       ];
+    if (['Hailuo 2.3', 'Kling 2.1', 'Kling 2.5 Turbo Pro'].includes(page.family))
+      return [mediaRole('start-frame', 'startImageUrl', 'start_image_url', 'image', true, 1, 1)];
+    return [mediaRole('image', 'imageUrls', 'image_urls', 'image', true, 1, 1)];
+  }
+  if (workflow === 'frame-to-video') {
     if (page.family === 'Hailuo 02')
       return [
         mediaRole('start-frame', 'imageUrls', 'image_urls', 'image', true, 1, 1),
@@ -772,7 +772,7 @@ function effectiveDurations(page: Page, modelId: string, workflow: VideoWorkflow
   if (page.family === 'Hailuo 02' && modelId.endsWith('-pro')) return [6] as const;
   if (page.family === 'Wan 2.7 Video') {
     if (workflow === 'text-to-video') return [5, 10, 15] as const;
-    if (workflow === 'frame-to-video') return { min: 2, max: 15 } as const;
+    if (workflow === 'image-to-video') return { min: 2, max: 15 } as const;
     if (workflow === 'reference-to-video') return { min: 2, max: 10 } as const;
     return { min: 0, max: 10 } as const;
   }
@@ -790,6 +790,16 @@ function effectiveResolutions(page: Page, modelId: string) {
   return page.resolutions ?? null;
 }
 
+function effectiveRatios(page: Page, modelId: string, workflow: VideoWorkflow) {
+  if (
+    page.family === 'Wan 2.7 Video' &&
+    modelId === 'wan2.7-image-to-video' &&
+    workflow === 'image-to-video'
+  )
+    return null;
+  return page.ratios ?? null;
+}
+
 function fieldsFor(page: Page, modelId: string, workflow: VideoWorkflow): FieldDefinition[] {
   const isMultiShot = workflow === 'multi-shot-video';
   const promptExcluded =
@@ -799,7 +809,7 @@ function fieldsFor(page: Page, modelId: string, workflow: VideoWorkflow): FieldD
   const promptOptional =
     (page.family.startsWith('Happy Horse') &&
       ['image-to-video', 'video-edit'].includes(workflow)) ||
-    (page.family === 'Wan 2.7 Video' && workflow === 'frame-to-video');
+    (page.family === 'Wan 2.7 Video' && workflow === 'image-to-video');
   const durations = effectiveDurations(page, modelId, workflow);
   const resolutions = effectiveResolutions(page, modelId);
   const omitDuration =
@@ -847,12 +857,13 @@ function fieldsFor(page: Page, modelId: string, workflow: VideoWorkflow): FieldD
         })
       );
   }
-  if (!omitRatio && page.ratios)
+  const ratios = effectiveRatios(page, modelId, workflow);
+  if (!omitRatio && ratios)
     fields.push(
       field('aspectRatio', 'aspect_ratio', 'enum', 'common', {
         required: page.family === 'Kling 2.6' || page.family === 'Seedance 1.5 Pro',
         default: page.ratioDefault,
-        enum: page.ratios
+        enum: ratios
       })
     );
   if (resolutions)
@@ -970,6 +981,7 @@ function entry(page: Page, model: Model, workflow: VideoWorkflow): VideoRegistry
   const excluded = workflow === 'avatar-video';
   const durations = effectiveDurations(page, model.id, workflow);
   const resolutions = effectiveResolutions(page, model.id);
+  const ratios = effectiveRatios(page, model.id, workflow);
   const fields = fieldsFor(page, model.id, workflow);
   const fixedInput: Record<string, unknown> = {};
   if (workflow === 'multi-shot-video') fixedInput.multi_shots = true;
@@ -994,7 +1006,7 @@ function entry(page: Page, model: Model, workflow: VideoWorkflow): VideoRegistry
       formats: videoFormats,
       durations,
       resolutions,
-      aspectRatios: page.ratios ?? null,
+      aspectRatios: ratios,
       seed: Boolean(page.seed),
       safetyChecker: Boolean(page.safety),
       audio: page.sound

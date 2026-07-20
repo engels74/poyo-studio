@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "registryVersion": "image-2026-07-15.3+video-2026-07-19.1",
-  "verifiedAt": "2026-07-15T21:58:12Z",
+  "registryVersion": "image-2026-07-20.1+video-2026-07-20.1",
+  "verifiedAt": "2026-07-20T03:35:52Z",
   "hashAlgorithm": "sha256",
-  "corpusSha256": "4b2e5e25abcace6e553df8021a0069ce14f23af336db7a8ba6ca4e764eba1483",
+  "corpusSha256": "f28d9d39cc265dbac7d07734d80cf5723db46508b4d1d360b08233409cadabee",
   "sources": [
     {
       "id": "audit:legacy:sora-2",
@@ -3448,9 +3448,9 @@
       "url": "https://docs.poyo.ai/api-manual/image-series/seedream-5-0-pro.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 9775,
-      "sha256": "a46c1aa9446186d769f0590e17b884b2ab73b6f29819cf24c1ede1dcea7233ac",
-      "canonicalSha256": "a46c1aa9446186d769f0590e17b884b2ab73b6f29819cf24c1ede1dcea7233ac",
+      "byteLength": 9902,
+      "sha256": "63fa74f3f92d79f181a5f52425a7335afbaccd5434cc3f354ff4da4b4b7ef969",
+      "canonicalSha256": "63fa74f3f92d79f181a5f52425a7335afbaccd5434cc3f354ff4da4b4b7ef969",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -3515,14 +3515,14 @@
           {
             "path": "SubmitRequest.input.resolution",
             "type": "string",
-            "required": false,
+            "required": true,
             "enum": ["1K", "2K"],
-            "default": "2K"
+            "default": "1K"
           },
           {
             "path": "SubmitRequest.input.size",
             "type": "string",
-            "required": false,
+            "required": true,
             "enum": ["1:1", "4:3", "3:4", "16:9", "9:16", "2:3", "3:2", "21:9"],
             "default": "1:1"
           },
@@ -3571,9 +3571,9 @@
       "url": "https://docs.poyo.ai/api-manual/image-series/seedream-5-0-pro.md",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 12126,
-      "sha256": "3df54a38c3abb9bbb5d85cb541a06aef64b7f0ff2f44b934a1d31fd5ab5ef55d",
-      "canonicalSha256": "3df54a38c3abb9bbb5d85cb541a06aef64b7f0ff2f44b934a1d31fd5ab5ef55d",
+      "byteLength": 12468,
+      "sha256": "ca2389a0c28923452f16a2fe40f37455808738c693889f3a418c18550e480425",
+      "canonicalSha256": "ca2389a0c28923452f16a2fe40f37455808738c693889f3a418c18550e480425",
       "canonicalization": "raw-body-v1",
       "structured": null
     },
@@ -9202,9 +9202,9 @@
       "reviewNote": "Public catalogue only; no pricing-estimate API contract. Drift uses canonical visible main text rather than volatile HTML metadata.",
       "status": "unstructured",
       "httpStatus": 200,
-      "byteLength": 760895,
-      "sha256": "f4ead487e31ca436c40ed67de47ab9b63969f26c172cb67452c0c4c0d42147c4",
-      "canonicalSha256": "5a8104a68dd0568faedc83b7fd8e0346227d54087f1a036d34809494dfeb084f",
+      "byteLength": 765568,
+      "sha256": "12a66d7ae96df2ee2b4ab67f87c4b4e9186424eafb14482777c1e25fa649db6c",
+      "canonicalSha256": "d34eeacc98865e3d3dfd5f38a934fcc915a07adbf12c00cba3198ee637d14c5d",
       "canonicalization": "pricing-visible-text-v1",
       "structured": null
     }

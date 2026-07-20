@@ -45,11 +45,11 @@ describe('studio automatic sizing', () => {
     expect(
       resolvedGuidedValues(
         model,
-        { prompt: 'Keep the subject', aspectRatio: '1:1', resolution: '2K' },
+        { prompt: 'Keep the subject', aspectRatio: '1:1', resolution: '1K' },
         portraitReference(),
         fields
       )
-    ).toMatchObject({ prompt: 'Keep the subject', aspectRatio: '9:16', resolution: '2K' });
+    ).toMatchObject({ prompt: 'Keep the subject', aspectRatio: '9:16', resolution: '1K' });
   });
 
   test('SIZE-02 preserves genuine upstream auto ahead of local source resolution', () => {
@@ -71,7 +71,7 @@ describe('studio automatic sizing', () => {
       kind: 'registry-default'
     });
     expect(automaticFieldChoice(defaulted, 'resolution', {})).toMatchObject({
-      value: '2K',
+      value: '1K',
       kind: 'registry-default'
     });
 

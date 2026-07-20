@@ -149,12 +149,14 @@ describe('audited image registry', () => {
       expect(entry.fields.find((field) => field.key === 'aspectRatio')).toMatchObject({
         apiKey: 'size',
         enum: ratios,
-        default: '1:1'
+        default: '1:1',
+        required: true
       });
       expect(entry.fields.find((field) => field.key === 'resolution')).toMatchObject({
         apiKey: 'resolution',
         enum: ['1K', '2K'],
-        default: '2K'
+        default: '1K',
+        required: true
       });
       expect(entry.fields.find((field) => field.key === 'n')).toBeUndefined();
       expect(entry.output.counts).toBeNull();
@@ -171,7 +173,7 @@ describe('audited image registry', () => {
       }).request.input;
       expect(minimum).toMatchObject({
         size: '1:1',
-        resolution: '2K',
+        resolution: '1K',
         enable_safety_checker: false
       });
       expect(minimum).not.toHaveProperty('n');
@@ -196,9 +198,9 @@ describe('audited image registry', () => {
       normalizeImageRequest('seedream-5.0-pro:text-to-image', {
         prompt: 'dream',
         aspectRatio: '16:9',
-        resolution: '1K'
+        resolution: '2K'
       }).request.input
-    ).toMatchObject({ size: '16:9', resolution: '1K' });
+    ).toMatchObject({ size: '16:9', resolution: '2K' });
 
     const nonProExpert = normalizeImageRequest(
       'flux-2-pro:text-to-image',

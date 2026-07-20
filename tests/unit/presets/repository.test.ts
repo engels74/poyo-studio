@@ -125,4 +125,79 @@ describe('durable studio presets', () => {
       fixture.database.close();
     }
   });
+
+  test('PRESET-04 canonicalizes legacy WAN rows while rejecting contradictory pairs', () => {
+    const fixture = repository();
+    try {
+      const values: PresetValues = {
+        version: 1,
+        modality: 'video',
+        guided: { prompt: 'Animate', aspectRatio: '16:9', resolution: '720p', duration: 2 },
+        expertOverrides: [],
+        inputRoles: []
+      };
+      fixture.database
+        .query(
+          `INSERT INTO presets(id,registry_version,entry_key,workflow,name,description,values_version,values_json,created_at,updated_at)
+           VALUES (?,?,?,?,?,?,1,?,?,?)`
+        )
+        .run(
+          'legacy-wan',
+          'video-legacy',
+          'wan2.7-image-to-video:frame-to-video',
+          'frame-to-video',
+          'Legacy WAN',
+          null,
+          JSON.stringify(values),
+          '2026-07-14T00:00:00.000Z',
+          '2026-07-15T00:00:00.000Z'
+        );
+      fixture.database
+        .query(
+          `INSERT INTO presets(id,registry_version,entry_key,workflow,name,description,values_version,values_json,created_at,updated_at)
+           VALUES (?,?,?,?,?,?,1,?,?,?)`
+        )
+        .run(
+          'contradictory-wan',
+          'video-current',
+          'wan2.7-image-to-video:image-to-video',
+          'frame-to-video',
+          'Contradictory WAN',
+          null,
+          JSON.stringify(values),
+          '2026-07-14T00:00:00.000Z',
+          '2026-07-15T00:00:00.000Z'
+        );
+
+      expect(fixture.repository.get('legacy-wan')).toMatchObject({
+        entryKey: 'wan2.7-image-to-video:image-to-video',
+        workflow: 'image-to-video',
+        values: { guided: { prompt: 'Animate', resolution: '720p', duration: 2 } }
+      });
+      expect(fixture.repository.get('contradictory-wan')).toBeNull();
+      expect(fixture.repository.list()).toHaveLength(1);
+      const saved = fixture.repository.save({
+        entryKey: 'wan2.7-image-to-video:frame-to-video',
+        name: 'Saved legacy WAN',
+        values
+      });
+      expect(saved).toMatchObject({
+        entryKey: 'wan2.7-image-to-video:image-to-video',
+        workflow: 'image-to-video',
+        values: { guided: { prompt: 'Animate', resolution: '720p', duration: 2 } }
+      });
+      expect(
+        fixture.database
+          .query<{ entry_key: string; workflow: string }, [string]>(
+            'SELECT entry_key,workflow FROM presets WHERE id=?'
+          )
+          .get(saved.id)
+      ).toEqual({
+        entry_key: 'wan2.7-image-to-video:image-to-video',
+        workflow: 'image-to-video'
+      });
+    } finally {
+      fixture.database.close();
+    }
+  });
 });
