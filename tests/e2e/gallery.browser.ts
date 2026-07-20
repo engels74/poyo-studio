@@ -270,6 +270,25 @@ test('Gallery viewer preserves context across mixed media, focus, actions and re
     expect(await overviewVideo.getAttribute('preload')).toBe('none');
     expect(await overviewVideo.evaluate((video: HTMLVideoElement) => video.controls)).toBe(false);
 
+    await page.evaluate((favoritePath) => {
+      const originalFetch = window.fetch;
+      window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const requestUrl = input instanceof Request ? input.url : input.toString();
+        if (new URL(requestUrl, window.location.href).pathname === favoritePath) {
+          window.fetch = originalFetch;
+          return new Response(null, { status: 503 });
+        }
+        return originalFetch(input, init);
+      }) as typeof window.fetch;
+    }, `/api/library/${seeded.newest.jobId}/favorite`);
+    const favoriteButton = newestArticle.getByRole('button', { name: 'Add to favorites' });
+    await favoriteButton.click();
+    await page.getByRole('status').filter({ hasText: 'Favorite update failed.' }).waitFor();
+    expect(await favoriteButton.isEnabled()).toBe(true);
+    expect(await favoriteButton.getAttribute('aria-pressed')).toBe('false');
+    expect(issues.consoleErrors).toEqual([]);
+    expect(issues.pageErrors).toEqual([]);
+
     const originalTrigger = newestArticle
       .getByRole('button', { name: `View image ${labels.newest}`, exact: true })
       .first();

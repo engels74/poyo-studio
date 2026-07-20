@@ -14,6 +14,7 @@ import type { PageData } from './$types';
 
 let { data }: { data: PageData } = $props();
 let pendingFavorite = $state<string | null>(null);
+let favoriteFeedback = $state('');
 let viewerOpen = $state(false);
 let selectedOutputId = $state<string | null>(null);
 let viewerTrigger = $state<HTMLElement | null>(null);
@@ -50,6 +51,7 @@ function href(overrides: Record<string, string | boolean | null>): string {
 
 async function setFavorite(jobId: string, favorite: boolean): Promise<void> {
   pendingFavorite = jobId;
+  favoriteFeedback = '';
   try {
     const response = await fetch(`/api/library/${jobId}/favorite`, {
       method: 'POST',
@@ -58,6 +60,8 @@ async function setFavorite(jobId: string, favorite: boolean): Promise<void> {
     });
     if (!response.ok) throw new Error('Favorite update failed.');
     await invalidateAll();
+  } catch {
+    favoriteFeedback = 'Favorite update failed.';
   } finally {
     pendingFavorite = null;
   }
@@ -99,6 +103,8 @@ async function setFavorite(jobId: string, favorite: boolean): Promise<void> {
         <a href={`/gallery?view=${data.filters.view}`} class="focus-ring ml-auto rounded px-2 py-1 text-xs font-semibold text-muted-foreground hover:text-foreground">Clear filters</a>
       </div>
     </form>
+
+    {#if favoriteFeedback}<p class="mt-4 rounded border border-border bg-muted px-4 py-3 text-sm" role="status">{favoriteFeedback}</p>{/if}
 
     {#if data.page.items.length}
       <div class={data.filters.view === 'grid' ? 'mt-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-3' : 'mt-3 divide-y divide-border'}>
