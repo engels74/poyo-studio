@@ -549,6 +549,25 @@ test('Gallery viewer preserves context across mixed media, focus, actions and re
     expect(await dialog.getByRole('button', { name: 'Close' }).isVisible()).toBe(true);
     await page.keyboard.press('Escape');
 
+    const fallbackFocusTarget = page.getByRole('link', { name: 'Grid view' });
+    const disconnectedTrigger = page
+      .locator('article')
+      .filter({ hasText: labels.newest })
+      .getByRole('button', { name: `View image ${labels.newest}`, exact: true })
+      .first();
+    await fallbackFocusTarget.focus();
+    await disconnectedTrigger.evaluate((element: HTMLButtonElement) => element.click());
+    await dialog.waitFor();
+    await page.waitForFunction(() =>
+      document.querySelector('[role="dialog"]')?.contains(document.activeElement)
+    );
+    await disconnectedTrigger.evaluate((element) => element.remove());
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'detached' });
+    expect(
+      await fallbackFocusTarget.evaluate((element) => document.activeElement === element)
+    ).toBe(true);
+
     expect(await unavailableArticle.locator('button[aria-label^="View "]').count()).toBe(0);
     expect(
       await unavailableArticle.getByRole('link', { name: 'Open job' }).getAttribute('href')

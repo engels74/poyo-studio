@@ -63,10 +63,11 @@ function handleKeydown(event: KeyboardEvent): void {
 }
 
 function restoreTrigger(event: Event): void {
-  event.preventDefault();
   const target = triggerElement;
   triggerElement = null;
-  if (target?.isConnected) target.focus();
+  if (!target?.isConnected) return;
+  event.preventDefault();
+  target.focus();
 }
 
 $effect(() => {
