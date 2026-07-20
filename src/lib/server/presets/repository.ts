@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite';
 import type { PresetRecord, PresetValues } from '../../features/presets/types';
 import { IMAGE_REGISTRY, IMAGE_REGISTRY_ENTRIES } from '../../features/registry/image-registry';
 import { VIDEO_REGISTRY, VIDEO_REGISTRY_ENTRIES } from '../../features/registry/video-registry';
+import { canonicalizeVideoSelection } from '../../features/registry/video-selection';
 import { DatabaseRepository } from '../platform/repository';
 
 type PresetRow = {
@@ -66,16 +67,20 @@ function assertPresetValues(values: PresetValues): void {
   if (JSON.stringify(values).length > 256 * 1024) throw new Error('Preset values are too large.');
 }
 
-function mapPreset(row: PresetRow): PresetRecord {
+function mapPreset(row: PresetRow): PresetRecord | null {
+  const selection = canonicalizeVideoSelection(row.entry_key, row.workflow);
+  if (!selection) return null;
+  const values = JSON.parse(row.values_json) as PresetValues;
+  if (selection.migrated) delete values.guided.aspectRatio;
   return {
     id: row.id,
     registryVersion: row.registry_version,
-    entryKey: row.entry_key,
-    workflow: row.workflow,
+    entryKey: selection.entryKey,
+    workflow: selection.workflow ?? row.workflow,
     name: row.name,
     description: row.description,
     valuesVersion: 1,
-    values: JSON.parse(row.values_json) as PresetValues,
+    values,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -93,7 +98,10 @@ export class PresetRepository extends DatabaseRepository {
     return this.database
       .query<PresetRow, []>('SELECT * FROM presets ORDER BY updated_at DESC, name')
       .all()
-      .map(mapPreset);
+      .flatMap((row) => {
+        const preset = mapPreset(row);
+        return preset ? [preset] : [];
+      });
   }
 
   get(id: string): PresetRecord | null {
@@ -111,7 +119,11 @@ export class PresetRepository extends DatabaseRepository {
     if (description && description.length > 500)
       throw new Error('Preset description is limited to 500 characters.');
     assertPresetValues(input.values);
-    const metadata = entryMetadata(input.entryKey);
+    const selection = canonicalizeVideoSelection(input.entryKey);
+    const entryKey = selection?.entryKey ?? input.entryKey;
+    const values = structuredClone(input.values);
+    if (selection?.migrated) delete values.guided.aspectRatio;
+    const metadata = entryMetadata(entryKey);
     const existing = input.id ? this.get(input.id) : null;
     if (input.id && !existing) throw new Error('Preset not found.');
     const id = existing?.id ?? crypto.randomUUID();
@@ -125,11 +137,11 @@ export class PresetRepository extends DatabaseRepository {
       .run(
         id,
         metadata.registryVersion,
-        input.entryKey,
+        entryKey,
         metadata.workflow,
         name,
         description,
-        JSON.stringify(input.values),
+        JSON.stringify(values),
         existing?.createdAt ?? timestamp,
         timestamp
       );

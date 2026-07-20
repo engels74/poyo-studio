@@ -250,15 +250,21 @@ export function createJobRequest(
   expertOverrides: ExpertOverride[],
   roleInputs: Record<string, StudioRoleInput[]> = {}
 ): StudioCreateJobRequest {
+  const audioRoleInputs = Object.fromEntries(
+    entry.inputRoles
+      .filter((role) => role.mediaKind === 'audio')
+      .map((role) => [role.role, roleInputs[role.role] ?? []])
+  );
   return {
     actionId,
     entryKey: entry.key,
-    values: cloneJson(guided),
+    values: valuesWithRoleInputs(entry, guided, audioRoleInputs) as Record<string, unknown>,
     expertOverrides: cloneJson(expertOverrides),
     inputs: Object.values(roleInputs)
       .flat()
-      .filter((input): input is StudioRoleInput & { mediaKind: 'image' | 'video' } =>
-        ['image', 'video'].includes(input.mediaKind)
+      .filter(
+        (input): input is StudioRoleInput & { mediaKind: 'image' | 'video' } =>
+          input.mediaKind === 'image' || input.mediaKind === 'video'
       )
       .map((input) => ({
         role: input.role,

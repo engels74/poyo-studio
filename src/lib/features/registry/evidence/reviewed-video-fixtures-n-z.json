@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "registryVersion": "video-2026-07-19.1",
-  "reviewedAt": "2026-07-15T21:58:12Z",
+  "registryVersion": "video-2026-07-20.1",
+  "reviewedAt": "2026-07-20T03:35:52Z",
   "workflows": [
     {
       "entryKey": "omni-flash:text-to-video",
@@ -6665,7 +6665,7 @@
       ]
     },
     {
-      "entryKey": "wan2.7-image-to-video:frame-to-video",
+      "entryKey": "wan2.7-image-to-video:image-to-video",
       "status": "current",
       "source": {
         "pageSlug": "wan-2-7-video",
@@ -6674,7 +6674,7 @@
       },
       "schema": {
         "publicModelId": "wan2.7-image-to-video",
-        "workflow": "frame-to-video",
+        "workflow": "image-to-video",
         "fields": [
           {
             "key": "prompt",
@@ -6694,15 +6694,6 @@
             "default": 2,
             "min": 2,
             "max": 15
-          },
-          {
-            "key": "aspectRatio",
-            "apiKey": "aspect_ratio",
-            "kind": "enum",
-            "level": "common",
-            "required": false,
-            "default": "16:9",
-            "enum": ["16:9", "9:16", "1:1", "4:3", "3:4"]
           },
           {
             "key": "resolution",
@@ -6776,7 +6767,7 @@
             "max": 15
           },
           "resolutions": ["720p", "1080p"],
-          "aspectRatios": ["16:9", "9:16", "1:1", "4:3", "3:4"],
+          "aspectRatios": null,
           "seed": true,
           "safetyChecker": true,
           "audio": "string-setting"
@@ -6796,7 +6787,6 @@
           "values": {
             "prompt": "studio video",
             "duration": 2,
-            "aspectRatio": "16:9",
             "resolution": "720p",
             "seed": 0,
             "enableSafetyChecker": false,
@@ -6808,7 +6798,6 @@
             "input": {
               "prompt": "studio video",
               "duration": 2,
-              "aspect_ratio": "16:9",
               "resolution": "720p",
               "seed": 0,
               "enable_safety_checker": false,
@@ -6821,7 +6810,6 @@
           "values": {
             "prompt": "studio video",
             "duration": 15,
-            "aspectRatio": "3:4",
             "resolution": "1080p",
             "seed": 2147483647,
             "enableSafetyChecker": true,
@@ -6833,7 +6821,6 @@
             "input": {
               "prompt": "studio video",
               "duration": 15,
-              "aspect_ratio": "3:4",
               "resolution": "1080p",
               "seed": 2147483647,
               "enable_safety_checker": true,
@@ -6841,21 +6828,13 @@
               "image_urls": ["https://assets.example/start-frame-0.png"]
             }
           },
-          "coveredFields": [
-            "duration",
-            "aspectRatio",
-            "resolution",
-            "seed",
-            "enableSafetyChecker",
-            "multiShots"
-          ]
+          "coveredFields": ["duration", "resolution", "seed", "enableSafetyChecker", "multiShots"]
         },
         "invalid": {
           "label": "required start-frame input",
           "values": {
             "prompt": "studio video",
             "duration": 2,
-            "aspectRatio": "16:9",
             "resolution": "720p",
             "seed": 0,
             "enableSafetyChecker": false,

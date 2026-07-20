@@ -355,7 +355,38 @@ describe('reviewed video conditional adapters', () => {
         audioUrl: 'https://assets.example/narration.mp3'
       }).request.input.audio_url
     ).toBe('https://assets.example/narration.mp3');
-    const image = 'wan2.7-image-to-video:frame-to-video';
+    const image = 'wan2.7-image-to-video:image-to-video';
+    const imageEntry = videoEntry(image);
+    expect(imageEntry.workflow).toBe('image-to-video');
+    expect(imageEntry.inputRoles.map((role) => role.role)).toEqual([
+      'start-frame',
+      'source-video',
+      'audio'
+    ]);
+    expect(imageEntry.output).toMatchObject({
+      durations: { min: 2, max: 15 },
+      resolutions: ['720p', '1080p'],
+      aspectRatios: null,
+      seed: true,
+      safetyChecker: true
+    });
+    expect(imageEntry.fields.map((field) => field.key)).toEqual(
+      expect.arrayContaining([
+        'prompt',
+        'duration',
+        'resolution',
+        'seed',
+        'enableSafetyChecker',
+        'multiShots'
+      ])
+    );
+    expect(imageEntry.fields.map((field) => field.key)).not.toContain('aspectRatio');
+    expect(
+      VIDEO_REGISTRY_ENTRIES.filter((entry) => entry.publicModelId === 'wan2.7-image-to-video')
+    ).toHaveLength(1);
+    expect(
+      VIDEO_REGISTRY_ENTRIES.some((entry) => entry.key === 'wan2.7-image-to-video:frame-to-video')
+    ).toBe(false);
     const imageWithoutPrompt = minimum(image);
     delete imageWithoutPrompt.prompt;
     expect(
@@ -369,6 +400,52 @@ describe('reviewed video conditional adapters', () => {
       video_url: 'https://assets.example/motion.mp4',
       audio_url: 'https://assets.example/soundtrack.mp3'
     });
+    expect(normalizeVideoRequest(image, minimum(image)).request.input).not.toHaveProperty(
+      'aspect_ratio'
+    );
+    expect(
+      normalizeVideoRequest(image, {
+        ...minimum(image),
+        imageUrls: ['https://assets.example/start.png', 'https://assets.example/end.png'],
+        duration: 15,
+        resolution: '1080p',
+        seed: 2147483647,
+        enableSafetyChecker: true,
+        multiShots: true
+      }).request.input
+    ).toMatchObject({
+      image_urls: ['https://assets.example/start.png', 'https://assets.example/end.png'],
+      duration: 15,
+      resolution: '1080p',
+      seed: 2147483647,
+      enable_safety_checker: true,
+      multi_shots: true
+    });
+    expect(() => normalizeVideoRequest(image, { ...minimum(image), aspectRatio: '16:9' })).toThrow(
+      'aspectRatio is not supported'
+    );
+    expect(() =>
+      normalizeVideoRequest(image, {
+        ...minimum(image),
+        imageUrls: [
+          'https://assets.example/start.png',
+          'https://assets.example/end.png',
+          'https://assets.example/extra.png'
+        ]
+      })
+    ).toThrow('supports at most 2 inputs');
+    expect(() => normalizeVideoRequest(image, { ...minimum(image), duration: 1 })).toThrow(
+      'below minimum'
+    );
+    expect(() => normalizeVideoRequest(image, { ...minimum(image), duration: 16 })).toThrow(
+      'exceeds maximum'
+    );
+    expect(() => normalizeVideoRequest(image, { ...minimum(image), resolution: '480p' })).toThrow(
+      'resolution is unsupported'
+    );
+    expect(() =>
+      normalizeVideoRequest(image, minimum(image), [{ key: 'aspect_ratio', value: '16:9' }])
+    ).toThrow('aspect_ratio is not supported');
     for (const key of [
       'wan2.7-reference-to-video:reference-to-video',
       'wan2.7-edit-video:video-edit'

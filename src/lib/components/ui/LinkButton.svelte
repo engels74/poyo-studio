@@ -1,16 +1,19 @@
 <script lang="ts">
 import type { Snippet } from 'svelte';
+import type { HTMLAnchorAttributes } from 'svelte/elements';
 
 type Variant = 'primary' | 'secondary' | 'outline' | 'ghost';
 
 interface Props {
   children: Snippet;
   href: string;
+  target?: HTMLAnchorAttributes['target'];
+  rel?: HTMLAnchorAttributes['rel'];
   variant?: Variant;
   class?: string;
 }
 
-let { children, href, variant = 'secondary', class: className = '' }: Props = $props();
+let { children, href, target, rel, variant = 'secondary', class: className = '' }: Props = $props();
 
 const variants: Record<Variant, string> = {
   primary: 'border-primary bg-primary text-primary-foreground hover:brightness-95',
@@ -25,6 +28,6 @@ let classes = $derived(
 );
 </script>
 
-<a {href} class={classes}>
+<a {href} {target} {rel} class={classes}>
   {@render children()}
 </a>

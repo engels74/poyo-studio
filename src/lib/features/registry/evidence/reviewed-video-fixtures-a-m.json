@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "registryVersion": "video-2026-07-19.1",
-  "reviewedAt": "2026-07-15T21:58:12Z",
+  "registryVersion": "video-2026-07-20.1",
+  "reviewedAt": "2026-07-20T03:35:52Z",
   "workflows": [
     {
       "entryKey": "grok-imagine:text-to-video",

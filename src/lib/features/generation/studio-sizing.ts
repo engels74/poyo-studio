@@ -85,7 +85,7 @@ export function automaticFieldChoice(
       }
     }
     return {
-      available: !field.required,
+      available: field.default !== undefined || !field.required,
       label: 'Automatic (choose a measured source or ratio)',
       kind: 'source-unavailable',
       description:

@@ -10,6 +10,7 @@ import {
   type Locator,
   type Page
 } from 'playwright';
+import supportedPricingSignatures from '../fixtures/pricing/supported-signatures.json';
 import {
   type BrowserAppHarness,
   type CleanupStep,
@@ -548,7 +549,7 @@ async function assertSeedreamProSizeControls(page: Page, submitCount: () => numb
   expect(
     await outputPanel
       .getByRole('group', { name: 'Resolution' })
-      .getByRole('radio', { name: 'Automatic (2K)' })
+      .getByRole('radio', { name: 'Automatic (1K)' })
       .isChecked()
   ).toBe(true);
   expect(await outputPanel.getByLabel('N', { exact: true }).count()).toBe(0);
@@ -605,6 +606,23 @@ async function createMultiOutputImage(page: Page): Promise<void> {
   await page.getByRole('heading', { name: 'Generated image result' }).waitFor({
     timeout: 15_000
   });
+}
+
+async function assertSafeStudioJobLink(page: Page, link: Locator): Promise<void> {
+  const href = await link.getAttribute('href');
+  if (!href) throw new Error('The studio job action did not expose its destination.');
+  expect(await link.getAttribute('target')).toBe('_blank');
+  expect(await link.getAttribute('rel')).toBe('noopener noreferrer');
+
+  const originalUrl = page.url();
+  const popupPromise = page.waitForEvent('popup');
+  await link.click();
+  const popup = await popupPromise;
+  await popup.waitForLoadState('domcontentloaded');
+  expect(popup.url()).toBe(new URL(href, originalUrl).href);
+  expect(await popup.evaluate(() => window.opener === null)).toBe(true);
+  expect(page.url()).toBe(originalUrl);
+  await popup.close();
 }
 
 async function assertPrimaryRoutesAccessible(page: Page, baseUrl: string): Promise<void> {
@@ -1192,6 +1210,150 @@ serial(
   }
 );
 
+serial('G005 observed costs and outstanding spend remain clearly classified', async () => {
+  const harness = await startBrowserAppHarness();
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const page = await context.newPage();
+  const compactText = async (locator: Locator) =>
+    (await locator.innerText()).replaceAll(/\s+/g, ' ').trim();
+  const estimateVector = supportedPricingSignatures.find(
+    (vector) => vector.modelId === 'seedream-5.0-pro' && vector.workflow === 'text-to-image'
+  );
+  if (!estimateVector || !('n' in estimateVector.normalizedInput)) {
+    throw new Error('Reviewed Seedream 5 Pro pricing vector is missing.');
+  }
+  const estimateCredits = estimateVector.expectedCredits;
+  const estimateUnits = estimateVector.normalizedInput.n;
+  const estimateSignature = estimateVector.estimateSignature;
+  let estimateMode: 'available' | 'unavailable' = 'available';
+  try {
+    await page.route('**/api/requests/preview', async (route) => {
+      const response = await route.fetch();
+      const body = (await response.json()) as Record<string, unknown>;
+      if (response.ok()) {
+        body.estimate =
+          estimateMode === 'available'
+            ? {
+                classification: 'estimate',
+                credits: estimateCredits,
+                signature: estimateSignature,
+                basis: {
+                  unit: estimateVector.unit,
+                  creditsPerUnit: estimateVector.creditsPerUnit,
+                  units: estimateUnits
+                },
+                provenance: 'blend',
+                sourceVerifiedAt: '2026-07-20T00:00:00.000Z',
+                expiresAt: '2026-07-21T00:00:00.000Z',
+                freshness: 'fresh',
+                availability: 'available'
+              }
+            : {
+                classification: 'estimate',
+                credits: null,
+                signature: null,
+                basis: null,
+                provenance: 'published',
+                sourceVerifiedAt: null,
+                expiresAt: null,
+                freshness: 'stale',
+                availability: 'unavailable'
+              };
+      }
+      await route.fulfill({ response, json: body });
+    });
+
+    await page.goto(`${harness.url}/studio/image`);
+    const commands = generationCommands(page);
+    expect(await compactText(commands)).toContain(
+      'Estimated credits: unavailable · complete setup to generate'
+    );
+    expect(await commands.getByRole('button', { name: 'Generate image' }).isDisabled()).toBe(true);
+
+    const inspector = page.locator('#parameter-inspector');
+    await selectRadioValue(inspector, estimateVector.workflow);
+    await selectRadioValue(inspector, `${estimateVector.modelId}:${estimateVector.workflow}`);
+    const selectedPrompt = await showInspectorSection(inspector, 'Prompt');
+    await selectedPrompt
+      .getByRole('textbox', { name: /^Prompt/ })
+      .fill('A quiet blue observatory above a calm northern sea');
+    await waitForValidRequest(page);
+    expect(await compactText(commands)).toContain(
+      `Estimated credits: ${estimateCredits} · ${estimateUnits} output × ${estimateVector.creditsPerUnit} cr · published + observed · fresh`
+    );
+    expect(await compactText(commands)).toContain('Outstanding projection: 0 credits · 0 actions');
+    expect(await commands.getByRole('button', { name: 'Generate image' }).isEnabled()).toBe(true);
+
+    await commands.getByRole('button', { name: 'Add to batch' }).click();
+    await waitUntil(
+      () =>
+        page.evaluate(
+          (signature) =>
+            localStorage.getItem('poyo-studio-batch:image')?.includes(signature) ?? false,
+          estimateSignature
+        ),
+      'The production-shaped estimate was not persisted with the batch.'
+    );
+    await page.reload();
+    await commands.getByRole('button', { name: 'Review batch (1)' }).waitFor();
+    await commands.getByRole('button', { name: 'Review batch (1)' }).click();
+    const batch = page.getByRole('dialog', { name: 'Image batch' });
+    await batch.waitFor();
+    expect(await compactText(batch)).toContain(
+      `Estimated ready batch: ${estimateCredits} credits · 1 item`
+    );
+    expect(await compactText(batch)).toContain('Actual batch total: no settled Poyo task charges');
+    await page.keyboard.press('Escape');
+
+    estimateMode = 'unavailable';
+    const prompt = await showInspectorSection(page.locator('#parameter-inspector'), 'Prompt');
+    await prompt
+      .getByRole('textbox', { name: /^Prompt/ })
+      .fill('The same valid action with unavailable pricing');
+    await waitUntil(
+      async () =>
+        (await compactText(commands)).includes(
+          'Estimated credits: unavailable · generation remains enabled'
+        ),
+      'The fixed preview route did not switch the valid request to unavailable pricing.'
+    );
+    expect(await compactText(commands)).toContain(
+      'Estimated credits: unavailable · generation remains enabled'
+    );
+    expect(await commands.getByRole('button', { name: 'Generate image' }).isEnabled()).toBe(true);
+
+    await commands.getByRole('button', { name: 'Generate image' }).click();
+    await page
+      .getByRole('heading', { name: 'Generated image result' })
+      .waitFor({ timeout: 15_000 });
+    await waitUntil(
+      async () => (await compactText(commands)).includes('Charged: 3 credits · Poyo task'),
+      'The first exact Poyo task charge did not reach the command dock.'
+    );
+    expect(await compactText(commands)).toContain('Outstanding projection: 0 credits · 0 actions');
+
+    harness.mock.queueOutcome('held');
+    await prompt.getByRole('textbox', { name: /^Prompt/ }).fill('A second unpriced queued action');
+    await waitForValidRequest(page);
+    await commands.getByRole('button', { name: 'Generate image' }).click();
+    await waitUntil(async () => {
+      const text = await compactText(commands);
+      return !text.includes('Charged:') && /Outstanding projection: .* · 1 action/.test(text);
+    }, 'A newer active action did not replace the prior charge and enter the outstanding projection.');
+    harness.mock.releaseHeldTasks();
+    await waitUntil(
+      async () => (await compactText(commands)).includes('Charged: 3 credits · Poyo task'),
+      'The second exact Poyo task charge did not replace the active projection.',
+      15_000
+    );
+  } finally {
+    await context.close().catch(() => undefined);
+    await browser.close().catch(() => undefined);
+    await harness.cleanup();
+  }
+});
+
 serial('STUDIO-UX setup tabs and command guards stay usable across surfaces', async () => {
   const harness = await startBrowserAppHarness({
     freshOnboarding: true,
@@ -1494,6 +1656,10 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     await page.getByRole('heading', { name: 'Poyo is generating' }).waitFor();
     expect(await page.getByRole('progressbar').getAttribute('value')).toBe('42');
     expect(await repeatedGenerate.isEnabled()).toBe(true);
+    await assertSafeStudioJobLink(
+      page,
+      page.getByRole('link', { name: 'View job details', exact: true })
+    );
 
     harness.mock.queueOutcome('success');
     await restoredPrompt
@@ -1536,6 +1702,7 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
         )?.includes(laterJobId) ?? false,
       'The latest successful preview did not promote the later generation.'
     );
+    await assertSafeStudioJobLink(page, page.getByRole('link', { name: 'View job', exact: true }));
 
     harness.mock.releaseHeldTasks();
     await waitUntil(
@@ -1619,6 +1786,7 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     if (!videoJobHref) throw new Error('The generated video did not expose its job detail link.');
     const videoJobId = new URL(videoJobHref, harness.url).searchParams.get('selected');
     if (!videoJobId) throw new Error('The generated video job link did not identify its job.');
+    await assertSafeStudioJobLink(page, page.getByRole('link', { name: 'View job', exact: true }));
     expect(harness.mock.tasks.size).toBe(imageSubmitCountAfterEdit + 5);
     expect(
       harness.mock.requests.filter((request) => request.pathname === '/api/generate/submit')
@@ -2114,8 +2282,8 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     harness.mock.queueOutcome('failed');
     await imageBatchCommands.getByRole('button', { name: 'Review batch (2)' }).click();
     let imageBatchDialog = page.getByRole('dialog', { name: 'Image batch' });
-    await imageBatchDialog.getByText('Batch landscape study · 16:9 · 2K').waitFor();
-    await imageBatchDialog.getByText('Batch portrait study · 9:16 · 2K').waitFor();
+    await imageBatchDialog.getByText('Batch landscape study · 16:9 · 1K').waitFor();
+    await imageBatchDialog.getByText('Batch portrait study · 9:16 · 1K').waitFor();
     page.once('dialog', async (dialog) => {
       expect(dialog.message()).toContain('replace the current setup draft');
       await dialog.accept();
@@ -2131,7 +2299,7 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     await imageBatchCommands.getByText('Updated the batch item.').waitFor();
     await imageBatchCommands.getByRole('button', { name: 'Review batch (2)' }).click();
     imageBatchDialog = page.getByRole('dialog', { name: 'Image batch' });
-    await imageBatchDialog.getByText('Batch landscape study revised · 16:9 · 2K').waitFor();
+    await imageBatchDialog.getByText('Batch landscape study revised · 16:9 · 1K').waitFor();
     await imageBatchDialog.getByRole('button', { name: 'Duplicate' }).first().click();
     await page.getByRole('dialog', { name: 'Image batch' }).getByText('Item 3').waitFor();
     await page

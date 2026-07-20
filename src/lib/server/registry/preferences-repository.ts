@@ -1,4 +1,9 @@
 import type { Database } from 'bun:sqlite';
+import {
+  canonicalizeVideoSelection,
+  LEGACY_WAN_IMAGE_TO_VIDEO_KEY,
+  WAN_IMAGE_TO_VIDEO_KEY
+} from '../../features/registry/video-selection';
 import { DatabaseRepository } from '../platform/repository';
 
 export interface ModelPreference {
@@ -16,8 +21,9 @@ type PreferenceRow = {
 };
 
 function mapPreference(row: PreferenceRow): ModelPreference {
+  const selection = canonicalizeVideoSelection(row.entry_key);
   return {
-    entryKey: row.entry_key,
+    entryKey: selection?.entryKey ?? row.entry_key,
     favorite: row.favorite === 1,
     favoritedAt: row.favorited_at,
     lastUsedAt: row.last_used_at
@@ -33,16 +39,26 @@ export class ModelPreferenceRepository extends DatabaseRepository {
   }
 
   list(): ModelPreference[] {
-    return this.database
+    const preferences = this.database
       .query<PreferenceRow, []>(
         'SELECT entry_key,favorite,favorited_at,last_used_at FROM model_preferences ORDER BY favorite DESC,last_used_at DESC'
       )
-      .all()
+      .all();
+    const canonicalWan = preferences.find((row) => row.entry_key === WAN_IMAGE_TO_VIDEO_KEY);
+    const mapped = preferences
+      .filter(
+        (row) => row.entry_key !== LEGACY_WAN_IMAGE_TO_VIDEO_KEY || canonicalWan === undefined
+      )
       .map(mapPreference);
+    return mapped.filter(
+      (preference, index) =>
+        mapped.findIndex((candidate) => candidate.entryKey === preference.entryKey) === index
+    );
   }
 
   save(entryKey: string, update: { favorite?: boolean; used?: boolean }): ModelPreference {
-    if (!entryKey.trim() || entryKey.length > 512)
+    const canonicalEntryKey = canonicalizeVideoSelection(entryKey)?.entryKey ?? entryKey;
+    if (!canonicalEntryKey.trim() || canonicalEntryKey.length > 512)
       throw new Error('Model preference key is invalid.');
     const now = this.now().toISOString();
     this.database
@@ -54,7 +70,7 @@ export class ModelPreferenceRepository extends DatabaseRepository {
            last_used_at=COALESCE(?,model_preferences.last_used_at)`
       )
       .run(
-        entryKey,
+        canonicalEntryKey,
         update.favorite ? 1 : 0,
         update.favorite ? now : null,
         update.used ? now : null,
@@ -68,7 +84,7 @@ export class ModelPreferenceRepository extends DatabaseRepository {
       .query<PreferenceRow, [string]>(
         'SELECT entry_key,favorite,favorited_at,last_used_at FROM model_preferences WHERE entry_key=?'
       )
-      .get(entryKey);
+      .get(canonicalEntryKey);
     if (!row) throw new Error('Model preference could not be saved.');
     return mapPreference(row);
   }

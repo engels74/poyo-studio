@@ -8,7 +8,7 @@ import type {
 } from './types';
 import { OFFICIAL_SOURCE_MANIFEST, officialModelSources } from './evidence/source-evidence';
 
-export const IMAGE_REGISTRY_VERSION = 'image-2026-07-15.3';
+export const IMAGE_REGISTRY_VERSION = 'image-2026-07-20.1';
 export const IMAGE_VERIFIED_AT = OFFICIAL_SOURCE_MANIFEST.verifiedAt;
 const ratios8 = ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3', 'auto'];
 const seedreamRatios = ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3', '21:9'];
@@ -321,7 +321,7 @@ const pages: Page[] = [
     ratios: ['1:1', '4:3', '3:4', '16:9', '9:16', '2:3', '3:2', '21:9'],
     ratioDefault: '1:1',
     res: ['1K', '2K'],
-    resDefault: '2K',
+    resDefault: '1K',
     refs: [1, 10],
     formats: ['jpeg', 'png'],
     safety: true
@@ -390,6 +390,7 @@ function entry(page: Page, id: string, mode: 'base' | 'edit'): ImageRegistryEntr
       ? page.ratios?.filter((ratio) => ratio !== 'auto')
       : page.ratios;
   const unionSize = ['Seedream 4.5', 'Seedream 5.0 Lite'].includes(page.family);
+  const requiresSeparateSizeAndResolution = page.family === 'Seedream 5.0 Pro';
   const fields: FieldDefinition[] = [
     prompt(...(page.prompt ?? [1, 5000])),
     ...(effectiveRatios
@@ -400,6 +401,7 @@ function entry(page: Page, id: string, mode: 'base' | 'edit'): ImageRegistryEntr
             kind: 'enum' as const,
             level: 'common' as const,
             enum: effectiveRatios,
+            ...(requiresSeparateSizeAndResolution ? { required: true } : {}),
             ...(page.ratioDefault ? { default: page.ratioDefault } : {})
           }
         ]
@@ -412,6 +414,7 @@ function entry(page: Page, id: string, mode: 'base' | 'edit'): ImageRegistryEntr
             kind: 'enum' as const,
             level: 'common' as const,
             enum: page.res,
+            ...(requiresSeparateSizeAndResolution ? { required: true } : {}),
             ...(page.resDefault ? { default: page.resDefault } : {})
           }
         ]

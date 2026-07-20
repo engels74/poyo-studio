@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "registryVersion": "image-2026-07-15.3",
-  "reviewedAt": "2026-07-15T21:58:12Z",
+  "registryVersion": "image-2026-07-20.1",
+  "reviewedAt": "2026-07-20T03:35:52Z",
   "workflows": [
     {
       "entryKey": "flux-2-pro:text-to-image",
@@ -4897,6 +4897,7 @@
             "kind": "enum",
             "level": "common",
             "enum": ["1:1", "4:3", "3:4", "16:9", "9:16", "2:3", "3:2", "21:9"],
+            "required": true,
             "default": "1:1"
           },
           {
@@ -4905,7 +4906,8 @@
             "kind": "enum",
             "level": "common",
             "enum": ["1K", "2K"],
-            "default": "2K"
+            "required": true,
+            "default": "1K"
           },
           {
             "key": "outputFormat",
@@ -4949,7 +4951,7 @@
             "input": {
               "prompt": "studio image",
               "size": "1:1",
-              "resolution": "2K",
+              "resolution": "1K",
               "enable_safety_checker": false
             }
           }
@@ -5011,6 +5013,7 @@
             "kind": "enum",
             "level": "common",
             "enum": ["1:1", "4:3", "3:4", "16:9", "9:16", "2:3", "3:2", "21:9"],
+            "required": true,
             "default": "1:1"
           },
           {
@@ -5019,7 +5022,8 @@
             "kind": "enum",
             "level": "common",
             "enum": ["1K", "2K"],
-            "default": "2K"
+            "required": true,
+            "default": "1K"
           },
           {
             "key": "outputFormat",
@@ -5073,7 +5077,7 @@
             "input": {
               "prompt": "studio image",
               "size": "1:1",
-              "resolution": "2K",
+              "resolution": "1K",
               "enable_safety_checker": false,
               "image_urls": ["https://assets.example/reference-0.png"]
             }

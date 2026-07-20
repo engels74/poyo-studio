@@ -1,4 +1,5 @@
 import type { PresetValues } from '../presets/types';
+import { canonicalizeVideoSelection } from '../registry/video-selection';
 import type { StudioEntry, StudioRoleInput } from './contracts';
 import type { AutomaticFieldKey } from './studio-sizing';
 import { retainedSourceUrl, type SizeMode } from './studio-controller';
@@ -149,7 +150,7 @@ export function readStudioDraft(modality: 'image' | 'video'): StudioDraft | null
     ) {
       return null;
     }
-    const automaticFields =
+    let automaticFields =
       Array.isArray(parsed.automaticFields) &&
       parsed.automaticFields.every((key) => AUTOMATIC_FIELDS.includes(key as AutomaticFieldKey))
         ? (parsed.automaticFields as AutomaticFieldKey[])
@@ -157,12 +158,22 @@ export function readStudioDraft(modality: 'image' | 'video'): StudioDraft | null
     if (!automaticFields) return null;
     const roleInputs = parsed.roleInputs;
     if (!isValidStoredRoleInputs(roleInputs)) return null;
+    const selection =
+      modality === 'video'
+        ? canonicalizeVideoSelection(parsed.entryKey)
+        : { entryKey: parsed.entryKey, migrated: false };
+    if (!selection) return null;
+    const values = JSON.parse(JSON.stringify(parsed.values)) as PresetValues;
+    if (selection.migrated) {
+      delete values.guided.aspectRatio;
+      automaticFields = automaticFields.filter((field) => field !== 'aspectRatio');
+    }
     return {
       version: 3,
-      entryKey: parsed.entryKey,
-      sizeMode: parsed.sizeMode as SizeMode,
+      entryKey: selection.entryKey,
+      sizeMode: selection.migrated ? 'resolution' : (parsed.sizeMode as SizeMode),
       automaticFields,
-      values: parsed.values,
+      values,
       roleInputs
     };
   } catch {
@@ -238,6 +249,18 @@ export function restoreStudioDraftRoleInputs(
 export function writeStudioDraft(modality: 'image' | 'video', draft: StudioDraft): void {
   try {
     const safeDraft = JSON.parse(JSON.stringify(draft)) as StudioDraft;
+    if (modality === 'video') {
+      const selection = canonicalizeVideoSelection(safeDraft.entryKey);
+      if (!selection) return;
+      safeDraft.entryKey = selection.entryKey;
+      if (selection.migrated) {
+        delete safeDraft.values.guided.aspectRatio;
+        safeDraft.automaticFields = safeDraft.automaticFields.filter(
+          (field) => field !== 'aspectRatio'
+        );
+        safeDraft.sizeMode = 'resolution';
+      }
+    }
     safeDraft.values.inputRoles = safeDraft.values.inputRoles.map((input) =>
       input.source === 'uploaded' ? { ...input, urls: [] } : input
     );
