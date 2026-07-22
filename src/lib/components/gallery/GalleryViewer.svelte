@@ -619,8 +619,9 @@ $effect(() => {
 
 $effect(() => {
   if (!viewport || !readyImage) return;
-  viewport.addEventListener('wheel', wheel, { passive: false });
-  return () => viewport?.removeEventListener('wheel', wheel);
+  const target = viewport;
+  target.addEventListener('wheel', wheel, { passive: false });
+  return () => target.removeEventListener('wheel', wheel);
 });
 </script>
 
