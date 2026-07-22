@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "provenance": {
+    "license": "CC0-1.0",
+    "source": "Generated locally from synthetic test patterns; no third-party media is included.",
+    "generationNotes": "PNG files are lossless RGB checkerboard color bands written with Python standard-library struct/zlib (filter byte 0, zlib level 9). The MP4 is a synthetic FFmpeg testsrc2 stream with no audio. Regenerate deliberately and update every manifest checksum/size and this validator's expectations together."
+  },
+  "fixtures": [
+    {
+      "path": "gallery-landscape.png",
+      "mediaType": "image/png",
+      "sha256": "3a1ad58bf0130ceff68176a8d9618b16653055019af88679c607e470abeb86d6",
+      "bytes": 3670,
+      "width": 640,
+      "height": 360,
+      "generation": {
+        "tool": "Python 3 standard library (struct, zlib)",
+        "command": "python3 -c \"import base64,zlib;exec(zlib.decompress(base64.b64decode('eNplUtuO2jAUfM9XWJZa2c1prhBgUSq1otvyslpV+0ZQZRIHXBITHBMSvr52llWr1pYsz5nx2JrjUp1q1DB9qMQOibo5KY2eDXTu+1arS67hZmin4CXKyREK+qC4vih5Z72G5UeCP60xVFySglL36Bbuf6Q18XKVxxExPH0f9OV90NG7IRKucICePjhIpZvtkqUbEs5hFkEYBxRInEA4DSBcJAZEkwmE8xCS2ABTgiSC2YxuHVSeFBqQkEgxuefkYP3QOd0NmjOl2ECowVYk/oiuowh1aSVaTdhGfJj4/hWJEvWIVy1Hgy0ctnTZpZtaSBJNp3Bzw4iOTjfr1G2tngjfDxN3sCt9F72e7pZnj/eay4J09nblsaaxaIezALtnUytSs+/ni+enb5nKZNaHLJPYzY1k/X31A8M/ga6/2IHHyOYQQWCnyX48sPr88hb4qW4Ub1tTxd6vk3m5orB40319WmEwjLnftp1gzVvd+qXoTYN569e8EAyDpN5VCc1/2gxb02KnIXjPqoqr4WPFZNHmrOFeI/cYkkkAcRLAi7pwuvxLZz+UYkK/yqK77JGZfKjzG6Exwk0=')))\"",
+        "algorithm": "Four fixed RGB bands, 16px checkerboard +12 channel highlight, PNG color type 2 / bit depth 8."
+      }
+    },
+    {
+      "path": "gallery-portrait.png",
+      "mediaType": "image/png",
+      "sha256": "05ef6f16b25fd1d071ef6de295da655a2d25eb79acaf09dee980b9ef9f821122",
+      "bytes": 1336,
+      "width": 240,
+      "height": 360,
+      "generation": {
+        "tool": "Python 3 standard library (struct, zlib)",
+        "command": "python3 -c \"import base64,zlib;exec(zlib.decompress(base64.b64decode('eNplUtuO2jAUfM9XWJZa2c1prhBgUSq1otvyslpV+0ZQZRIHXBITHBMSvr52llWr1pYsz5nx2JrjUp1q1DB9qMQOibo5KY2eDXTu+1arS67hZmin4CXKyREK+qC4vih5Z72G5UeCP60xVFySglL36Bbuf6Q18XKVxxExPH0f9OV90NG7IRKucICePjhIpZvtkqUbEs5hFkEYBxRInEA4DSBcJAZEkwmE8xCS2ABTgiSC2YxuHVSeFBqQkEgxuefkYP3QOd0NmjOl2ECowVYk/oiuowh1aSVaTdhGfJj4/hWJEvWIVy1Hgy0ctnTZpZtaSBJNp3Bzw4iOTjfr1G2tngjfDxN3sCt9F72e7pZnj/eay4J09nblsaaxaIezALtnUytSs+/ni+enb5nKZNaHLJPYzY1k/X31A8M/ga6/2IHHyOYQQWCnyX48sPr88hb4qW4Ub1tTxd6vk3m5orB40319WmEwjLnftp1gzVvd+qXoTYN569e8EAyDpN5VCc1/2gxb02KnIXjPqoqr4WPFZNHmrOFeI/cYkkkAcRLAi7pwuvxLZz+UYkK/yqK77JGZfKjzG6Exwk0=')))\"",
+        "algorithm": "Four fixed RGB bands, 16px checkerboard +12 channel highlight, PNG color type 2 / bit depth 8."
+      }
+    },
+    {
+      "path": "gallery-playback.mp4",
+      "mediaType": "video/mp4",
+      "sha256": "efda19c5c7d7e6248561d189993c240d3ec3fe804a1ce9ccdf033a86e5b7db04",
+      "bytes": 45508,
+      "width": 320,
+      "height": 180,
+      "durationSeconds": 3.2,
+      "timescale": 1000,
+      "duration": 3200,
+      "container": "ISO Base Media File Format (MP4), H.264 Constrained Baseline video, no audio",
+      "generation": {
+        "tool": "FFmpeg 8.1.2 (libx264)",
+        "command": "ffmpeg -hide_banner -loglevel error -f lavfi -i \"testsrc2=size=320x180:rate=30:duration=3.2\" -an -c:v libx264 -pix_fmt yuv420p -profile:v baseline -level 3.0 -preset veryslow -crf 30 -movflags +faststart -metadata creation_time=1970-01-01T00:00:00Z -metadata encoder=gallery-viewer-fixture -video_track_timescale 30000 -y tests/fixtures/media/gallery-playback.mp4",
+        "notes": "The fixed source duration and metadata make this suitable for native playback/pause assertions away from the end. Encoded bytes can vary across FFmpeg/libx264 versions."
+      }
+    }
+  ]
+}

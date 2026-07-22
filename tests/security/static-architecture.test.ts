@@ -12,6 +12,8 @@ async function sourceFiles(
     }))
   );
 }
+const testTreePathReference =
+  /(?:\btests[\\/]|(?:\.\.?\/|\$[A-Za-z][\w-]*\/)(?:[\w.-]+\/)*tests(?:\/|(?=['"`])))/;
 
 describe('SEC-01/ARCH-01 static stack and browser-boundary enforcement', () => {
   test('uses Svelte 5 runes without legacy component event syntax', async () => {
@@ -124,5 +126,61 @@ describe('SEC-01/ARCH-01 static stack and browser-boundary enforcement', () => {
     for (const caller of factoryCallers) {
       expect(caller.text, caller.path).toContain('publicIpv4Guard: platform.publicIpv4');
     }
+  });
+  test('keeps shipped source free of relative or aliased test-tree references', async () => {
+    const shippedSources = [
+      ...(await sourceFiles('**/*.ts', 'src')),
+      ...(await sourceFiles('**/*.svelte', 'src'))
+    ];
+    for (const source of shippedSources)
+      expect(source.text, source.path).not.toMatch(testTreePathReference);
+  });
+  test('keeps GalleryViewer lifecycle proof test-only and under its browser ownership boundary', async () => {
+    const harnessLabels = [
+      'gallery-viewer-component-harness',
+      'gallery-viewer-lifecycle-harness',
+      'GalleryViewerHarness',
+      'GalleryViewer lifecycle harness',
+      'Open video',
+      'Set parent open false',
+      'Remove selected group',
+      'Unmount viewer'
+    ];
+    const shippedSources = [
+      ...(await sourceFiles('**/*.ts', 'src')),
+      ...(await sourceFiles('**/*.svelte', 'src'))
+    ];
+    for (const source of shippedSources) {
+      for (const label of harnessLabels) {
+        expect(source.text, `${source.path}: ${label}`).not.toContain(label);
+      }
+    }
+
+    const harnessRoutes = await Array.fromAsync(
+      new Bun.Glob('**/*harness*').scan({ cwd: 'src/routes', onlyFiles: true })
+    );
+    expect(harnessRoutes).toEqual([]);
+
+    const testFiles = await Array.fromAsync(
+      new Bun.Glob('**/*').scan({ cwd: 'tests', onlyFiles: true })
+    );
+    const lifecycleHarnessSources = testFiles.filter(
+      (path) =>
+        path.includes('gallery-viewer-component-harness') ||
+        path.includes('gallery-viewer-lifecycle-harness') ||
+        path.includes('GalleryViewerHarness')
+    );
+    expect(lifecycleHarnessSources).not.toEqual([]);
+    for (const harnessSource of lifecycleHarnessSources) {
+      expect(harnessSource, harnessSource).toStartWith('helpers/');
+    }
+
+    const lifecycleBrowserOwners = await Array.fromAsync(
+      new Bun.Glob('**/gallery-viewer-lifecycle.browser.ts').scan({
+        cwd: 'tests',
+        onlyFiles: true
+      })
+    );
+    expect(lifecycleBrowserOwners).toEqual(['e2e/gallery-viewer-lifecycle.browser.ts']);
   });
 });
