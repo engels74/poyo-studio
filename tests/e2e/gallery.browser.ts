@@ -664,6 +664,12 @@ test('Gallery viewer preserves context across mixed media, focus, actions and re
     );
     expect(Math.abs(draggedTransform.x)).toBeLessThanOrEqual(maxX + 1);
     expect(Math.abs(draggedTransform.y)).toBeLessThanOrEqual(maxY + 1);
+    expect(await viewport.evaluate((element) => document.activeElement === element)).toBe(true);
+    const zoomAfterPointerInteraction = Number(await viewport.getAttribute('data-zoom-value'));
+    await page.keyboard.press('-');
+    expect(Number(await viewport.getAttribute('data-zoom-value'))).toBeLessThan(
+      zoomAfterPointerInteraction
+    );
     await fit.click();
     expect(await viewport.getAttribute('data-zoom-mode')).toBe('fit');
 

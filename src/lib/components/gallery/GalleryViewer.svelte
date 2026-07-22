@@ -509,6 +509,7 @@ function pointerDown(event: PointerEvent): void {
       ? current.pointers.find((candidate) => candidate.pointerId === event.pointerId)
       : undefined;
   if (!pointer) return;
+  viewport?.focus({ preventScroll: true });
   try {
     viewport?.setPointerCapture(event.pointerId);
     const capture = {
