@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { PRICING_SIGNATURE_VERSION } from '../../../src/lib/features/pricing/contracts';
-import { seedImageRegistry, seedVideoRegistry } from '../../../src/lib/server/registry/repository';
 import type { CreateJobRequest } from '../../../src/lib/server/jobs/types';
+import { seedImageRegistry, seedVideoRegistry } from '../../../src/lib/server/registry/repository';
 import { createJobFixture, createTestJob } from '../../helpers/job-fixture';
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -177,6 +177,44 @@ describe('durable job repository invariants', () => {
       __poyoStudioEvent: { version: 1, attentionCode: null, payloadWasNull: false }
     });
     expect(JSON.stringify(created?.payload)).not.toContain('private prompt');
+  });
+
+  test('keeps the created estimate registry version aligned when the registry row is absent', async () => {
+    const fixture = await createJobFixture();
+    cleanups.push(fixture.cleanup);
+    const request = {
+      actionId: '019b0000-0000-7000-8000-000000000118',
+      entryKey: 'seedream-5.0-pro:text-to-image',
+      workflow: 'text-to-image',
+      publicModelId: 'seedream-5.0-pro',
+      guidedRequest: { prompt: 'private prompt' },
+      normalizedPayload: { model: 'seedream-5.0-pro', input: { prompt: 'private prompt' } },
+      estimatedCredits: 8
+    } satisfies CreateJobRequest;
+
+    const job = fixture.repository.create(request);
+    expect(job.registryVersion).toBeNull();
+    expect(
+      fixture.repository.eventsAfter(0).find((event) => event.jobId === job.id)?.payload
+    ).toMatchObject({ estimate: { registryVersion: null } });
+
+    expect(() =>
+      fixture.repository.create({
+        ...request,
+        actionId: '019b0000-0000-7000-8000-000000000119',
+        estimateEnvelope: {
+          signatureVersion: PRICING_SIGNATURE_VERSION,
+          signature:
+            'version=pricing-signature-v1|registry=image-2026-07-20.1|model=seedream-5.0-pro|workflow=text-to-image|unit=per-output|quantity=1',
+          registryVersion: 'image-2026-07-20.1',
+          pricingHash: 'a'.repeat(64),
+          basis: { unit: 'per-output', creditsPerUnit: 8, units: 1 },
+          provenance: 'published',
+          sourceVerifiedAt: '2026-07-20T00:00:00.000Z',
+          credits: 8
+        }
+      })
+    ).toThrow('Estimate envelope is invalid.');
   });
 
   test('excludes server-derived estimate provenance from paid-action identity', async () => {

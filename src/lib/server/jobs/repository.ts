@@ -1,10 +1,10 @@
 import type { Database } from 'bun:sqlite';
 import {
-  PRICING_SIGNATURE_VERSION,
   type EstimateEnvelope,
   type OutstandingSpendProjection,
-  type TaskCharge,
-  type PricingBasis
+  PRICING_SIGNATURE_VERSION,
+  type PricingBasis,
+  type TaskCharge
 } from '../../features/pricing/contracts';
 import {
   isPricingSignature,
@@ -568,7 +568,7 @@ export class JobRepository extends DatabaseRepository {
           : null;
       const estimateEnvelope = safeEstimateEnvelope(
         request.estimateEnvelope,
-        registry?.registryVersion ?? null,
+        registryVersion,
         requestedEstimate
       );
       this.database
