@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, setSystemTime, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { prepareJobCreateRequest } from '../../../src/lib/server/jobs/create-request';
@@ -21,9 +21,11 @@ const fixtureHtml = readFileSync(
   join(import.meta.dir, '../../fixtures/pricing/public-pricing.html'),
   'utf8'
 );
+const testNow = new Date('2026-07-20T12:00:00.000Z');
 const cleanups: Array<() => Promise<void> | void> = [];
 
 afterEach(async () => {
+  setSystemTime();
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
@@ -46,6 +48,7 @@ async function expectImmediate<T>(operation: () => Promise<T>): Promise<T> {
 
 describe('cache-only preview and accepted job estimates', () => {
   test('an admitted unresolved refresh never blocks and its eventual result serves later previews', async () => {
+    setSystemTime(testNow);
     const temporary = await createTemporaryDirectory('request-estimates-');
     const database = await openDatabase(join(temporary.path, 'studio.sqlite'));
     cleanups.push(() => temporary.cleanup());
@@ -62,7 +65,7 @@ describe('cache-only preview and accepted job estimates', () => {
     const pricing = new PublicPricingService({
       settings,
       gate,
-      now: Date.now,
+      now: () => testNow.getTime(),
       fetch: async () => {
         calls += 1;
         await deferred;
@@ -130,6 +133,7 @@ describe('cache-only preview and accepted job estimates', () => {
   });
 
   test('current WAN workflows are estimated while retired workflow aliases are rejected', async () => {
+    setSystemTime(testNow);
     const temporary = await createTemporaryDirectory('request-estimates-video-');
     const database = await openDatabase(join(temporary.path, 'studio.sqlite'));
     cleanups.push(() => temporary.cleanup());
@@ -138,7 +142,7 @@ describe('cache-only preview and accepted job estimates', () => {
     const pricing = new PublicPricingService({
       settings: new SettingsRepository(database),
       gate: new MaintenanceGate(),
-      now: Date.now,
+      now: () => testNow.getTime(),
       fetch: async () => new Response(fixtureHtml, { status: 200 })
     });
     await pricing.refreshForTest();
