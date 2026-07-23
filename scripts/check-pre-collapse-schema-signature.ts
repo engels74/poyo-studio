@@ -34,15 +34,18 @@ async function main(): Promise<void> {
     schema: ReturnType<typeof databaseSchemaSignature>;
   };
   const temporary = await mkdtemp(join(tmpdir(), 'poyo-schema-signature-'));
-  const database = await openDatabase(join(temporary, 'studio.sqlite'));
   try {
-    if (JSON.stringify(databaseSchemaSignature(database)) !== JSON.stringify(fixture.schema)) {
-      throw new Error(
-        'The current version-1 schema does not match the immutable historical fixture.'
-      );
+    const database = await openDatabase(join(temporary, 'studio.sqlite'));
+    try {
+      if (JSON.stringify(databaseSchemaSignature(database)) !== JSON.stringify(fixture.schema)) {
+        throw new Error(
+          'The current version-1 schema does not match the immutable historical fixture.'
+        );
+      }
+    } finally {
+      database.close();
     }
   } finally {
-    database.close();
     await rm(temporary, { recursive: true, force: true });
   }
 
