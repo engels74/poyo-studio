@@ -561,7 +561,7 @@ export class JobRepository extends DatabaseRepository {
         registry &&
         this.database
           .query<{ registry_version: string }, [string, string]>(
-            'SELECT registry_version FROM registry_entries WHERE registry_version=? AND entry_key=?'
+            "SELECT registry_version FROM registry_entries WHERE registry_version=? AND entry_key=? AND status='current'"
           )
           .get(registry.registryVersion, request.entryKey ?? '')
           ? registry.registryVersion

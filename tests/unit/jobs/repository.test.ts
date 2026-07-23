@@ -179,9 +179,15 @@ describe('durable job repository invariants', () => {
     expect(JSON.stringify(created?.payload)).not.toContain('private prompt');
   });
 
-  test('keeps the created estimate registry version aligned when the registry row is absent', async () => {
+  test('keeps the created estimate registry version aligned when the registry row is historical', async () => {
     const fixture = await createJobFixture();
     cleanups.push(fixture.cleanup);
+    seedImageRegistry(fixture.database);
+    fixture.database
+      .query(
+        "UPDATE registry_entries SET status='historical' WHERE registry_version='image-2026-07-20.1' AND entry_key='seedream-5.0-pro:text-to-image'"
+      )
+      .run();
     const request = {
       actionId: '019b0000-0000-7000-8000-000000000118',
       entryKey: 'seedream-5.0-pro:text-to-image',
