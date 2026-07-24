@@ -4,7 +4,11 @@ import { goto, invalidateAll } from '$app/navigation';
 import AppIcon from '$lib/components/ui/AppIcon.svelte';
 import Badge from '$lib/components/ui/Badge.svelte';
 import LinkButton from '$lib/components/ui/LinkButton.svelte';
-import type { JobDetailDto, LocalDeleteChoice } from '$lib/features/library/contracts';
+import type {
+  ImageJobNavigationDto,
+  JobDetailDto,
+  LocalDeleteChoice
+} from '$lib/features/library/contracts';
 import {
   byteSizeLabel,
   attentionDescription,
@@ -17,9 +21,10 @@ import StatusBadge from './StatusBadge.svelte';
 
 interface Props {
   job: JobDetailDto;
+  imageNavigation: ImageJobNavigationDto | null;
 }
 
-let { job }: Props = $props();
+let { job, imageNavigation }: Props = $props();
 let pending = $state<string | null>(null);
 let feedback = $state('');
 let tags = $state(untrack(() => job.tags.join(', ')));
@@ -181,7 +186,65 @@ function removeOutput(outputId: string): void {
 </script>
 
 <div class="route-shell">
-  <a href="/jobs" class="focus-ring inline-flex items-center gap-1 rounded text-xs font-semibold text-muted-foreground hover:text-foreground">← Back to jobs</a>
+  <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <a href="/jobs" class="focus-ring inline-flex w-fit items-center gap-1 rounded text-xs font-semibold text-muted-foreground hover:text-foreground">← Back to jobs</a>
+    {#if imageNavigation}
+      <nav class="grid w-full grid-cols-2 gap-2 sm:w-auto" aria-label="Image job chronology">
+        {#if imageNavigation.previous}
+          <a
+            href={`/jobs/${imageNavigation.previous.jobId}`}
+            aria-label={`Previous image: ${imageNavigation.previous.displayName}`}
+            class="focus-ring group grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded border border-border bg-card px-3 py-2 text-left no-underline hover:bg-muted sm:w-48"
+          >
+            <AppIcon name="chevron-right" size={15} class="rotate-180 text-muted-foreground group-hover:text-foreground" />
+            <span class="min-w-0">
+              <span class="block text-xs font-semibold">Previous image</span>
+              <span class="block truncate text-[0.6875rem] text-muted-foreground">{imageNavigation.previous.displayName} · {dateTimeLabel(imageNavigation.previous.createdAt)}</span>
+            </span>
+          </a>
+        {:else}
+          <button
+            type="button"
+            disabled
+            aria-label="Previous image unavailable"
+            class="grid min-w-0 cursor-not-allowed grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded border border-border/70 bg-muted/40 px-3 py-2 text-left opacity-60 sm:w-48"
+          >
+            <AppIcon name="chevron-right" size={15} class="rotate-180" />
+            <span class="min-w-0">
+              <span class="block text-xs font-semibold">Previous image</span>
+              <span class="block truncate text-[0.6875rem] text-muted-foreground">No earlier image</span>
+            </span>
+          </button>
+        {/if}
+        {#if imageNavigation.next}
+          <a
+            href={`/jobs/${imageNavigation.next.jobId}`}
+            aria-label={`Next image: ${imageNavigation.next.displayName}`}
+            class="focus-ring group grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded border border-border bg-card px-3 py-2 text-right no-underline hover:bg-muted sm:w-48"
+          >
+            <span class="min-w-0">
+              <span class="block text-xs font-semibold">Next image</span>
+              <span class="block truncate text-[0.6875rem] text-muted-foreground">{imageNavigation.next.displayName} · {dateTimeLabel(imageNavigation.next.createdAt)}</span>
+            </span>
+            <AppIcon name="chevron-right" size={15} class="text-muted-foreground group-hover:text-foreground" />
+          </a>
+        {:else}
+          <button
+            type="button"
+            disabled
+            aria-label="Next image unavailable"
+            class="grid min-w-0 cursor-not-allowed grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded border border-border/70 bg-muted/40 px-3 py-2 text-right opacity-60 sm:w-48"
+          >
+            <span class="min-w-0">
+              <span class="block text-xs font-semibold">Next image</span>
+              <span class="block truncate text-[0.6875rem] text-muted-foreground">No later image</span>
+            </span>
+            <AppIcon name="chevron-right" size={15} />
+          </button>
+        {/if}
+      </nav>
+    {/if}
+  </div>
   <header class="mt-4 flex flex-wrap items-start justify-between gap-4 border-b border-border pb-5">
     <div class="min-w-0">
       <p class="eyebrow-label">{job.provider} · {job.workflow}</p>
