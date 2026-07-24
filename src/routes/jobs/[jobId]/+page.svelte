@@ -3,6 +3,7 @@ import { onMount } from 'svelte';
 import { invalidateAll } from '$app/navigation';
 import JobDetailView from '$lib/components/library/JobDetailView.svelte';
 import { nextMonotonicEventId } from '$lib/features/generation/studio-controller';
+import { shouldRefreshJobDetail } from '$lib/features/library/job-detail-events';
 import type { PageData } from './$types';
 
 let { data }: { data: PageData } = $props();
@@ -21,7 +22,9 @@ onMount(() => {
     acceptDurableEvent(event as MessageEvent<string>);
   });
   events.addEventListener('job', (event) => {
-    if (!acceptDurableEvent(event as MessageEvent<string>)) return;
+    const jobEvent = event as MessageEvent<string>;
+    if (!acceptDurableEvent(jobEvent)) return;
+    if (!shouldRefreshJobDetail(jobEvent.data, data.job.id, data.job.modality)) return;
     void invalidateAll();
   });
   return () => events.close();

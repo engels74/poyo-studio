@@ -1,10 +1,11 @@
 import { Database } from 'bun:sqlite';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import { expect, setDefaultTimeout, test } from 'bun:test';
+import { mkdir, realpath, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { chromium, type Locator } from 'playwright';
 import { JobRepository } from '../../src/lib/server/jobs/repository';
 import { TEST_MEDIA_ORIGIN } from '../../src/lib/server/jobs/runtime-settings';
+import { LibraryRepository } from '../../src/lib/server/library/repository';
 import { startBrowserAppHarness } from '../helpers/browser-app-harness';
 
 setDefaultTimeout(60_000);
@@ -209,17 +210,11 @@ test('image chronology navigation updates from durable output events without red
 
     const liveDatabase = new Database(harness.databasePath, { strict: true });
     try {
-      liveDatabase
-        .query(
-          "UPDATE job_outputs SET download_state='deleted',local_path=NULL,verified_at=NULL WHERE id=?"
-        )
-        .run(third.output.id);
-      new JobRepository(liveDatabase).transition(
-        second.job.id,
-        'complete',
-        'none',
-        null,
-        'job.complete'
+      await new LibraryRepository(liveDatabase).deleteOutput(
+        third.job.id,
+        third.output.id,
+        'file',
+        { media: await realpath(join(harness.appData, 'media')) }
       );
     } finally {
       liveDatabase.close();
