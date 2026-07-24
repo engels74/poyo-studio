@@ -3,6 +3,8 @@ import { basename } from 'node:path';
 import type {
   CursorPage,
   DownloadAttemptDto,
+  ImageJobNavigationDto,
+  JobChronologyNeighborDto,
   JobDetailDto,
   JobFilterOptionsDto,
   JobFiltersDto,
@@ -21,6 +23,7 @@ import { modelCatalogue } from '../../features/registry/catalogue';
 import { IMAGE_REGISTRY_ENTRIES } from '../../features/registry/image-registry';
 import { VIDEO_REGISTRY_ENTRIES } from '../../features/registry/video-registry';
 import { ManagedSourceRepository } from '../media/managed-sources';
+import { MediaOutputError, resolveVerifiedMediaOutput } from '../media/verified-output';
 import { type AppPaths, resolvePathWithin } from '../platform/app-paths';
 import { DatabaseRepository } from '../platform/repository';
 import {
@@ -157,6 +160,13 @@ type HistoryRow = {
 };
 
 type Cursor = { createdAt: string; id: string };
+type NeighborCandidateRow = {
+  id: string;
+  entry_key: string | null;
+  workflow: string;
+  public_model_id: string;
+  created_at: string;
+};
 
 const allModels = modelCatalogue();
 const modelByKey = new Map(allModels.map((entry) => [entry.key, entry]));
@@ -498,6 +508,77 @@ export class LibraryRepository extends DatabaseRepository {
     };
   }
 
+  async getImageNavigation(id: string, mediaRoot: string): Promise<ImageJobNavigationDto | null> {
+    const current = this.database
+      .query<{ id: string; created_at: string }, [string]>(
+        'SELECT id,created_at FROM jobs WHERE id=?'
+      )
+      .get(id);
+    if (!current) return null;
+    return {
+      previous: await this.findImageNeighbor(current, 'previous', mediaRoot),
+      next: await this.findImageNeighbor(current, 'next', mediaRoot)
+    };
+  }
+
+  private async findImageNeighbor(
+    current: { id: string; created_at: string },
+    direction: 'previous' | 'next',
+    mediaRoot: string
+  ): Promise<JobChronologyNeighborDto | null> {
+    let anchor = current;
+    const chronology =
+      direction === 'previous'
+        ? '(j.created_at<? OR (j.created_at=? AND j.id<?))'
+        : '(j.created_at>? OR (j.created_at=? AND j.id>?))';
+    const order =
+      direction === 'previous' ? 'j.created_at DESC,j.id DESC' : 'j.created_at ASC,j.id ASC';
+
+    while (true) {
+      const candidate = this.database
+        .query<NeighborCandidateRow, [string, string, string]>(
+          `SELECT j.id,j.entry_key,j.workflow,j.public_model_id,j.created_at
+           FROM jobs j
+           WHERE ${chronology}
+             AND EXISTS(
+               SELECT 1 FROM job_outputs o
+               WHERE o.job_id=j.id AND o.media_kind='image'
+                 AND o.download_state='verified' AND o.local_path IS NOT NULL
+             )
+           ORDER BY ${order}
+           LIMIT 1`
+        )
+        .get(anchor.created_at, anchor.created_at, anchor.id);
+      if (!candidate) return null;
+
+      const outputs = this.database
+        .query<{ id: string }, [string]>(
+          `SELECT id FROM job_outputs
+           WHERE job_id=? AND media_kind='image'
+             AND download_state='verified' AND local_path IS NOT NULL
+           ORDER BY output_order,id`
+        )
+        .all(candidate.id);
+      for (const output of outputs) {
+        try {
+          await resolveVerifiedMediaOutput(this.database, mediaRoot, output.id);
+          const model = resolveModel(
+            candidate.entry_key,
+            candidate.public_model_id,
+            candidate.workflow
+          );
+          return {
+            jobId: candidate.id,
+            displayName: model?.displayName ?? candidate.public_model_id,
+            createdAt: candidate.created_at
+          };
+        } catch (error) {
+          if (!(error instanceof MediaOutputError)) throw error;
+        }
+      }
+      anchor = candidate;
+    }
+  }
   async getJobDetail(id: string): Promise<JobDetailDto | null> {
     const row = this.database
       .query<DetailJobRow, [string]>(

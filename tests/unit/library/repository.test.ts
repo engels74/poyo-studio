@@ -368,4 +368,134 @@ describe('server-side jobs and grouped library repository', () => {
     expect(JSON.stringify(history)).not.toContain(JOB_EVENT_METADATA_KEY);
     expect(JSON.stringify(history)).not.toContain('public_ipv4_guard_match');
   });
+  test('resolves safe image neighbors by immutable creation chronology', async () => {
+    const fixture = await createJobFixture();
+    cleanups.push(fixture.cleanup);
+    seedImageRegistry(fixture.database);
+
+    async function createGeneration(
+      suffix: string,
+      createdAt: string,
+      mediaKind: 'image' | 'video',
+      availability: 'pending' | 'failed' | 'ready' | 'missing'
+    ) {
+      fixture.setNow(new Date(createdAt));
+      const job = fixture.repository.create({
+        actionId: crypto.randomUUID(),
+        entryKey:
+          mediaKind === 'image'
+            ? 'flux-schnell:text-to-image'
+            : 'wan2.7-image-to-video:image-to-video',
+        workflow: mediaKind === 'image' ? 'text-to-image' : 'image-to-video',
+        publicModelId: mediaKind === 'image' ? 'flux-schnell' : 'wan2.7-image-to-video',
+        guidedRequest: { prompt: suffix },
+        normalizedPayload: { model: suffix, input: { prompt: suffix } },
+        prompt: suffix,
+        correlationId: `correlation-${suffix}`
+      });
+      if (availability === 'pending') return { job, output: null, localPath: null };
+
+      fixture.repository.applyStatus(
+        job.id,
+        {
+          taskId: `task-${suffix}`,
+          statusRaw: 'finished',
+          status: 'finished',
+          creditsAmount: 1,
+          files: [
+            {
+              url: `https://cdn.poyo.test/${suffix}.${mediaKind === 'image' ? 'png' : 'mp4'}`,
+              fileType: mediaKind,
+              label: null,
+              format: mediaKind === 'image' ? 'png' : 'mp4',
+              contentType: mediaKind === 'image' ? 'image/png' : 'video/mp4',
+              fileName: `${suffix}.${mediaKind === 'image' ? 'png' : 'mp4'}`,
+              fileSize: 4
+            }
+          ],
+          createdTime: createdAt,
+          progress: 100,
+          errorMessage: null
+        },
+        1000
+      );
+      const output = fixture.repository.outputs(job.id)[0];
+      if (!output) throw new Error('Expected a fixture output.');
+      if (availability === 'failed') {
+        fixture.database
+          .query("UPDATE job_outputs SET download_state='failed' WHERE id=?")
+          .run(output.id);
+        return { job, output, localPath: null };
+      }
+
+      const directory = join(fixture.paths.media, job.id);
+      const localPath = join(directory, `${suffix}.${mediaKind === 'image' ? 'png' : 'mp4'}`);
+      await mkdir(directory, { recursive: true });
+      await writeFile(localPath, new Uint8Array([1, 2, 3, 4]));
+      const attempt = fixture.repository.startDownload(output.id);
+      fixture.repository.verifyDownload(output.id, attempt, {
+        path: localPath,
+        size: 4,
+        checksum: `checksum-${suffix}`,
+        signature: mediaKind === 'image' ? '89504e47' : '00000018',
+        contentType: mediaKind === 'image' ? 'image/png' : 'video/mp4',
+        pixelWidth: 64,
+        pixelHeight: 64,
+        aspectRatio: '1:1'
+      });
+      fixture.repository.finishIfDownloaded(job.id);
+      if (availability === 'missing') await unlink(localPath);
+      return { job, output, localPath };
+    }
+
+    const first = await createGeneration('first', '2026-07-15T12:00:00.000Z', 'image', 'ready');
+    await createGeneration('failed', '2026-07-15T12:01:00.000Z', 'image', 'failed');
+    await createGeneration('video', '2026-07-15T12:02:00.000Z', 'video', 'ready');
+    const current = await createGeneration(
+      'current-pending',
+      '2026-07-15T12:03:00.000Z',
+      'image',
+      'pending'
+    );
+    const tieA = await createGeneration('tie-a', '2026-07-15T12:04:00.000Z', 'image', 'ready');
+    const tieB = await createGeneration('tie-b', '2026-07-15T12:04:00.000Z', 'image', 'ready');
+    await createGeneration('missing', '2026-07-15T12:05:00.000Z', 'image', 'missing');
+    const last = await createGeneration('last', '2026-07-15T12:06:00.000Z', 'image', 'ready');
+
+    const repository = new LibraryRepository(fixture.database);
+    const tieOrder = [tieA.job.id, tieB.job.id].toSorted();
+    const tieFirst = tieOrder[0];
+    const tieSecond = tieOrder[1];
+    if (!tieFirst || !tieSecond) throw new Error('Expected two tie fixtures.');
+    expect(await repository.getImageNavigation(current.job.id, fixture.paths.media)).toEqual({
+      previous: expect.objectContaining({ jobId: first.job.id }),
+      next: expect.objectContaining({ jobId: tieFirst })
+    });
+    expect(await repository.getImageNavigation(tieFirst, fixture.paths.media)).toEqual({
+      previous: expect.objectContaining({ jobId: first.job.id }),
+      next: expect.objectContaining({ jobId: tieSecond })
+    });
+    expect(await repository.getImageNavigation(tieSecond, fixture.paths.media)).toEqual({
+      previous: expect.objectContaining({ jobId: tieFirst }),
+      next: expect.objectContaining({ jobId: last.job.id })
+    });
+    expect(await repository.getImageNavigation(first.job.id, fixture.paths.media)).toEqual({
+      previous: null,
+      next: expect.objectContaining({ jobId: tieFirst })
+    });
+    expect(await repository.getImageNavigation(last.job.id, fixture.paths.media)).toEqual({
+      previous: expect.objectContaining({ jobId: tieSecond }),
+      next: null
+    });
+
+    const removedTie = tieA.job.id === tieFirst ? tieA : tieB;
+    if (!removedTie.output) throw new Error('Expected a ready tie output.');
+    fixture.database
+      .query("UPDATE job_outputs SET download_state='deleted',local_path=NULL WHERE id=?")
+      .run(removedTie.output.id);
+    const remainingTie = removedTie.job.id === tieA.job.id ? tieB.job.id : tieA.job.id;
+    expect(
+      (await repository.getImageNavigation(current.job.id, fixture.paths.media))?.next?.jobId
+    ).toBe(remainingTie);
+  });
 });

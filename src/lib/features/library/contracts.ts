@@ -55,6 +55,16 @@ export interface JobListItemDto {
   outputState: string | null;
   representative: SafeMediaSummary | null;
 }
+export interface JobChronologyNeighborDto {
+  jobId: string;
+  displayName: string;
+  createdAt: string;
+}
+
+export interface ImageJobNavigationDto {
+  previous: JobChronologyNeighborDto | null;
+  next: JobChronologyNeighborDto | null;
+}
 
 export interface CursorPage<T> {
   items: T[];

@@ -5,7 +5,12 @@ import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params }) => {
   const platform = await getPlatformServices();
-  const job = await new LibraryRepository(platform.database).getJobDetail(params.jobId);
+  const repository = new LibraryRepository(platform.database);
+  const job = await repository.getJobDetail(params.jobId);
   if (!job) error(404, 'Job not found.');
-  return { job };
+  const imageNavigation =
+    job.modality === 'image'
+      ? await repository.getImageNavigation(params.jobId, platform.paths.media)
+      : null;
+  return { job, imageNavigation };
 };
