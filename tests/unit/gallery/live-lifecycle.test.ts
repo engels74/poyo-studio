@@ -6,9 +6,9 @@ import {
   type GalleryEventSourceMessage
 } from '../../../src/lib/features/gallery/live-lifecycle';
 import {
+  type GalleryRefreshCoordinator,
   GalleryRefreshDisposedError,
-  GalleryRefreshPausedError,
-  type GalleryRefreshCoordinator
+  GalleryRefreshPausedError
 } from '../../../src/lib/features/gallery/live-refresh';
 
 class Source implements GalleryEventSource {
@@ -67,6 +67,67 @@ const coordinator = (request: () => Promise<void>): GalleryRefreshCoordinator =>
 });
 
 describe('Gallery live lifecycle', () => {
+  test('preserves an accepted zero cursor when resuming after the initial connection', () => {
+    const visibility = new Visibility();
+    const sources: Source[] = [];
+    const cursors: Array<string | null> = [];
+    const lifecycle = createGalleryLiveLifecycle({
+      visibility,
+      createEventSource: (lastEventId) => {
+        cursors.push(lastEventId);
+        const source = new Source();
+        sources.push(source);
+        return source;
+      },
+      coordinator: coordinator(async () => undefined),
+      abortSequence: () => undefined
+    });
+
+    expect(cursors).toEqual([null]);
+    requiredSource(sources, 0).emit('snapshot', { watermark: 0 }, '0');
+    expect(lifecycle.lastEventId).toBe(0);
+    visibility.change(true);
+    visibility.change(false);
+    expect(cursors).toEqual([null, '0']);
+    lifecycle.dispose();
+  });
+
+  test('reports connection errors and opens separately from snapshot diagnostics', () => {
+    const source = new Source();
+    const diagnostics: string[] = [];
+    let connectionOpens = 0;
+    let connectionErrors = 0;
+    const lifecycle = createGalleryLiveLifecycle({
+      visibility: new Visibility(),
+      createEventSource: () => source,
+      coordinator: coordinator(async () => undefined),
+      abortSequence: () => undefined,
+      onDiagnostic: (message) => diagnostics.push(message),
+      onConnectionOpen: () => {
+        connectionOpens += 1;
+      },
+      onConnectionError: () => {
+        connectionErrors += 1;
+      }
+    });
+
+    source.emit('snapshot', { watermark: -1 }, '');
+    expect(diagnostics).toEqual(['Ignored stale or malformed Jobs snapshot.']);
+    expect(connectionOpens).toBe(0);
+    expect(connectionErrors).toBe(0);
+    source.emitConnection('error');
+    expect(diagnostics).toEqual([
+      'Ignored stale or malformed Jobs snapshot.',
+      'Jobs event source connection failed.'
+    ]);
+    expect(connectionOpens).toBe(0);
+    expect(connectionErrors).toBe(1);
+    source.emitConnection('open');
+    expect(connectionOpens).toBe(1);
+    expect(connectionErrors).toBe(1);
+    lifecycle.dispose();
+  });
+
   test('catches up exactly once for each accepted initial, reconnect, and gap snapshot', async () => {
     const visibility = new Visibility();
     const sources: Source[] = [];

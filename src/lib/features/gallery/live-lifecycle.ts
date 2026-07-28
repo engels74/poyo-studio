@@ -1,9 +1,9 @@
 import {
   decodeGalleryLiveEvent,
-  GalleryRefreshDisposedError,
-  GalleryRefreshPausedError,
   type GalleryLiveEvent,
-  type GalleryRefreshCoordinator
+  type GalleryRefreshCoordinator,
+  GalleryRefreshDisposedError,
+  GalleryRefreshPausedError
 } from './live-refresh';
 
 export interface GalleryEventSourceMessage {
@@ -32,6 +32,8 @@ export interface GalleryLiveLifecycleOptions {
   onEvent?(event: GalleryLiveEvent): boolean;
   onSnapshot?(eventId: number, catchUp: boolean): void;
   onDiagnostic?(message: string): void;
+  onConnectionOpen?(): void;
+  onConnectionError?(): void;
   onRefreshError?(error: unknown): void;
 }
 export interface GalleryLiveLifecycle {
@@ -71,6 +73,7 @@ export const createGalleryLiveLifecycle = (
   let removeSourceListeners: (() => void) | null = null;
   let generation = 0;
   let lastEventId = 0;
+  let hasLastEventId = false;
   let awaitingSnapshot = false;
   let disposed = false;
   let hidden = true;
@@ -102,7 +105,7 @@ export const createGalleryLiveLifecycle = (
   const open = () => {
     if (disposed || options.visibility.hidden || source) return;
     const sourceGeneration = generation;
-    const candidate = options.createEventSource(lastEventId ? String(lastEventId) : null);
+    const candidate = options.createEventSource(hasLastEventId ? String(lastEventId) : null);
     source = candidate;
     awaitingSnapshot = true;
     let reconnecting = true;
@@ -117,13 +120,17 @@ export const createGalleryLiveLifecycle = (
         return;
       }
       const id = snapshotId(message as GalleryEventSourceMessage);
-      if (id === null || id < lastEventId || (id === lastEventId && !awaitingSnapshot)) {
+      if (
+        id === null ||
+        (hasLastEventId && (id < lastEventId || (id === lastEventId && !awaitingSnapshot)))
+      ) {
         options.onDiagnostic?.('Ignored stale or malformed Jobs snapshot.');
         return;
       }
       const catchUp = awaitingSnapshot;
       awaitingSnapshot = false;
       lastEventId = Math.max(lastEventId, id);
+      hasLastEventId = true;
       options.onSnapshot?.(id, catchUp);
       requestRefresh();
     };
@@ -136,9 +143,10 @@ export const createGalleryLiveLifecycle = (
         return;
       const event = message as GalleryEventSourceMessage;
       const id = eventId(event.lastEventId);
-      if (id === null || id <= lastEventId) return;
+      if (id === null || (hasLastEventId && id <= lastEventId)) return;
       awaitingSnapshot = false;
       lastEventId = id;
+      hasLastEventId = true;
       const decoded = decodeGalleryLiveEvent(event.data, id);
       if (!decoded) return;
       if (options.onEvent?.(decoded) !== false) requestRefresh();
@@ -147,11 +155,13 @@ export const createGalleryLiveLifecycle = (
       if (!current()) return;
       if (reconnecting) awaitingSnapshot = true;
       reconnecting = false;
+      options.onConnectionOpen?.();
     };
     const connectionError = (_event: GalleryEventSourceEvent) => {
       if (!current()) return;
       reconnecting = true;
       options.onDiagnostic?.('Jobs event source connection failed.');
+      options.onConnectionError?.();
     };
     candidate.addEventListener('snapshot', snapshot);
     candidate.addEventListener('job', job);

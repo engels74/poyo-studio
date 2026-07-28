@@ -1,4 +1,5 @@
 <script lang="ts">
+import { onMount, tick } from 'svelte';
 import { invalidateAll } from '$app/navigation';
 import GalleryViewer from '$lib/components/gallery/GalleryViewer.svelte';
 import MediaPreview from '$lib/components/library/MediaPreview.svelte';
@@ -20,17 +21,16 @@ import {
 import {
   createViewerSequenceController,
   resolveViewerSelectionSeed,
+  type ViewerSequenceState,
   viewerSequenceFilters,
-  viewerSequenceItems,
-  type ViewerSequenceState
+  viewerSequenceItems
 } from '$lib/features/gallery/viewer-sequence';
+import type { GalleryViewerItemDto } from '$lib/features/library/contracts';
 import {
   byteSizeLabel,
   dateTimeLabel,
   mediaFrameAspectRatio
 } from '$lib/features/library/presentation';
-import type { GalleryViewerItemDto } from '$lib/features/library/contracts';
-import { onMount, tick } from 'svelte';
 import type { PageData } from './$types';
 
 let { data }: { data: PageData } = $props();
@@ -205,7 +205,12 @@ onMount(() => {
   window.addEventListener('scroll', markScrollIntervention, { passive: true });
   coordinator = createGalleryRefreshCoordinator(refreshGallery);
   liveLifecycle = createGalleryLiveLifecycle({
-    createEventSource: () => new EventSource('/api/events/jobs') as unknown as GalleryEventSource,
+    createEventSource: (lastEventId) =>
+      new EventSource(
+        lastEventId === null
+          ? '/api/events/jobs'
+          : `/api/events/jobs?lastEventId=${encodeURIComponent(lastEventId)}`
+      ) as unknown as GalleryEventSource,
     visibility: document as unknown as GalleryVisibility,
     coordinator,
     abortSequence,
@@ -220,8 +225,8 @@ onMount(() => {
       }
       return true;
     },
-    onSnapshot: () => (connection = 'connected'),
-    onDiagnostic: () => (connection = 'reconnecting'),
+    onConnectionOpen: () => (connection = 'connected'),
+    onConnectionError: () => (connection = 'reconnecting'),
     onRefreshError: () => {
       galleryLiveUpdateError =
         'Live Gallery updates could not be refreshed. Waiting for the next update.';
