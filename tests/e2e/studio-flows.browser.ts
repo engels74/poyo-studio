@@ -379,6 +379,27 @@ async function selectRadioValue(scope: Locator, value: string): Promise<void> {
     `Radio choice ${value} did not become selected.`
   );
 }
+async function assertAspectRatioPreview(
+  group: Locator,
+  token: string,
+  expectedRatio: number
+): Promise<Locator> {
+  const radio = group.locator(`input[type="radio"][value="${token}"]`);
+  expect(await radio.getAttribute('value')).toBe(token);
+  expect(await group.getByRole('radio', { name: token, exact: true }).count()).toBe(1);
+  const preview = group.locator(
+    `label:has(input[type="radio"][value="${token}"]) span[aria-hidden="true"] > span`
+  );
+  expect(await preview.count()).toBe(1);
+  const declaration = await preview.evaluate(
+    (element) => (element as HTMLElement).style.aspectRatio
+  );
+  const [widthToken = '', heightToken = '1'] = declaration.split('/');
+  const width = Number(widthToken.trim());
+  const height = Number(heightToken.trim());
+  expect(width / height).toBeCloseTo(expectedRatio);
+  return radio;
+}
 
 type InspectorSectionLabel = 'Setup' | 'Prompt' | 'Inputs' | 'Output' | 'Review';
 
@@ -1595,6 +1616,201 @@ serial('STUDIO-UX setup tabs and command guards stay usable across surfaces', as
   }
 });
 
+serial(
+  'ASPECT-RATIO-01 image and video ratio tiles preserve token, geometry, and native controls',
+  async () => {
+    const harness = await startBrowserAppHarness();
+    const browser = await chromium.launch({ headless: true });
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const page = await context.newPage();
+    try {
+      await page.goto(`${harness.url}/studio/image`);
+      const imageInspector = page.locator('#parameter-inspector');
+      await selectRadioValue(imageInspector, 'text-to-image');
+      await selectRadioValue(imageInspector, 'flux-dev:text-to-image');
+      const fluxOutput = await showInspectorSection(imageInspector, 'Output');
+      const fluxRatios = fluxOutput.getByRole('group', { name: /Aspect Ratio/ });
+      const fluxAutomatic = fluxRatios.getByRole('radio', { name: 'Automatic (1:1)' });
+      expect(await fluxAutomatic.getAttribute('value')).toBe('automatic');
+      expect(await fluxAutomatic.isChecked()).toBe(true);
+      expect(
+        await fluxRatios
+          .getByText('Uses the model default verified in the registry evidence.')
+          .count()
+      ).toBe(1);
+
+      const fluxSquare = await assertAspectRatioPreview(fluxRatios, '1:1', 1);
+      const fluxSuffix = await assertAspectRatioPreview(fluxRatios, '1:1 HD', 1);
+      await assertAspectRatioPreview(fluxRatios, '3:4', 3 / 4);
+      await assertAspectRatioPreview(fluxRatios, '16:9', 16 / 9);
+      await fluxSquare.focus();
+      await page.keyboard.press('Space');
+      expect(await fluxSquare.isChecked()).toBe(true);
+      expect(await fluxRatios.locator('input[type="radio"]:checked').count()).toBe(1);
+      await page.keyboard.press('ArrowRight');
+      expect(await fluxSuffix.isChecked()).toBe(true);
+      expect(await fluxRatios.locator('input[type="radio"]:checked').count()).toBe(1);
+      const selectedFluxLabel = fluxRatios.locator(
+        'label:has(input[type="radio"][value="1:1 HD"])'
+      );
+      expect(await selectedFluxLabel.locator('svg[aria-hidden="true"]').count()).toBe(1);
+
+      await page.goto(`${harness.url}/studio/image`);
+      await selectRadioValue(imageInspector, 'text-to-image');
+      await selectRadioValue(imageInspector, 'wan-2.7-image:text-to-image');
+      const wanOutput = await showInspectorSection(imageInspector, 'Output');
+      const wanRatios = wanOutput.getByRole('group', { name: /Aspect Ratio/ });
+      const wanAutomatic = wanRatios.getByRole('radio', { name: 'Automatic (model default)' });
+      expect(await wanAutomatic.getAttribute('value')).toBe('automatic');
+      expect(await wanAutomatic.isChecked()).toBe(true);
+      expect(
+        await wanRatios
+          .getByText('Omits this field and lets the model apply its documented behavior.')
+          .count()
+      ).toBe(1);
+      await assertAspectRatioPreview(wanRatios, '512x512', 1);
+      const wanPortrait = await assertAspectRatioPreview(wanRatios, '768x1024', 3 / 4);
+      await assertAspectRatioPreview(wanRatios, '1024x768', 4 / 3);
+
+      await wanPortrait.focus();
+      await page.keyboard.press('Space');
+      expect(await wanPortrait.isChecked()).toBe(true);
+      expect(await wanRatios.locator('input[type="radio"]:checked').count()).toBe(1);
+
+      await page.goto(`${harness.url}/studio/image`);
+      await selectRadioValue(imageInspector, 'text-to-image');
+      await selectRadioValue(imageInspector, 'nano-banana-2-new:text-to-image');
+      const nanoOutput = await showInspectorSection(imageInspector, 'Output');
+      const nanoRatios = nanoOutput.getByRole('group', { name: /Aspect Ratio/ });
+      const nanoExtreme = await assertAspectRatioPreview(nanoRatios, '1:8', 1 / 8);
+      await nanoExtreme.focus();
+      await page.keyboard.press('Space');
+      expect(await nanoExtreme.isChecked()).toBe(true);
+      expect(await nanoRatios.locator('input[type="radio"]:checked').count()).toBe(1);
+      await page.setViewportSize({ width: 320, height: 844 });
+      expect(await pageHasNoHorizontalOverflow(page)).toBe(true);
+      await page.getByRole('button', { name: 'Edit setup' }).click();
+      const mobileImageSetup = page.getByRole('dialog', { name: 'Image setup' });
+      await mobileImageSetup.waitFor();
+      const mobileNanoOutput = await showInspectorSection(mobileImageSetup, 'Output');
+      const visibleNanoRatios = mobileNanoOutput.getByRole('group', { name: /Aspect Ratio/ });
+      expect(
+        await visibleNanoRatios.evaluate((element) => element.scrollWidth <= element.clientWidth)
+      ).toBe(true);
+      await page.keyboard.press('Escape');
+      await page.setViewportSize({ width: 1440, height: 900 });
+
+      const nanoPrompt = await showInspectorSection(imageInspector, 'Prompt');
+      await nanoPrompt
+        .getByRole('textbox', { name: /^Prompt/ })
+        .fill('Preserve the extreme ratio token');
+      await waitForValidRequest(page);
+      const submitsBeforeNano = mockSubmitCount(harness);
+      await generationCommands(page).getByRole('button', { name: 'Generate image' }).click();
+      await waitUntil(
+        () => mockSubmitCount(harness) === submitsBeforeNano + 1,
+        'The extreme Nano Banana ratio was not submitted.'
+      );
+      expect(
+        harness.mock.requests
+          .filter((request) => request.pathname === '/api/generate/submit')
+          .at(-1)?.json
+      ).toMatchObject({ input: { size: '1:8' } });
+
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto(`${harness.url}/studio/image`);
+      await selectRadioValue(imageInspector, 'image-edit');
+      await selectRadioValue(imageInspector, 'flux-dev:image-edit');
+      const imageEditInputs = await showInspectorSection(imageInspector, 'Inputs');
+      await imageEditInputs.getByLabel('Add local file').setInputFiles({
+        name: 'automatic-source.png',
+        mimeType: 'image/png',
+        buffer: Buffer.from(solidPng(900, 1601))
+      });
+      await imageEditInputs.getByText('automatic-source.png').waitFor();
+      await imageEditInputs.getByText('900 × 1601 px').waitFor();
+      const imageEditOutput = await showInspectorSection(imageInspector, 'Output');
+      const sourceAutomatic = imageEditOutput.getByRole('radio', {
+        name: 'Automatic (9:16 from 900 × 1601)'
+      });
+      expect(await sourceAutomatic.getAttribute('value')).toBe('automatic');
+      expect(await sourceAutomatic.isChecked()).toBe(true);
+      expect(
+        await imageEditOutput
+          .getByText('Uses the first measurable image in the model’s documented input-role order.')
+          .count()
+      ).toBe(1);
+
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto(`${harness.url}/studio/video`);
+      await page.getByRole('button', { name: 'Edit setup' }).click();
+      const videoInspector = page.getByRole('dialog', { name: 'Video setup' });
+      await videoInspector.waitFor();
+      await selectRadioValue(videoInspector, 'text-to-video');
+      await selectRadioValue(videoInspector, 'kling-2.6:text-to-video');
+      const klingOutput = await showInspectorSection(videoInspector, 'Output');
+      const klingRatios = klingOutput.getByRole('group', { name: /Aspect Ratio/ });
+      const klingInputs = klingRatios.locator('input[type="radio"]');
+      expect(await klingRatios.getByRole('radio', { name: /Automatic/ }).count()).toBe(0);
+      expect(await klingInputs.count()).toBe(3);
+      expect(
+        await klingInputs.evaluateAll(
+          (inputs) =>
+            inputs.filter((input) => input instanceof HTMLInputElement && input.checked).length
+        )
+      ).toBe(0);
+      expect(
+        await klingInputs.first().evaluate((input) => !(input as HTMLInputElement).checkValidity())
+      ).toBe(true);
+      expect(await pageHasNoHorizontalOverflow(page)).toBe(true);
+      expect(
+        await klingRatios.evaluate((element) => element.scrollWidth <= element.clientWidth)
+      ).toBe(true);
+
+      const klingSquare = await assertAspectRatioPreview(klingRatios, '1:1', 1);
+      const klingLandscape = await assertAspectRatioPreview(klingRatios, '16:9', 16 / 9);
+      const klingPortrait = await assertAspectRatioPreview(klingRatios, '9:16', 9 / 16);
+      await klingSquare.focus();
+      await page.keyboard.press('Space');
+      expect(await klingSquare.isChecked()).toBe(true);
+      expect(await klingRatios.locator('input[type="radio"]:checked').count()).toBe(1);
+      await page.keyboard.press('ArrowRight');
+      expect(await klingLandscape.isChecked()).toBe(true);
+      await page.keyboard.press('ArrowRight');
+      expect(await klingPortrait.isChecked()).toBe(true);
+      expect(await klingRatios.locator('input[type="radio"]:checked').count()).toBe(1);
+      const selectedKlingLabel = klingRatios.locator(
+        'label:has(input[type="radio"][value="9:16"])'
+      );
+      expect(await selectedKlingLabel.locator('svg[aria-hidden="true"]').count()).toBe(1);
+      expect(
+        await klingInputs.first().evaluate((input) => (input as HTMLInputElement).checkValidity())
+      ).toBe(true);
+
+      const klingPrompt = await showInspectorSection(videoInspector, 'Prompt');
+      await klingPrompt
+        .getByRole('textbox', { name: /^Prompt/ })
+        .fill('Submit the explicit Kling portrait ratio');
+      await page.keyboard.press('Escape');
+      await waitForValidRequest(page);
+      const submitsBeforeKling = mockSubmitCount(harness);
+      await generationCommands(page).getByRole('button', { name: 'Generate video' }).click();
+      await waitUntil(
+        () => mockSubmitCount(harness) === submitsBeforeKling + 1,
+        'The explicit Kling ratio was not submitted.'
+      );
+      expect(
+        harness.mock.requests
+          .filter((request) => request.pathname === '/api/generate/submit')
+          .at(-1)?.json
+      ).toMatchObject({ input: { aspect_ratio: '9:16' } });
+    } finally {
+      await context.close().catch(() => undefined);
+      await browser.close().catch(() => undefined);
+      await harness.cleanup();
+    }
+  }
+);
 serial('E2E-01..15 production studios, recovery, library, settings and accessibility', async () => {
   const tracker: StageTracker = {};
   const stage = stageRunner(tracker);
