@@ -2,7 +2,7 @@ import { Database } from 'bun:sqlite';
 import { expect, setDefaultTimeout, test } from 'bun:test';
 import { cp, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { chromium, type Locator, type Page } from 'playwright';
+import { chromium, type Locator, type Page, type Request } from 'playwright';
 import { JobRepository } from '../../src/lib/server/jobs/repository';
 import { LibraryRepository } from '../../src/lib/server/library/repository';
 import { resolveAppPaths } from '../../src/lib/server/platform/app-paths';
@@ -33,6 +33,12 @@ interface SeededGallery {
   video: SeededItem;
   long: SeededItem;
   unavailable: SeededItem;
+}
+function isExpectedLifecycleRequestAbort(request: Request): boolean {
+  if (request.failure()?.errorText !== 'net::ERR_ABORTED') return false;
+
+  const pathname = new URL(request.url()).pathname;
+  return pathname === '/api/library/viewer-sequence' || pathname === '/api/events/jobs';
 }
 
 async function seedGallery(harness: BrowserAppHarness): Promise<SeededGallery> {
@@ -176,6 +182,109 @@ async function seedGallery(harness: BrowserAppHarness): Promise<SeededGallery> {
     database.exec('PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode=DELETE;');
     database.close();
   }
+}
+async function seedLiveGalleryItem(
+  harness: BrowserAppHarness,
+  options: {
+    label: string;
+    createdAt: string;
+    mediaKind: 'image' | 'video';
+    fixture: string;
+    fileName: string;
+  }
+): Promise<SeededItem> {
+  const paths = resolveAppPaths({ environment: { PLS_APP_DATA_DIR: harness.appData } });
+  const bytes = await Bun.file(options.fixture).bytes();
+  const database = new Database(harness.databasePath, { strict: true });
+  try {
+    const repository = new JobRepository(database, () => new Date(options.createdAt));
+    const job = repository.create({
+      actionId: crypto.randomUUID(),
+      workflow: options.mediaKind === 'video' ? 'text-to-video' : 'text-to-image',
+      publicModelId: options.label,
+      prompt: `Live Gallery completion for ${options.label}.`,
+      guidedRequest: { prompt: options.label, aspectRatio: '1:1' },
+      normalizedPayload: { model: options.label, input: { prompt: options.label } },
+      expectedMediaKind: options.mediaKind,
+      expectedOutputCount: 1
+    });
+    repository.applyStatus(
+      job.id,
+      {
+        taskId: `task-${job.id}`,
+        statusRaw: 'finished',
+        status: 'finished',
+        creditsAmount: 1,
+        files: [
+          {
+            url: `https://cdn.poyo.test/${options.fileName}`,
+            fileType: options.mediaKind,
+            label: null,
+            format: options.mediaKind === 'video' ? 'mp4' : 'png',
+            contentType: options.mediaKind === 'video' ? 'video/mp4' : 'image/png',
+            fileName: options.fileName,
+            fileSize: bytes.byteLength
+          }
+        ],
+        createdTime: options.createdAt,
+        progress: 100,
+        errorMessage: null
+      },
+      1_000
+    );
+    const output = repository.outputs(job.id)[0];
+    if (!output) throw new Error(`Missing live Gallery output for ${options.label}.`);
+    const outputDirectory = join(paths.media, job.id);
+    const localPath = join(outputDirectory, options.fileName);
+    await mkdir(outputDirectory, { recursive: true });
+    await cp(options.fixture, localPath);
+    const attempt = repository.startDownload(output.id);
+    repository.verifyDownload(output.id, attempt, {
+      path: localPath,
+      size: bytes.byteLength,
+      checksum: new Bun.CryptoHasher('sha256').update(bytes).digest('hex'),
+      signature: Array.from(bytes.slice(0, 12), (byte) => byte.toString(16).padStart(2, '0')).join(
+        ''
+      ),
+      contentType: options.mediaKind === 'video' ? 'video/mp4' : 'image/png',
+      pixelWidth: options.mediaKind === 'image' ? 640 : 16,
+      pixelHeight: options.mediaKind === 'image' ? 360 : 16,
+      aspectRatio: options.mediaKind === 'image' ? '16:9' : '1:1'
+    });
+    repository.finishIfDownloaded(job.id);
+    return { jobId: job.id, outputId: output.id, label: options.label };
+  } finally {
+    database.close();
+  }
+}
+async function seedFullHistoryGallery(
+  harness: BrowserAppHarness
+): Promise<{ item: SeededItem; createdAt: string }[]> {
+  await harness.stopApp();
+  const seeded: { item: SeededItem; createdAt: string }[] = [];
+  const newest = Date.parse('2026-07-21T00:00:00.000Z');
+  for (let index = 0; index < 205; index += 1) {
+    const createdAt = new Date(newest - Math.floor(index / 5) * 60_000).toISOString();
+    seeded.push({
+      item: await seedLiveGalleryItem(harness, {
+        label: `Gallery Full History ${index.toString().padStart(3, '0')}`,
+        createdAt,
+        mediaKind: index % 2 === 0 ? 'image' : 'video',
+        fixture:
+          index % 2 === 0
+            ? 'tests/fixtures/media/gallery-landscape.png'
+            : 'tests/fixtures/media/tiny.mp4',
+        fileName: `gallery-full-history-${index}.${index % 2 === 0 ? 'png' : 'mp4'}`
+      }),
+      createdAt
+    });
+  }
+  return seeded.sort(
+    (left, right) =>
+      right.createdAt.localeCompare(left.createdAt) ||
+      right.item.jobId.localeCompare(left.item.jobId) ||
+      right.item.outputId.localeCompare(left.item.outputId)
+  );
 }
 
 async function activeElementIsWithin(locator: Locator): Promise<boolean> {
@@ -366,6 +475,8 @@ test('Gallery viewer preserves context across mixed media, focus, actions and re
     const issues = trackBrowserIssues(page);
     const failedRequests: string[] = [];
     page.on('requestfailed', (request) => {
+      if (isExpectedLifecycleRequestAbort(request)) return;
+
       failedRequests.push(
         `${request.method()} ${request.url()} ${request.failure()?.errorText ?? ''}`
       );
@@ -1630,6 +1741,403 @@ test('Gallery production video pauses once before each production-owned exit det
       expect(issues.pageErrors).toEqual([]);
       await page.close();
     }
+  } finally {
+    await context?.close();
+    await browser?.close();
+    await harness.cleanup();
+  }
+});
+test('Gallery adds late completed image and video in canonical order without replacing existing grid cards', async () => {
+  const harness = await startBrowserAppHarness();
+  let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
+  let context:
+    | Awaited<ReturnType<Awaited<ReturnType<typeof chromium.launch>>['newContext']>>
+    | undefined;
+  try {
+    await seedGallery(harness);
+    await harness.startApp();
+    browser = await chromium.launch({ headless: true });
+    context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const page = await context.newPage();
+    const issues = trackBrowserIssues(page);
+    await page.goto(`${harness.url}/gallery`);
+    await page.getByText('Live updates: connected', { exact: true }).waitFor();
+
+    const existingCard = page.locator('article').filter({ hasText: labels.newest }).first();
+    const initialUrl = page.url();
+    const initialHistoryLength = await page.evaluate(() => history.length);
+    await existingCard.evaluate((element) => {
+      (window as Window & { __galleryStableCard?: HTMLElement }).__galleryStableCard =
+        element as HTMLElement;
+    });
+    await page.evaluate(() => window.scrollTo(0, 180));
+    const initialScroll = await page.evaluate(() => window.scrollY);
+
+    const lateImage = await seedLiveGalleryItem(harness, {
+      label: 'Gallery Late Completed Image',
+      createdAt: '2026-07-20T20:05:00.000Z',
+      mediaKind: 'image',
+      fixture: 'tests/fixtures/media/gallery-landscape.png',
+      fileName: 'gallery-late-image.png'
+    });
+    await page
+      .getByRole('button', { name: `View image ${lateImage.label}`, exact: true })
+      .first()
+      .waitFor({ timeout: 30_000 });
+
+    const lateVideo = await seedLiveGalleryItem(harness, {
+      label: 'Gallery Late Completed Video',
+      createdAt: '2026-07-20T20:06:00.000Z',
+      mediaKind: 'video',
+      fixture: 'tests/fixtures/media/tiny.mp4',
+      fileName: 'gallery-late-video.mp4'
+    });
+    await page
+      .getByRole('button', { name: `View video ${lateVideo.label}`, exact: true })
+      .first()
+      .waitFor({ timeout: 30_000 });
+
+    const cardLabels = await page
+      .locator('article')
+      .evaluateAll((cards) =>
+        cards.map((card) =>
+          card.querySelector('button[aria-label^="View "]')?.getAttribute('aria-label')
+        )
+      );
+    expect(cardLabels.slice(0, 3)).toEqual([
+      `View video ${lateVideo.label}`,
+      `View image ${lateImage.label}`,
+      `View image ${labels.newest}`
+    ]);
+    expect(new Set(cardLabels).size).toBe(cardLabels.length);
+    expect(
+      await existingCard.evaluate(
+        (element) =>
+          (window as Window & { __galleryStableCard?: HTMLElement }).__galleryStableCard === element
+      )
+    ).toBe(true);
+    expect(page.url()).toBe(initialUrl);
+    expect(await page.evaluate(() => history.length)).toBe(initialHistoryLength);
+    expect(await page.evaluate(() => window.scrollY)).toBeGreaterThanOrEqual(
+      Math.min(initialScroll, 180)
+    );
+    expect(issues.consoleErrors).toEqual([]);
+    expect(issues.pageErrors).toEqual([]);
+  } finally {
+    await context?.close();
+    await browser?.close();
+    await harness.cleanup();
+  }
+});
+test('Gallery viewer discards closed full history before rebuilding a fresh sequence', async () => {
+  const harness = await startBrowserAppHarness();
+  let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
+  let context:
+    | Awaited<ReturnType<Awaited<ReturnType<typeof chromium.launch>>['newContext']>>
+    | undefined;
+  try {
+    await seedFullHistoryGallery(harness);
+    await harness.startApp();
+    browser = await chromium.launch({ headless: true });
+    context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const page = await context.newPage();
+    const issues = trackBrowserIssues(page);
+
+    await page.goto(`${harness.url}/gallery?q=Gallery+Full+History`);
+    const selectedButton = page
+      .getByRole('button', { name: /^View image Gallery Full History/ })
+      .first();
+    await selectedButton.click();
+    const dialog = page.getByRole('dialog');
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector('[data-testid="gallery-viewer-item-status"]')
+          ?.textContent?.includes('of 205') === true
+    );
+
+    await dialog.getByRole('button', { name: 'Close' }).click();
+    await dialog.waitFor({ state: 'detached' });
+    await seedLiveGalleryItem(harness, {
+      label: 'Gallery Full History Fresh Reopen',
+      createdAt: '2026-07-22T00:00:00.000Z',
+      mediaKind: 'image',
+      fixture: 'tests/fixtures/media/gallery-landscape.png',
+      fileName: 'gallery-fresh-reopen-history.png'
+    });
+
+    const delayed = Promise.withResolvers<void>();
+    const freshRequestStarted = Promise.withResolvers<void>();
+    await page.route('**/api/library/viewer-sequence**', async (route) => {
+      const response = await route.fetch();
+      const body = await response.body();
+      freshRequestStarted.resolve();
+      await delayed.promise;
+      await route.fulfill({ response, body });
+    });
+
+    await selectedButton.click();
+    await dialog.waitFor();
+    await freshRequestStarted.promise;
+    expect(
+      (await dialog.getByTestId('gallery-viewer-item-status').textContent())?.trim()
+    ).toContain('of 24');
+
+    delayed.resolve();
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector('[data-testid="gallery-viewer-item-status"]')
+          ?.textContent?.includes('of 206') === true
+    );
+    expect(issues.consoleErrors).toEqual([]);
+    expect(issues.pageErrors).toEqual([]);
+  } finally {
+    await context?.close();
+    await browser?.close();
+    await harness.cleanup();
+  }
+});
+
+test('Gallery production viewer walks a filtered full history atomically from a middle cursor', async () => {
+  const harness = await startBrowserAppHarness();
+  let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
+  let context:
+    | Awaited<ReturnType<Awaited<ReturnType<typeof chromium.launch>>['newContext']>>
+    | undefined;
+  try {
+    const expected = await seedFullHistoryGallery(harness);
+    await harness.startApp();
+    browser = await chromium.launch({ headless: true });
+    context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const page = await context.newPage();
+    const issues = trackBrowserIssues(page);
+    const delayed = Promise.withResolvers<void>();
+    const delayedStartedSignal = Promise.withResolvers<void>();
+    const delayedFulfilledSignal = Promise.withResolvers<void>();
+    const normalStarted = [
+      Promise.withResolvers<void>(),
+      Promise.withResolvers<void>(),
+      Promise.withResolvers<void>()
+    ];
+    const normalGates: (() => void)[] = [];
+    const normalPages: {
+      items: { jobId: string; outputId: string }[];
+      nextCursor: string | null;
+      snapshot: string;
+      total: number | null;
+    }[] = [];
+    const normalRequests: URL[] = [];
+    let mode: 'delayed' | 'conflict' | 'normal' = 'delayed';
+    let activeSequenceRequests = 0;
+    let maximumSequenceRequests = 0;
+    let mediaRequestsDuringWalk = 0;
+
+    await page.route('**/api/library/viewer-sequence**', async (route) => {
+      activeSequenceRequests += 1;
+      maximumSequenceRequests = Math.max(maximumSequenceRequests, activeSequenceRequests);
+      try {
+        if (mode === 'conflict') {
+          await route.fulfill({
+            status: 409,
+            contentType: 'application/json',
+            body: JSON.stringify({ error: 'viewer_sequence_changed' })
+          });
+          return;
+        }
+
+        const upstream = await route.fetch();
+        const body = await upstream.body();
+        if (mode === 'delayed') {
+          delayedStartedSignal.resolve();
+          await delayed.promise;
+          delayedFulfilledSignal.resolve();
+          await route.fulfill({ response: upstream, body });
+          return;
+        }
+
+        const payload = JSON.parse(new TextDecoder().decode(body)) as (typeof normalPages)[number];
+        normalPages.push(payload);
+        normalRequests.push(new URL(route.request().url()));
+        normalStarted[normalPages.length - 1]?.resolve();
+        if (normalPages.length < 3) {
+          const gate = Promise.withResolvers<void>();
+          normalGates.push(gate.resolve);
+          await gate.promise;
+        }
+        await route.fulfill({ response: upstream, body });
+      } finally {
+        activeSequenceRequests -= 1;
+      }
+    });
+    page.on('request', (request) => {
+      if (mode === 'normal' && new URL(request.url()).pathname.startsWith('/api/media/'))
+        mediaRequestsDuringWalk += 1;
+    });
+
+    await page.goto(`${harness.url}/gallery?q=Gallery+Full+History`);
+    for (let pageIndex = 0; pageIndex < 2; pageIndex += 1) {
+      const previousUrl = page.url();
+      await page.getByRole('link', { name: 'Next page' }).click();
+      await page.waitForFunction((url) => window.location.href !== url, previousUrl);
+    }
+    await page.getByText('205 grouped generations', { exact: false }).waitFor();
+
+    const visibleIds = await page
+      .locator('article[data-gallery-job-id]')
+      .evaluateAll((cards) => cards.map((card) => card.getAttribute('data-gallery-job-id')));
+    const visibleOffset = expected.findIndex(({ item }) => item.jobId === visibleIds[0]);
+    expect(visibleOffset).toBeGreaterThanOrEqual(24);
+    expect(visibleIds).toEqual(
+      expected.slice(visibleOffset, visibleOffset + visibleIds.length).map(({ item }) => item.jobId)
+    );
+    const selectedButton = page
+      .getByRole('button', { name: /^View image Gallery Full History/ })
+      .first();
+    const selectedOutputId = await selectedButton.getAttribute('data-output-id');
+    if (!selectedOutputId) throw new Error('Missing expected middle Gallery image output.');
+    const selectedJobId = await selectedButton.evaluate(
+      (button) => button.closest<HTMLElement>('article[data-gallery-job-id]')?.dataset.galleryJobId
+    );
+    if (!selectedJobId) throw new Error('Missing expected middle Gallery image job.');
+    const selectedCard = page.locator(`[data-gallery-job-id="${selectedJobId}"]`);
+    await selectedCard.evaluate((element) => {
+      (window as Window & { __fullHistoryGalleryCard?: Element }).__fullHistoryGalleryCard =
+        element;
+    });
+    const initialUrl = page.url();
+    const initialCursor = new URL(initialUrl).searchParams.get('cursor');
+    const initialHistoryLength = await page.evaluate(() => history.length);
+    await page.evaluate(() => window.scrollTo(0, 300));
+    const initialScroll = await page.evaluate(() => window.scrollY);
+    const storageAndTotal = (await page.locator('h2 + p').first().textContent())?.trim();
+    expect(storageAndTotal).toMatch(
+      /^205 grouped generations · \d+(?:\.\d+)? (?:B|KB|MB) indexed locally$/
+    );
+
+    await selectedButton.evaluate((button: HTMLButtonElement) => button.click());
+    await page.waitForFunction(() => {
+      const image = document.querySelector<HTMLImageElement>('[role="dialog"] img');
+      const video = document.querySelector<HTMLVideoElement>('[role="dialog"] video');
+      return (
+        image?.complete || (video !== null && video.readyState >= HTMLMediaElement.HAVE_METADATA)
+      );
+    });
+    await delayedStartedSignal.promise;
+    const delayedDialog = page.getByRole('dialog');
+    await delayedDialog.getByRole('button', { name: 'Close' }).click();
+    await delayedDialog.waitFor({ state: 'detached' });
+    delayed.resolve();
+    await delayedFulfilledSignal.promise;
+    expect(await page.getByRole('dialog').count()).toBe(0);
+    expect(
+      await selectedCard.evaluate(
+        (element) =>
+          (window as Window & { __fullHistoryGalleryCard?: Element }).__fullHistoryGalleryCard ===
+          element
+      )
+    ).toBe(true);
+
+    mode = 'conflict';
+    await selectedCard
+      .locator(`[data-output-id="${selectedOutputId}"]`)
+      .first()
+      .evaluate((button: HTMLButtonElement) => button.click());
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('alert').waitFor();
+    expect((await dialog.getByRole('alert').textContent())?.trim()).toContain(
+      'Gallery history could not be updated.'
+    );
+    expect(
+      (await dialog.getByTestId('gallery-viewer-item-status').textContent())?.trim()
+    ).toContain('of 24');
+    await page.waitForFunction(() => {
+      const image = document.querySelector<HTMLImageElement>('[role="dialog"] img');
+      const video = document.querySelector<HTMLVideoElement>('[role="dialog"] video');
+      return (
+        image?.complete || (video !== null && video.readyState >= HTMLMediaElement.HAVE_METADATA)
+      );
+    });
+
+    mode = 'normal';
+    mediaRequestsDuringWalk = 0;
+    await dialog.getByRole('button', { name: 'Retry' }).click();
+    const [firstStarted, secondStarted, thirdStarted] = normalStarted;
+    if (!firstStarted || !secondStarted || !thirdStarted) {
+      throw new Error(
+        'The integrated viewer walk did not create all three expected page requests.'
+      );
+    }
+    await firstStarted.promise;
+    expect(
+      (await dialog.getByTestId('gallery-viewer-item-status').textContent())?.trim()
+    ).toContain('of 24');
+    normalGates[0]?.();
+    await secondStarted.promise;
+    expect(
+      (await dialog.getByTestId('gallery-viewer-item-status').textContent())?.trim()
+    ).toContain('of 24');
+    normalGates[1]?.();
+    await thirdStarted.promise;
+    await page.waitForFunction(() =>
+      document
+        .querySelector('[data-testid="gallery-viewer-item-status"]')
+        ?.textContent?.includes('of 205')
+    );
+
+    expect(maximumSequenceRequests).toBe(1);
+    expect(normalPages.map((page) => page.items.length)).toEqual([100, 100, 5]);
+    expect(
+      normalPages.map((page) => page.items.map(({ jobId, outputId }) => ({ jobId, outputId })))
+    ).toEqual([
+      expected.slice(0, 100).map(({ item }) => ({ jobId: item.jobId, outputId: item.outputId })),
+      expected.slice(100, 200).map(({ item }) => ({ jobId: item.jobId, outputId: item.outputId })),
+      expected.slice(200).map(({ item }) => ({ jobId: item.jobId, outputId: item.outputId }))
+    ]);
+    expect(normalPages[0]?.total).toBe(205);
+    expect(normalPages[1]?.total).toBeNull();
+    expect(normalPages[2]?.total).toBe(205);
+    expect(normalRequests[0]?.searchParams.get('cursor')).toBeNull();
+    expect(normalRequests[0]?.searchParams.get('snapshot')).toBeNull();
+    expect(normalRequests[1]?.searchParams.get('cursor')).toBe(normalPages[0]?.nextCursor);
+    expect(normalRequests[2]?.searchParams.get('cursor')).toBe(normalPages[1]?.nextCursor);
+    expect(normalRequests[1]?.searchParams.get('snapshot')).toBe(normalPages[0]?.snapshot);
+    expect(normalRequests[2]?.searchParams.get('snapshot')).toBe(normalPages[0]?.snapshot);
+    expect(normalRequests.map((request) => request.searchParams.get('q'))).toEqual([
+      'Gallery Full History',
+      'Gallery Full History',
+      'Gallery Full History'
+    ]);
+    expect(normalRequests.map((request) => request.searchParams.get('limit'))).toEqual([
+      '100',
+      '100',
+      '100'
+    ]);
+    expect(new Set(normalRequests.map((request) => request.searchParams.get('cursor'))).size).toBe(
+      3
+    );
+    expect(mediaRequestsDuringWalk).toBe(0);
+
+    expect(page.url()).toBe(initialUrl);
+    expect(new URL(page.url()).searchParams.get('cursor')).toBe(initialCursor);
+    expect(await page.evaluate(() => history.length)).toBe(initialHistoryLength);
+    expect(await page.evaluate(() => window.scrollY)).toBe(initialScroll);
+    expect(
+      await selectedCard.evaluate(
+        (element) =>
+          (window as Window & { __fullHistoryGalleryCard?: Element }).__fullHistoryGalleryCard ===
+          element
+      )
+    ).toBe(true);
+    expect(
+      await page
+        .locator('article[data-gallery-job-id]')
+        .evaluateAll((cards) => cards.map((card) => card.getAttribute('data-gallery-job-id')))
+    ).toEqual(visibleIds);
+    expect(issues.consoleErrors).toEqual([
+      'Failed to load resource: the server responded with a status of 409 (Conflict)'
+    ]);
+    expect(issues.pageErrors).toEqual([]);
   } finally {
     await context?.close();
     await browser?.close();

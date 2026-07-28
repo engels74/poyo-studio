@@ -1,9 +1,19 @@
-import { expect, setDefaultTimeout, test } from 'bun:test';
+import { afterAll, beforeAll, expect, setDefaultTimeout, test } from 'bun:test';
 import { chromium, type Page } from 'playwright';
 import { trackBrowserIssues } from '../helpers/browser-assertions';
 import { startGalleryViewerComponentHarness } from '../helpers/gallery-viewer-component-harness';
 
 setDefaultTimeout(60_000);
+
+let harness: Awaited<ReturnType<typeof startGalleryViewerComponentHarness>>;
+
+beforeAll(async () => {
+  harness = await startGalleryViewerComponentHarness();
+});
+
+afterAll(async () => {
+  await harness.stop();
+});
 
 type LifecycleControl =
   | 'Next item'
@@ -69,7 +79,7 @@ async function assertModalExternalControlsAreInert(page: Page): Promise<void> {
       });
     });
 
-  expect(externalControls).toHaveLength(4);
+  expect(externalControls).toHaveLength(9);
   for (const control of externalControls) {
     expect(control.outsideDialog).toBe(true);
     expect(control.modalExternalInert).toBe(true);
@@ -236,8 +246,98 @@ async function verifyLifecycleScenario(
   }
 }
 
+test('GalleryViewer retains selected media nodes and state when newer full-history items prepend', async () => {
+  let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
+  let page: Page | undefined;
+  let primaryError: unknown;
+  let hasPrimaryError = false;
+  const parentControl = async (name: string): Promise<void> => {
+    if (!page) throw new Error('GalleryViewer history page was not created.');
+    await page
+      .locator('[data-testid="gallery-viewer-parent-controls"] button')
+      .filter({ hasText: name })
+      .evaluate((button: HTMLButtonElement) => button.click());
+  };
+  try {
+    browser = await chromium.launch({ headless: true });
+    page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    const issues = trackBrowserIssues(page);
+    await page.goto(harness.url);
+
+    await parentControl('Open history image');
+    const dialog = page.getByRole('dialog');
+    await dialog.waitFor();
+    const image = dialog.getByRole('img', { name: 'Lifecycle history image fixture', exact: true });
+    await image.waitFor();
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector('[data-testid="gallery-viewer-viewport"]')
+          ?.getAttribute('aria-busy') === 'false'
+    );
+    await dialog.getByRole('button', { name: 'Actual size', exact: true }).click();
+    const initial = await image.evaluate((element) => {
+      if (!(element instanceof HTMLImageElement))
+        throw new Error('Expected history image element.');
+      (window as Window & { __galleryHistoryImage?: HTMLImageElement }).__galleryHistoryImage =
+        element;
+      return {
+        transform: element.getAttribute('style'),
+        previousDisabled: document.querySelector<HTMLButtonElement>('[aria-label="Previous item"]')
+          ?.disabled
+      };
+    });
+    expect(initial.previousDisabled).toBe(true);
+
+    await parentControl('Prepend newer history item');
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector('[data-testid="gallery-viewer-item-status"]')
+          ?.textContent?.includes('item 2 of 2') === true
+    );
+    expect(
+      await dialog.getByRole('button', { name: 'Previous item', exact: true }).isDisabled()
+    ).toBe(false);
+    const retained = await image.evaluate((element) => ({
+      sameNode:
+        (window as Window & { __galleryHistoryImage?: HTMLImageElement }).__galleryHistoryImage ===
+        element,
+      transform: element.getAttribute('style')
+    }));
+    expect(retained.sameNode).toBe(true);
+    expect(retained.transform).toBe(initial.transform);
+    expect(await page.getByTestId('gallery-viewer-viewport').getAttribute('data-zoom-mode')).toBe(
+      'actual'
+    );
+
+    await parentControl('Fail history update');
+    await dialog.getByRole('alert').waitFor({ timeout: 5_000 });
+    await dialog.getByRole('button', { name: 'Retry', exact: true }).click({ timeout: 5_000 });
+    await dialog.getByRole('alert').waitFor({ state: 'detached', timeout: 5_000 });
+    expect(issues.consoleErrors).toEqual([]);
+    expect(issues.pageErrors).toEqual([]);
+  } catch (error) {
+    primaryError = error;
+    hasPrimaryError = true;
+    throw error;
+  } finally {
+    await closeResources(
+      [
+        async () => {
+          await page?.close();
+        },
+        async () => {
+          await browser?.close();
+        }
+      ],
+      primaryError,
+      hasPrimaryError
+    );
+  }
+});
+
 test('GalleryViewer pauses actively playing media before parent-owned lifecycle disconnects', async () => {
-  const harness = await startGalleryViewerComponentHarness();
   let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
   let primaryError: unknown;
   let hasPrimaryError = false;
@@ -259,8 +359,85 @@ test('GalleryViewer pauses actively playing media before parent-owned lifecycle 
       [
         async () => {
           await browser?.close();
+        }
+      ],
+      primaryError,
+      hasPrimaryError
+    );
+  }
+});
+
+test('GalleryViewer keeps a playing current video attached when newer history prepends', async () => {
+  let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
+  let page: Page | undefined;
+  let primaryError: unknown;
+  let hasPrimaryError = false;
+  try {
+    browser = await chromium.launch({ headless: true });
+    page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    const issues = trackBrowserIssues(page);
+    await page.goto(harness.url);
+    await page
+      .locator('[data-testid="gallery-viewer-parent-controls"] button')
+      .filter({ hasText: 'Open history video' })
+      .evaluate((button: HTMLButtonElement) => button.click());
+
+    const dialog = page.getByRole('dialog');
+    const video = dialog.locator('video');
+    await video.waitFor();
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector('[data-testid="gallery-viewer-viewport"]')
+          ?.getAttribute('aria-busy') === 'false'
+    );
+    const playing = await video.evaluate(async (element: HTMLVideoElement) => {
+      element.loop = true;
+      element.muted = true;
+      await element.play();
+      (window as Window & { __galleryHistoryVideo?: HTMLVideoElement }).__galleryHistoryVideo =
+        element;
+      return element.paused;
+    });
+    expect(playing).toBe(false);
+
+    await page
+      .locator('[data-testid="gallery-viewer-parent-controls"] button')
+      .filter({ hasText: 'Prepend newer history item' })
+      .evaluate((button: HTMLButtonElement) => button.click());
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector('[data-testid="gallery-viewer-item-status"]')
+          ?.textContent?.includes('item 2 of 2') === true
+    );
+    const retained = await video.evaluate((element) => {
+      if (!(element instanceof HTMLVideoElement))
+        throw new Error('Expected history video element.');
+      return {
+        sameNode:
+          (window as Window & { __galleryHistoryVideo?: HTMLVideoElement })
+            .__galleryHistoryVideo === element,
+        connected: element.isConnected,
+        paused: element.paused
+      };
+    });
+    expect(retained).toEqual({ sameNode: true, connected: true, paused: false });
+    expect(issues.consoleErrors).toEqual([]);
+    expect(issues.pageErrors).toEqual([]);
+  } catch (error) {
+    primaryError = error;
+    hasPrimaryError = true;
+    throw error;
+  } finally {
+    await closeResources(
+      [
+        async () => {
+          await page?.close();
         },
-        () => harness.stop()
+        async () => {
+          await browser?.close();
+        }
       ],
       primaryError,
       hasPrimaryError

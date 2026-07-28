@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite';
 import type { CleanupConsequence, LocalCleanupPolicy } from '../../features/cleanup/contracts';
+import { packDurableJobEventPayload } from '../jobs/event-attention';
 import { DatabaseRepository } from '../platform/repository';
 import { cleanupHash, normalizeCleanupPolicy } from './policy';
 
@@ -36,6 +37,10 @@ export interface CleanupClaim {
   token: string;
   attempt: number;
 }
+export type OutputCleanupActionKind = Extract<
+  CleanupClaim['actionKind'],
+  'local_file' | 'local_metadata' | 'local_both'
+>;
 
 type OutputRow = {
   id: string;
@@ -67,6 +72,14 @@ type ActionRow = {
   target_id: string;
   action_kind: CleanupClaim['actionKind'];
   safe_result_json: string;
+};
+type OutputJobLifecycleRow = {
+  local_phase: string;
+  remote_status_raw: string | null;
+  remote_status: string;
+  failure_domain: string;
+  progress: number | null;
+  attention_code: string | null;
 };
 
 function actionKind(consequence: CleanupConsequence): CleanupClaim['actionKind'] {
@@ -489,19 +502,55 @@ export class CleanupRepository extends DatabaseRepository {
     });
   }
 
-  removeOutputMetadata(outputId: string): boolean {
-    return this.database.query('DELETE FROM job_outputs WHERE id=?').run(outputId).changes === 1;
-  }
+  applyOutputConsequence(
+    outputId: string,
+    jobId: string,
+    actionKind: OutputCleanupActionKind
+  ): boolean {
+    return this.transaction(() => {
+      const lifecycle = this.database
+        .query<OutputJobLifecycleRow, [string, string]>(
+          `SELECT j.local_phase,j.remote_status_raw,j.remote_status,j.failure_domain,j.progress,
+            j.attention_code
+           FROM job_outputs o JOIN jobs j ON j.id=o.job_id
+           WHERE o.id=? AND o.job_id=?`
+        )
+        .get(outputId, jobId);
+      if (!lifecycle) return false;
 
-  markOutputFileRemoved(outputId: string): boolean {
-    const now = this.now().toISOString();
-    return (
+      const changed =
+        actionKind === 'local_file'
+          ? this.database
+              .query(
+                `UPDATE job_outputs SET local_path=NULL,download_state='deleted',verified_at=NULL,
+                  deleted_at=? WHERE id=? AND job_id=? AND local_path IS NOT NULL
+                  AND download_state='verified'`
+              )
+              .run(this.now().toISOString(), outputId, jobId).changes === 1
+          : this.database
+              .query('DELETE FROM job_outputs WHERE id=? AND job_id=?')
+              .run(outputId, jobId).changes === 1;
+      if (!changed) return false;
+
       this.database
         .query(
-          "UPDATE job_outputs SET local_path=NULL,download_state='deleted',verified_at=NULL,deleted_at=? WHERE id=?"
+          `INSERT INTO job_events(job_id,event_type,local_phase,remote_status_raw,remote_status,
+            failure_domain,progress,safe_payload_json,observed_at)
+           VALUES (?,?,?,?,?,?,?,?,?)`
         )
-        .run(now, outputId).changes === 1
-    );
+        .run(
+          jobId,
+          `output.${actionKind}_removed`,
+          lifecycle.local_phase,
+          lifecycle.remote_status_raw,
+          lifecycle.remote_status,
+          lifecycle.failure_domain,
+          lifecycle.progress,
+          JSON.stringify(packDurableJobEventPayload({ outputId }, lifecycle.attention_code)),
+          this.now().toISOString()
+        );
+      return true;
+    });
   }
 
   markManagedSourceFileRemoved(sourceId: string, availability: 'missing' | 'deleted'): boolean {

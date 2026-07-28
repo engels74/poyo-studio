@@ -1,8 +1,9 @@
 import type { AddressInfo } from 'node:net';
+import { createServer as createTcpServer } from 'node:net';
 import { join } from 'node:path';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import UnoCSS from '@unocss/vite';
-import { createServer, type ViteDevServer } from 'vite';
+import { createServer as createViteServer, type ViteDevServer } from 'vite';
 import { createTemporaryDirectory } from './temporary-directory';
 
 const host = '127.0.0.1';
@@ -12,6 +13,23 @@ const harnessRoot = join(repositoryRoot, 'tests', 'helpers', 'gallery-viewer-lif
 export interface GalleryViewerComponentHarness {
   url: string;
   stop: () => Promise<void>;
+}
+
+async function availableLoopbackPort(): Promise<number> {
+  const probe = createTcpServer();
+  await new Promise<void>((resolve, reject) => {
+    probe.once('error', reject);
+    probe.listen(0, host, resolve);
+  });
+  const address = probe.address();
+  if (!address || typeof address === 'string') {
+    probe.close();
+    throw new Error('GalleryViewer lifecycle port probe did not bind a TCP address.');
+  }
+  await new Promise<void>((resolve, reject) => {
+    probe.close((error) => (error ? reject(error) : resolve()));
+  });
+  return address.port;
 }
 
 export async function startGalleryViewerComponentHarness(): Promise<GalleryViewerComponentHarness> {
@@ -53,7 +71,7 @@ export async function startGalleryViewerComponentHarness(): Promise<GalleryViewe
 
   try {
     temporary = await createTemporaryDirectory('poyo-gallery-viewer-harness-');
-    server = await createServer({
+    server = await createViteServer({
       appType: 'spa',
       root: harnessRoot,
       publicDir: join(repositoryRoot, 'tests', 'fixtures', 'media'),
@@ -67,8 +85,8 @@ export async function startGalleryViewerComponentHarness(): Promise<GalleryViewe
       },
       server: {
         host,
-        port: 0,
-        strictPort: false,
+        port: await availableLoopbackPort(),
+        strictPort: true,
         fs: {
           allow: [repositoryRoot]
         }

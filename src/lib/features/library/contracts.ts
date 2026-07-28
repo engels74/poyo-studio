@@ -1,3 +1,23 @@
+const exactIsoUtcInstant = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d{3})?Z$/;
+
+export function isExactIsoUtcInstant(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const match = exactIsoUtcInstant.exec(value);
+  if (!match) return false;
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return false;
+  const parsed = new Date(timestamp);
+  if (
+    parsed.getUTCFullYear() !== Number(match[1]) ||
+    parsed.getUTCMonth() !== Number(match[2]) - 1 ||
+    parsed.getUTCDate() !== Number(match[3]) ||
+    parsed.getUTCHours() !== Number(match[4]) ||
+    parsed.getUTCMinutes() !== Number(match[5]) ||
+    parsed.getUTCSeconds() !== Number(match[6])
+  )
+    return false;
+  return parsed.toISOString() === `${value.slice(0, -1)}${match[7] ? 'Z' : '.000Z'}`;
+}
 export type JobFilterStatus =
   | 'all'
   | 'queued'
@@ -96,6 +116,24 @@ export interface LibraryFiltersDto {
   dateTo: string;
   cursor: string;
   view: 'grid' | 'list';
+}
+export interface GalleryViewerItemDto {
+  jobId: string;
+  displayName: string;
+  provider: string;
+  workflow: string;
+  promptExcerpt: string | null;
+  createdAt: string;
+  outputId: string;
+  mediaKind: 'image' | 'video';
+  mediaUrl: string;
+}
+
+export interface GalleryViewerSequencePageDto {
+  items: GalleryViewerItemDto[];
+  nextCursor: string | null;
+  snapshot: string;
+  total: number | null;
 }
 
 export interface JobInputDto {

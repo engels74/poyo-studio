@@ -4,6 +4,10 @@ import { join } from 'node:path';
 import type { JobFiltersDto, LibraryFiltersDto } from '../../../src/lib/features/library/contracts';
 import { JOB_EVENT_METADATA_KEY } from '../../../src/lib/server/jobs/event-attention';
 import { LibraryRepository } from '../../../src/lib/server/library/repository';
+import type {
+  ViewerSequenceQueryObservation,
+  ViewerSequenceTokenContext
+} from '../../../src/lib/server/library/repository';
 import { seedImageRegistry } from '../../../src/lib/server/registry/repository';
 import { createJobFixture } from '../../helpers/job-fixture';
 
@@ -497,5 +501,240 @@ describe('server-side jobs and grouped library repository', () => {
     expect(
       (await repository.getImageNavigation(current.job.id, fixture.paths.media))?.next?.jobId
     ).toBe(remainingTie);
+  });
+});
+
+function viewerFilters(): Omit<LibraryFiltersDto, 'cursor' | 'view'> {
+  const { cursor: _cursor, view: _view, ...filters } = library;
+  return filters;
+}
+
+async function viewerSequenceFixture(count: number) {
+  const fixture = await createJobFixture();
+  cleanups.push(fixture.cleanup);
+  const insertJob = fixture.database.query(
+    `INSERT INTO jobs(
+      id,workflow,public_model_id,local_phase,remote_status,failure_domain,
+      guided_request_json,actual_payload_json,prompt_text,search_text,correlation_id,
+      created_at,updated_at,completed_at
+    ) VALUES (?,?,?,'complete','finished','none',?,?,?,?,?,?,?,?)`
+  );
+  const insertOutput = fixture.database.query(
+    `INSERT INTO job_outputs(
+      id,job_id,output_order,media_kind,remote_url,local_path,content_type,byte_size,
+      download_state,favorite,pinned,created_at,verified_at
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
+  );
+  fixture.database.transaction(() => {
+    for (let index = 0; index < count; index += 1) {
+      const id = `viewer-job-${index.toString().padStart(3, '0')}`;
+      const createdAt = new Date(Date.UTC(2026, 0, 1, 0, 0, Math.floor(index / 2))).toISOString();
+      const kind = index % 2 ? 'video' : 'image';
+      insertJob.run(
+        id,
+        kind === 'video' ? 'text-to-video' : 'text-to-image',
+        kind === 'video' ? 'grok-imagine-video' : 'flux-schnell',
+        JSON.stringify({ prompt: `viewer ${index}`, aspectRatio: index % 2 ? '16:9' : '1:1' }),
+        JSON.stringify({}),
+        `viewer ${index}`,
+        `viewer ${index}`,
+        `viewer-${index}`,
+        createdAt,
+        createdAt,
+        createdAt
+      );
+      // An unavailable non-favorite output must not displace the verified representative.
+      insertOutput.run(
+        `viewer-deleted-${index}`,
+        id,
+        0,
+        kind,
+        'https://example.test/deleted',
+        null,
+        kind === 'video' ? 'video/mp4' : 'image/png',
+        1,
+        'deleted',
+        0,
+        0,
+        createdAt,
+        null
+      );
+      insertOutput.run(
+        `viewer-output-${index}`,
+        id,
+        1,
+        kind,
+        `https://example.test/${index}`,
+        `/media/${id}`,
+        kind === 'video' ? 'video/mp4' : 'image/png',
+        1,
+        'verified',
+        index % 3 === 0 ? 1 : 0,
+        0,
+        createdAt,
+        createdAt
+      );
+    }
+  })();
+  return fixture;
+}
+
+describe('indexed viewer sequence repository', () => {
+  const tokenContext: ViewerSequenceTokenContext = {
+    secret: new TextEncoder().encode('viewer-sequence-test-secret'),
+    nonce: 'test-process-nonce'
+  };
+
+  test('uses strict N+1 lookahead and exact initial/intermediate/terminal phases', async () => {
+    const fixture = await viewerSequenceFixture(5);
+    const observations: ViewerSequenceQueryObservation[] = [];
+    const repository = new LibraryRepository(fixture.database);
+    const first = repository.listViewerSequence(
+      viewerFilters(),
+      null,
+      null,
+      2,
+      tokenContext,
+      (item) => observations.push(item)
+    );
+    expect(first.items.map((item) => item.jobId)).toEqual(['viewer-job-004', 'viewer-job-003']);
+    expect(first.items.map((item) => item.outputId)).toEqual([
+      'viewer-output-4',
+      'viewer-output-3'
+    ]);
+    expect(first.total).toBe(5);
+    expect(first.nextCursor).not.toBeNull();
+    expect(observations.filter((item) => item.operation === 'count')).toHaveLength(1);
+    expect(observations.find((item) => item.operation === 'page-seek')?.rows).toBe(3);
+    expect(observations.find((item) => item.operation === 'page-hydrate')?.rows).toBe(2);
+
+    const middle = repository.listViewerSequence(
+      viewerFilters(),
+      first.nextCursor,
+      first.snapshot,
+      2,
+      tokenContext,
+      (item) => observations.push(item)
+    );
+    expect(middle.items.map((item) => item.jobId)).toEqual(['viewer-job-002', 'viewer-job-001']);
+    expect(middle.total).toBeNull();
+    expect(middle.nextCursor).not.toBeNull();
+
+    const terminal = repository.listViewerSequence(
+      viewerFilters(),
+      middle.nextCursor,
+      middle.snapshot,
+      2,
+      tokenContext,
+      (item) => observations.push(item)
+    );
+    expect(terminal.items.map((item) => item.jobId)).toEqual(['viewer-job-000']);
+    expect(terminal.nextCursor).toBeNull();
+    expect(terminal.total).toBe(5);
+    expect(observations.filter((item) => item.operation === 'count')).toHaveLength(2);
+  });
+  test('excludes a job whose canonical favorite is unavailable instead of substituting a verified output', async () => {
+    const fixture = await viewerSequenceFixture(3);
+    const repository = new LibraryRepository(fixture.database);
+    fixture.database.query('UPDATE job_outputs SET favorite=1 WHERE id=?').run('viewer-deleted-1');
+
+    const grid = repository.listLibrary(library, 24);
+    const unavailable = grid.items.find((item) => item.jobId === 'viewer-job-001');
+    expect(unavailable?.representative).toMatchObject({
+      outputId: 'viewer-deleted-1',
+      downloadState: 'deleted',
+      mediaUrl: null
+    });
+
+    const sequence = repository.listViewerSequence(viewerFilters(), null, null, 24, tokenContext);
+    expect(sequence.total).toBe(2);
+    expect(sequence.items.map((item) => item.jobId)).not.toContain('viewer-job-001');
+    expect(sequence.items.map((item) => item.outputId)).toEqual(
+      grid.items.flatMap((item) =>
+        item.representative?.outputId &&
+        item.representative.downloadState === 'verified' &&
+        item.representative.mediaUrl
+          ? [item.representative.outputId]
+          : []
+      )
+    );
+  });
+
+  test('keeps listLibrary semantics separate and rejects tampered, mismatched, and stale continuations', async () => {
+    const fixture = await viewerSequenceFixture(3);
+    const repository = new LibraryRepository(fixture.database);
+    const filters = viewerFilters();
+    const listBefore = repository.listLibrary(library, 24);
+    const first = repository.listViewerSequence(filters, null, null, 2, tokenContext);
+    expect(listBefore).toEqual(repository.listLibrary(library, 24));
+    expect(() =>
+      repository.listViewerSequence(
+        filters,
+        first.nextCursor,
+        `${first.snapshot}x`,
+        2,
+        tokenContext
+      )
+    ).toThrow('Viewer sequence changed');
+    expect(() =>
+      repository.listViewerSequence(
+        { ...filters, mediaKind: 'video' },
+        first.nextCursor,
+        first.snapshot,
+        2,
+        tokenContext
+      )
+    ).toThrow('Viewer sequence changed');
+    expect(() =>
+      repository.listViewerSequence(filters, first.nextCursor, first.snapshot, 3, tokenContext)
+    ).toThrow('Viewer sequence changed');
+    expect(() =>
+      repository.listViewerSequence(filters, first.nextCursor, first.snapshot, 2, {
+        ...tokenContext,
+        nonce: 'after-restart'
+      })
+    ).toThrow('Viewer sequence changed');
+
+    fixture.database
+      .query("UPDATE jobs SET prompt_text='mutation' WHERE id=?")
+      .run('viewer-job-000');
+    expect(() =>
+      repository.listViewerSequence(filters, first.nextCursor, first.snapshot, 2, tokenContext)
+    ).toThrow('Viewer sequence changed');
+  });
+
+  test('returns empty and one-page sequences with one count, filters media, and uses verified representatives', async () => {
+    const empty = await viewerSequenceFixture(0);
+    const emptyObservations: ViewerSequenceQueryObservation[] = [];
+    const emptyPage = new LibraryRepository(empty.database).listViewerSequence(
+      viewerFilters(),
+      null,
+      null,
+      100,
+      tokenContext,
+      (item) => emptyObservations.push(item)
+    );
+    expect(emptyPage).toMatchObject({ items: [], nextCursor: null, total: 0 });
+    expect(emptyObservations.filter((item) => item.operation === 'count')).toHaveLength(1);
+
+    const fixture = await viewerSequenceFixture(3);
+    const observations: ViewerSequenceQueryObservation[] = [];
+    const page = new LibraryRepository(fixture.database).listViewerSequence(
+      { ...viewerFilters(), mediaKind: 'video' },
+      null,
+      null,
+      100,
+      tokenContext,
+      (item) => observations.push(item)
+    );
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0]).toMatchObject({
+      jobId: 'viewer-job-001',
+      outputId: 'viewer-output-1',
+      mediaKind: 'video',
+      mediaUrl: '/api/media/viewer-output-1'
+    });
+    expect(page).toMatchObject({ nextCursor: null, total: 1 });
+    expect(observations.filter((item) => item.operation === 'count')).toHaveLength(1);
   });
 });

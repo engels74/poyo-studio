@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdir, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { REMOTE_CLEANUP_CAPABILITY } from '../../../src/lib/features/cleanup/contracts';
+import { JOB_EVENT_METADATA_KEY } from '../../../src/lib/server/jobs/event-attention';
 import { CleanupRepository } from '../../../src/lib/server/cleanup/repository';
 import {
   CleanupRuntime,
@@ -143,7 +144,97 @@ describe('local cleanup policy, preview and durable execution', () => {
       expect(exists).toBe(consequence === 'metadata');
       if (consequence === 'file') expect(metadata?.downloadState).toBe('deleted');
       else expect(metadata).toBeNull();
+      const event = setup.database
+        .query<{ safe_payload_json: string }, [string, string]>(
+          'SELECT safe_payload_json FROM job_events WHERE job_id=? AND event_type=?'
+        )
+        .get(item.job.id, `output.local_${consequence}_removed`);
+      const payload = JSON.parse(event?.safe_payload_json ?? '{}') as Record<string, unknown>;
+      const { [JOB_EVENT_METADATA_KEY]: eventMetadata, ...publicPayload } = payload;
+      expect(eventMetadata).toEqual(expect.objectContaining({ version: 1 }));
+      expect(publicPayload).toEqual({ outputId: item.id });
+      expect(JSON.stringify(publicPayload)).not.toContain(item.path);
+      expect(JSON.stringify(publicPayload)).not.toContain('policy');
     }
+  });
+
+  test('output consequence changes and events are atomic, authoritative and replay-safe', async () => {
+    const setup = await fixture();
+    const item = await setup.output();
+    const other = await setup.output();
+    const repository = new CleanupRepository(setup.database);
+
+    expect(repository.applyOutputConsequence(item.id, other.job.id, 'local_file')).toBe(false);
+    expect(setup.repository.output(item.id)?.downloadState).toBe('verified');
+    expect(
+      setup.database
+        .query<{ count: number }, []>(
+          "SELECT COUNT(*) count FROM job_events WHERE event_type LIKE 'output.local_%_removed'"
+        )
+        .get()?.count
+    ).toBe(0);
+
+    setup.database
+      .query(
+        `CREATE TRIGGER reject_cleanup_metadata_event BEFORE INSERT ON job_events
+         WHEN NEW.event_type='output.local_metadata_removed'
+         BEGIN SELECT RAISE(ABORT,'event rejected'); END`
+      )
+      .run();
+    expect(() => repository.applyOutputConsequence(item.id, item.job.id, 'local_metadata')).toThrow(
+      'event rejected'
+    );
+    expect(setup.repository.output(item.id)).not.toBeNull();
+    expect(
+      setup.database
+        .query<{ count: number }, []>(
+          "SELECT COUNT(*) count FROM job_events WHERE event_type='output.local_metadata_removed'"
+        )
+        .get()?.count
+    ).toBe(0);
+
+    setup.database.query('DROP TRIGGER reject_cleanup_metadata_event').run();
+    expect(repository.applyOutputConsequence(item.id, item.job.id, 'local_metadata')).toBe(true);
+    expect(repository.applyOutputConsequence(item.id, item.job.id, 'local_metadata')).toBe(false);
+    expect(
+      setup.database
+        .query<{ count: number }, []>(
+          "SELECT COUNT(*) count FROM job_events WHERE event_type='output.local_metadata_removed'"
+        )
+        .get()?.count
+    ).toBe(1);
+  });
+  test('cleanup removes the physical file before committing its output consequence', async () => {
+    const setup = await fixture();
+    const item = await setup.output();
+    const repository = new CleanupRepository(setup.database);
+    const service = new CleanupService({
+      repository,
+      paths: setup.paths,
+      removeFile: async () => {
+        expect(await Bun.file(item.path).exists()).toBe(true);
+        expect(setup.repository.output(item.id)?.downloadState).toBe('verified');
+        expect(
+          setup.database
+            .query<{ count: number }, []>(
+              "SELECT COUNT(*) count FROM job_events WHERE event_type='output.local_file_removed'"
+            )
+            .get()?.count
+        ).toBe(0);
+        await Bun.file(item.path).delete();
+        return 'removed';
+      }
+    });
+    service.setPolicy({
+      mode: 'age',
+      consequence: 'file',
+      olderThanDays: 1,
+      exclusions: { favorites: true, pinned: true, tags: [] }
+    });
+    const preview = await service.preview('file');
+    service.apply(preview.token, true);
+    expect(await new CleanupRuntime({ repository, service }).runOnce()).toBe(1);
+    expect(setup.repository.output(item.id)?.downloadState).toBe('deleted');
   });
 
   test('size and free-space policies select the oldest eligible bytes deterministically', async () => {
@@ -488,6 +579,13 @@ describe('local cleanup policy, preview and durable execution', () => {
         )
         .get(source.id)?.count
     ).toBe(2);
+    expect(
+      setup.database
+        .query<{ count: number }, []>(
+          "SELECT COUNT(*) count FROM job_events WHERE event_type LIKE 'output.local_%_removed'"
+        )
+        .get()?.count
+    ).toBe(0);
   });
 
   test('managed source cleanup survives an expired claim without duplicate deletion', async () => {
