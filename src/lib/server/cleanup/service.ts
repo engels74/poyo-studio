@@ -225,14 +225,19 @@ export class CleanupService {
           claim.targetId,
           file === 'already-missing' ? 'missing' : 'deleted'
         );
-      } else if (claim.actionKind === 'local_metadata' || claim.actionKind === 'local_both') {
-        metadata = this.options.repository.removeOutputMetadata(claim.targetId)
-          ? 'removed'
-          : 'already-missing';
       } else {
-        metadata = this.options.repository.markOutputFileRemoved(claim.targetId)
-          ? 'retained'
-          : 'already-missing';
+        const jobId = claim.snapshot.jobId;
+        if (!jobId) throw new Error('Output cleanup action has no job.');
+        const changed = this.options.repository.applyOutputConsequence(
+          claim.targetId,
+          jobId,
+          claim.actionKind
+        );
+        if (claim.actionKind === 'local_metadata' || claim.actionKind === 'local_both') {
+          metadata = changed ? 'removed' : 'already-missing';
+        } else {
+          metadata = changed ? 'retained' : 'already-missing';
+        }
       }
       const result = { file, metadata };
       this.options.repository.complete(claim, result);

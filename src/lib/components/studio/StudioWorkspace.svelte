@@ -87,6 +87,7 @@ import type {
   NormalizedPreview
 } from '$lib/features/registry/types';
 import { fieldValue, validateFieldValue } from '$lib/features/registry/runtime-validation';
+import AspectRatioField from './AspectRatioField.svelte';
 import BatchReview from './BatchReview.svelte';
 import ChoiceField from './ChoiceField.svelte';
 import FieldControl from './FieldControl.svelte';
@@ -1993,13 +1994,23 @@ onMount(() => {
             <div class="mt-5 grid gap-4">
               {#each setupFields as field (field.key)}
                 {#if isAutomaticField(field)}
-                  <ChoiceField
-                    {field}
-                    value={guided[field.key]}
-                    automatic={automaticFields[field.key]}
-                    automaticChoice={automaticFieldChoice(selectedEntry, field.key, roleInputs)}
-                    onchange={updateChoice}
-                  />
+                  {#if field.key === 'aspectRatio'}
+                    <AspectRatioField
+                      {field}
+                      value={guided[field.key]}
+                      automatic={automaticFields[field.key]}
+                      automaticChoice={automaticFieldChoice(selectedEntry, field.key, roleInputs)}
+                      onchange={updateChoice}
+                    />
+                  {:else}
+                    <ChoiceField
+                      {field}
+                      value={guided[field.key]}
+                      automatic={automaticFields[field.key]}
+                      automaticChoice={automaticFieldChoice(selectedEntry, field.key, roleInputs)}
+                      onchange={updateChoice}
+                    />
+                  {/if}
                 {:else}
                   <FieldControl {field} value={guided[field.key]} onchange={updateGuided} />
                 {/if}
@@ -2227,13 +2238,23 @@ onMount(() => {
           <div class="mt-4 grid gap-4">
             {#each commonFields as field (field.key)}
               {#if isAutomaticField(field)}
-                <ChoiceField
-                  {field}
-                  value={guided[field.key]}
-                  automatic={automaticFields[field.key]}
-                  automaticChoice={automaticFieldChoice(selectedEntry, field.key, roleInputs)}
-                  onchange={updateChoice}
-                />
+                {#if field.key === 'aspectRatio'}
+                  <AspectRatioField
+                    {field}
+                    value={guided[field.key]}
+                    automatic={automaticFields[field.key]}
+                    automaticChoice={automaticFieldChoice(selectedEntry, field.key, roleInputs)}
+                    onchange={updateChoice}
+                  />
+                {:else}
+                  <ChoiceField
+                    {field}
+                    value={guided[field.key]}
+                    automatic={automaticFields[field.key]}
+                    automaticChoice={automaticFieldChoice(selectedEntry, field.key, roleInputs)}
+                    onchange={updateChoice}
+                  />
+                {/if}
               {:else}
                 <FieldControl {field} value={field.key === 'dimensions' ? { width: guided.width, height: guided.height } : guided[field.key]} onchange={updateGuided} />
               {/if}

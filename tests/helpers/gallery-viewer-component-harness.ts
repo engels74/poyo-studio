@@ -68,7 +68,6 @@ export async function startGalleryViewerComponentHarness(): Promise<GalleryViewe
       server: {
         host,
         port: 0,
-        strictPort: false,
         fs: {
           allow: [repositoryRoot]
         }

@@ -1,6 +1,9 @@
 <script lang="ts">
 import GalleryViewer from '../../../src/lib/components/gallery/GalleryViewer.svelte';
-import type { LibraryGroupDto } from '../../../src/lib/features/library/contracts';
+import type {
+  GalleryViewerItemDto,
+  LibraryGroupDto
+} from '../../../src/lib/features/library/contracts';
 
 const videoOutputId = 'gallery-playback-output';
 const galleryGroups: LibraryGroupDto[] = [
@@ -66,17 +69,84 @@ const galleryGroups: LibraryGroupDto[] = [
   }
 ];
 
+const historyImage: GalleryViewerItemDto = {
+  jobId: 'gallery-history-image-job',
+  displayName: 'Lifecycle history image fixture',
+  provider: 'Harness',
+  workflow: 'Lifecycle proof',
+  promptExcerpt: 'A current image retained while newer history arrives.',
+  createdAt: '2026-07-21T00:02:00.000Z',
+  outputId: 'gallery-history-image-output',
+  mediaKind: 'image',
+  mediaUrl: '/gallery-landscape.png'
+};
+const historyVideo: GalleryViewerItemDto = {
+  jobId: 'gallery-history-video-job',
+  displayName: 'Lifecycle history video fixture',
+  provider: 'Harness',
+  workflow: 'Lifecycle proof',
+  promptExcerpt: 'A current video retained while newer history arrives.',
+  createdAt: '2026-07-21T00:02:00.000Z',
+  outputId: videoOutputId,
+  mediaKind: 'video',
+  mediaUrl: '/gallery-playback.mp4'
+};
+const newerHistoryImage: GalleryViewerItemDto = {
+  jobId: 'gallery-history-newer-job',
+  displayName: 'Lifecycle newer history fixture',
+  provider: 'Harness',
+  workflow: 'Lifecycle proof',
+  promptExcerpt: 'A later history entry prepended without replacing the selected media.',
+  createdAt: '2026-07-21T00:03:00.000Z',
+  outputId: 'gallery-history-newer-output',
+  mediaKind: 'image',
+  mediaUrl: '/gallery-landscape.png'
+};
+
 let groups = $state<LibraryGroupDto[]>(galleryGroups);
+let items = $state<GalleryViewerItemDto[] | undefined>(undefined);
+let historyError = $state<string | null>(null);
 let open = $state(false);
 let selectedOutputId = $state<string | null>(videoOutputId);
 let triggerElement = $state<HTMLElement | null>(null);
 let viewerMounted = $state(true);
-
 function openVideo(event: MouseEvent): void {
   groups = galleryGroups;
+  items = undefined;
+  historyError = null;
   selectedOutputId = videoOutputId;
   triggerElement = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
   open = true;
+}
+
+function openHistory(event: MouseEvent, item: GalleryViewerItemDto): void {
+  groups = galleryGroups;
+  items = [item];
+  historyError = null;
+  selectedOutputId = item.outputId;
+  triggerElement = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+  open = true;
+}
+
+function openHistoryImage(event: MouseEvent): void {
+  openHistory(event, historyImage);
+}
+
+function openHistoryVideo(event: MouseEvent): void {
+  openHistory(event, historyVideo);
+}
+
+function prependNewerHistoryItem(): void {
+  if (!items) return;
+  items = [newerHistoryImage, ...items];
+}
+
+function failHistoryUpdate(): void {
+  historyError = 'history';
+}
+
+function retryHistoryUpdate(): void {
+  historyError = null;
 }
 
 function setParentOpenFalse(): void {
@@ -85,6 +155,7 @@ function setParentOpenFalse(): void {
 
 function removeSelectedGroup(): void {
   groups = [];
+  items = undefined;
 }
 
 function unmountViewer(): void {
@@ -97,6 +168,11 @@ function unmountViewer(): void {
   <p>Test-only controls are deliberately outside the dialog.</p>
   <div data-testid="gallery-viewer-parent-controls">
     <button type="button" onclick={openVideo}>Open video</button>
+    <button type="button" onclick={openHistoryImage}>Open history image</button>
+    <button type="button" onclick={openHistoryVideo}>Open history video</button>
+    <button type="button" onclick={prependNewerHistoryItem}>Prepend newer history item</button>
+    <button type="button" onclick={failHistoryUpdate}>Fail history update</button>
+    <button type="button" onclick={retryHistoryUpdate}>Retry history update</button>
     <button type="button" onclick={setParentOpenFalse}>Set parent open false</button>
     <button type="button" onclick={removeSelectedGroup}>Remove selected group</button>
     <button type="button" onclick={unmountViewer}>Unmount viewer</button>
@@ -104,5 +180,14 @@ function unmountViewer(): void {
 </main>
 
 {#if viewerMounted}
-  <GalleryViewer bind:open bind:selectedOutputId bind:triggerElement {groups} />
+  <GalleryViewer
+    bind:open
+    bind:selectedOutputId
+    bind:triggerElement
+    {groups}
+    {items}
+    complete={true}
+    sequenceError={historyError}
+    onRetry={retryHistoryUpdate}
+  />
 {/if}

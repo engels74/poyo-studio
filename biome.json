@@ -9,6 +9,7 @@
       "!!coverage",
       "!!data",
       "!!.augment",
+      "!!.gjc",
       "!!.omc",
       "!!.omx"
     ]

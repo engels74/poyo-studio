@@ -1,8 +1,11 @@
 import type { Database } from 'bun:sqlite';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { basename } from 'node:path';
 import type {
   CursorPage,
   DownloadAttemptDto,
+  GalleryViewerItemDto,
+  GalleryViewerSequencePageDto,
   ImageJobNavigationDto,
   JobChronologyNeighborDto,
   JobDetailDto,
@@ -32,7 +35,35 @@ import {
 } from '../jobs/event-attention';
 import { publicIpv4GuardReason } from '../poyo/errors';
 
-type Binding = string | number | null;
+export type ViewerSequenceQueryBinding = string | number | null;
+type Binding = ViewerSequenceQueryBinding;
+export interface ViewerSequenceTokenContext {
+  secret: Uint8Array;
+  nonce: string;
+}
+
+export interface ViewerSequenceQueryObservation {
+  phase: 'initial' | 'intermediate' | 'terminal';
+  operation: 'marker' | 'count' | 'page-seek' | 'page-hydrate';
+  bindings: number;
+  rows: number;
+  diagnostics?: string[];
+}
+
+export type ViewerSequenceQueryObserver = (observation: ViewerSequenceQueryObservation) => void;
+export interface ViewerSequenceQueryPlan {
+  countSql: string;
+  countBindings: ViewerSequenceQueryBinding[];
+  pageSeekSql: string;
+  pageSeekBindings: ViewerSequenceQueryBinding[];
+}
+
+export class ViewerSequenceChangedError extends Error {
+  constructor() {
+    super('Viewer sequence changed.');
+    this.name = 'ViewerSequenceChangedError';
+  }
+}
 
 type JobListRow = {
   id: string;
@@ -240,6 +271,105 @@ function modelIdsForProvider(provider: string): string[] {
     )
   ];
 }
+function addLibraryFilters(
+  filters: Omit<LibraryFiltersDto, 'cursor' | 'view'>,
+  clauses: string[],
+  bindings: ViewerSequenceQueryBinding[]
+): void {
+  clauses.push('EXISTS(SELECT 1 FROM job_outputs o WHERE o.job_id=j.id)');
+  if (filters.q) {
+    const search = like(filters.q);
+    clauses.push(
+      `(j.search_text LIKE ? ESCAPE '\\' OR j.public_model_id LIKE ? ESCAPE '\\' OR EXISTS(SELECT 1 FROM job_outputs oq WHERE oq.job_id=j.id AND oq.local_path LIKE ? ESCAPE '\\') OR EXISTS(SELECT 1 FROM job_tags jt JOIN tags t ON t.id=jt.tag_id WHERE jt.job_id=j.id AND t.display_name LIKE ? ESCAPE '\\'))`
+    );
+    bindings.push(search, search, search, search);
+  }
+  if (filters.mediaKind) {
+    clauses.push('EXISTS(SELECT 1 FROM job_outputs ok WHERE ok.job_id=j.id AND ok.media_kind=?)');
+    bindings.push(filters.mediaKind);
+  }
+  if (filters.model) {
+    clauses.push('j.public_model_id=?');
+    bindings.push(filters.model);
+  }
+  if (filters.provider) {
+    const ids = modelIdsForProvider(filters.provider);
+    if (!ids.length) clauses.push('0=1');
+    else {
+      clauses.push(`j.public_model_id IN (${ids.map(() => '?').join(',')})`);
+      bindings.push(...ids);
+    }
+  }
+  if (filters.workflow) {
+    clauses.push('j.workflow=?');
+    bindings.push(filters.workflow);
+  }
+  if (filters.aspectRatio) {
+    clauses.push(
+      "COALESCE(json_extract(j.guided_request_json,'$.aspectRatio'),json_extract(j.guided_request_json,'$.size'))=?"
+    );
+    bindings.push(filters.aspectRatio);
+  }
+  if (filters.favorite)
+    clauses.push(
+      'EXISTS(SELECT 1 FROM job_outputs ofav WHERE ofav.job_id=j.id AND ofav.favorite=1)'
+    );
+  if (filters.tag) {
+    clauses.push(
+      'EXISTS(SELECT 1 FROM job_tags jt JOIN tags t ON t.id=jt.tag_id WHERE jt.job_id=j.id AND t.normalized_name=?)'
+    );
+    bindings.push(filters.tag.toLocaleLowerCase());
+  }
+  const statusClauses: Record<Exclude<LibraryFiltersDto['status'], 'all'>, string> = {
+    available:
+      "EXISTS(SELECT 1 FROM job_outputs os WHERE os.job_id=j.id AND os.download_state='verified' AND os.local_path IS NOT NULL)",
+    attention:
+      "(j.local_phase='requires_attention' OR EXISTS(SELECT 1 FROM job_outputs os WHERE os.job_id=j.id AND os.download_state IN ('failed','expired')))",
+    'remote-only':
+      "NOT EXISTS(SELECT 1 FROM job_outputs os WHERE os.job_id=j.id AND os.download_state='verified') AND EXISTS(SELECT 1 FROM job_outputs os WHERE os.job_id=j.id AND os.remote_url IS NOT NULL)",
+    deleted:
+      "NOT EXISTS(SELECT 1 FROM job_outputs os WHERE os.job_id=j.id AND os.download_state!='deleted')"
+  };
+  if (filters.status !== 'all') clauses.push(statusClauses[filters.status]);
+  addDateFilters('j', filters.dateFrom, filters.dateTo, clauses, bindings);
+}
+
+function viewerFilterSignature(filters: Omit<LibraryFiltersDto, 'cursor' | 'view'>): string {
+  return JSON.stringify(filters);
+}
+
+function signViewerToken(payload: string, context: ViewerSequenceTokenContext): string {
+  return createHmac('sha256', context.secret).update(payload).digest('base64url');
+}
+
+function encodeViewerToken(
+  payload: Record<string, unknown>,
+  context: ViewerSequenceTokenContext
+): string {
+  const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  return `${encoded}.${signViewerToken(encoded, context)}`;
+}
+
+function decodeViewerToken(
+  value: string,
+  context: ViewerSequenceTokenContext
+): Record<string, unknown> | null {
+  const [encoded, signature, extra] = value.split('.');
+  if (!encoded || !signature || extra || value.length > 1024) return null;
+  const expected = signViewerToken(encoded, context);
+  const actual = Buffer.from(signature);
+  const expectedBytes = Buffer.from(expected);
+  if (actual.length !== expectedBytes.length || !timingSafeEqual(actual, expectedBytes))
+    return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(encoded, 'base64url').toString()) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 function mediaSummary(row: {
   representative_id: string | null;
@@ -298,18 +428,70 @@ function jobDto(row: JobListRow): JobListItemDto {
   };
 }
 
+function representativeOutputSelect(column: string): string {
+  const id = `COALESCE(
+    (SELECT o.id FROM job_outputs o WHERE o.job_id=j.id AND o.favorite=1 AND o.download_state='verified' ORDER BY o.output_order LIMIT 1),
+    (SELECT o.id FROM job_outputs o WHERE o.job_id=j.id AND o.favorite=1 AND o.download_state!='verified' ORDER BY o.output_order LIMIT 1),
+    (SELECT o.id FROM job_outputs o WHERE o.job_id=j.id AND o.favorite=0 AND o.download_state='verified' ORDER BY o.output_order LIMIT 1),
+    (SELECT o.id FROM job_outputs o WHERE o.job_id=j.id AND o.favorite=0 AND o.download_state!='verified' ORDER BY o.output_order LIMIT 1)
+  )`;
+  return `(SELECT o.${column} FROM job_outputs o WHERE o.id=${id})`;
+}
+
+export function viewerSequenceCanonicalRepresentativeFilter(): string {
+  return `COALESCE((${representativeOutputSelect('download_state')}='verified' AND ${representativeOutputSelect('local_path')} IS NOT NULL),0)=1`;
+}
+
+export function viewerSequencePageSeekQuery(clauses: string[]): string {
+  return `SELECT j.id,j.created_at,${representativeOutputSelect('id')} output_id
+         FROM jobs AS j INDEXED BY idx_jobs_gallery_order
+         WHERE ${clauses.join(' AND ')}
+         ORDER BY j.created_at DESC,j.id DESC LIMIT ?`;
+}
+
+export function buildViewerSequenceQueryPlan(
+  filters: Omit<LibraryFiltersDto, 'cursor' | 'view'>,
+  cursor: string | null
+): ViewerSequenceQueryPlan | null {
+  const clauses: string[] = [];
+  const bindings: ViewerSequenceQueryBinding[] = [];
+  addLibraryFilters(filters, clauses, bindings);
+  clauses.push(viewerSequenceCanonicalRepresentativeFilter());
+  const countSql = `SELECT COUNT(*) count FROM jobs j WHERE ${clauses.join(' AND ')}`;
+  const seekClauses = [...clauses];
+  const pageSeekBindings = [...bindings];
+  if (cursor) {
+    const decoded = decodePageCursor(cursor);
+    if (!decoded) return null;
+    seekClauses.push('(j.created_at,j.id)< (?,?)');
+    pageSeekBindings.push(decoded.createdAt, decoded.id);
+  }
+  return {
+    countSql,
+    countBindings: bindings,
+    pageSeekSql: viewerSequencePageSeekQuery(seekClauses),
+    pageSeekBindings
+  };
+}
+
+function viewerSequencePageHydrateQuery(ids: string[]): string {
+  return `SELECT j.id,j.entry_key,j.workflow,j.public_model_id,j.prompt_text,j.created_at,o.id output_id,o.media_kind
+         FROM jobs j JOIN job_outputs o ON o.id=${representativeOutputSelect('id')}
+         WHERE j.id IN (${ids.map(() => '?').join(',')})`;
+}
+
 function listSelect(): string {
   return `j.id,j.entry_key,j.workflow,j.public_model_id,j.local_phase,j.remote_status,j.failure_domain,j.attention_code,j.progress,j.estimated_credits,j.actual_credits,j.prompt_text,j.last_polled_at,j.created_at,j.started_at,j.updated_at,j.completed_at,
     (SELECT COUNT(*) FROM job_outputs o WHERE o.job_id=j.id) output_count,
     (SELECT COUNT(*) FROM job_outputs o WHERE o.job_id=j.id AND o.download_state='verified') verified_count,
     (SELECT CASE WHEN COUNT(*)=0 THEN NULL WHEN SUM(o.download_state='verified')=COUNT(*) THEN 'verified' WHEN SUM(o.download_state IN ('failed','expired'))>0 THEN 'attention' WHEN SUM(o.download_state='downloading')>0 THEN 'downloading' ELSE 'pending' END FROM job_outputs o WHERE o.job_id=j.id) output_state,
-    (SELECT o.id FROM job_outputs o WHERE o.job_id=j.id ORDER BY o.favorite DESC,o.download_state='verified' DESC,o.output_order LIMIT 1) representative_id,
-    (SELECT o.media_kind FROM job_outputs o WHERE o.job_id=j.id ORDER BY o.favorite DESC,o.download_state='verified' DESC,o.output_order LIMIT 1) representative_kind,
-    (SELECT o.content_type FROM job_outputs o WHERE o.job_id=j.id ORDER BY o.favorite DESC,o.download_state='verified' DESC,o.output_order LIMIT 1) representative_type,
-    (SELECT o.download_state FROM job_outputs o WHERE o.job_id=j.id ORDER BY o.favorite DESC,o.download_state='verified' DESC,o.output_order LIMIT 1) representative_state,
-    (SELECT o.local_path FROM job_outputs o WHERE o.job_id=j.id ORDER BY o.favorite DESC,o.download_state='verified' DESC,o.output_order LIMIT 1) representative_path,
-    (SELECT o.pixel_width FROM job_outputs o WHERE o.job_id=j.id ORDER BY o.favorite DESC,o.download_state='verified' DESC,o.output_order LIMIT 1) representative_width,
-    (SELECT o.pixel_height FROM job_outputs o WHERE o.job_id=j.id ORDER BY o.favorite DESC,o.download_state='verified' DESC,o.output_order LIMIT 1) representative_height`;
+    ${representativeOutputSelect('id')} representative_id,
+    ${representativeOutputSelect('media_kind')} representative_kind,
+    ${representativeOutputSelect('content_type')} representative_type,
+    ${representativeOutputSelect('download_state')} representative_state,
+    ${representativeOutputSelect('local_path')} representative_path,
+    ${representativeOutputSelect('pixel_width')} representative_width,
+    ${representativeOutputSelect('pixel_height')} representative_height`;
 }
 
 function tagArray(source: string): string[] {
@@ -381,63 +563,9 @@ export class LibraryRepository extends DatabaseRepository {
   }
 
   listLibrary(filters: LibraryFiltersDto, limit = 24): CursorPage<LibraryGroupDto> {
-    const clauses = ['EXISTS(SELECT 1 FROM job_outputs o WHERE o.job_id=j.id)'];
+    const clauses: string[] = [];
     const bindings: Binding[] = [];
-    if (filters.q) {
-      const search = like(filters.q);
-      clauses.push(
-        `(j.search_text LIKE ? ESCAPE '\\' OR j.public_model_id LIKE ? ESCAPE '\\' OR EXISTS(SELECT 1 FROM job_outputs oq WHERE oq.job_id=j.id AND oq.local_path LIKE ? ESCAPE '\\') OR EXISTS(SELECT 1 FROM job_tags jt JOIN tags t ON t.id=jt.tag_id WHERE jt.job_id=j.id AND t.display_name LIKE ? ESCAPE '\\'))`
-      );
-      bindings.push(search, search, search, search);
-    }
-    if (filters.mediaKind) {
-      clauses.push('EXISTS(SELECT 1 FROM job_outputs ok WHERE ok.job_id=j.id AND ok.media_kind=?)');
-      bindings.push(filters.mediaKind);
-    }
-    if (filters.model) {
-      clauses.push('j.public_model_id=?');
-      bindings.push(filters.model);
-    }
-    if (filters.provider) {
-      const ids = modelIdsForProvider(filters.provider);
-      if (!ids.length) clauses.push('0=1');
-      else {
-        clauses.push(`j.public_model_id IN (${ids.map(() => '?').join(',')})`);
-        bindings.push(...ids);
-      }
-    }
-    if (filters.workflow) {
-      clauses.push('j.workflow=?');
-      bindings.push(filters.workflow);
-    }
-    if (filters.aspectRatio) {
-      clauses.push(
-        "COALESCE(json_extract(j.guided_request_json,'$.aspectRatio'),json_extract(j.guided_request_json,'$.size'))=?"
-      );
-      bindings.push(filters.aspectRatio);
-    }
-    if (filters.favorite)
-      clauses.push(
-        'EXISTS(SELECT 1 FROM job_outputs ofav WHERE ofav.job_id=j.id AND ofav.favorite=1)'
-      );
-    if (filters.tag) {
-      clauses.push(
-        'EXISTS(SELECT 1 FROM job_tags jt JOIN tags t ON t.id=jt.tag_id WHERE jt.job_id=j.id AND t.normalized_name=?)'
-      );
-      bindings.push(filters.tag.toLocaleLowerCase());
-    }
-    const statusClauses: Record<Exclude<LibraryFiltersDto['status'], 'all'>, string> = {
-      available:
-        "EXISTS(SELECT 1 FROM job_outputs os WHERE os.job_id=j.id AND os.download_state='verified' AND os.local_path IS NOT NULL)",
-      attention:
-        "(j.local_phase='requires_attention' OR EXISTS(SELECT 1 FROM job_outputs os WHERE os.job_id=j.id AND os.download_state IN ('failed','expired')))",
-      'remote-only':
-        "NOT EXISTS(SELECT 1 FROM job_outputs os WHERE os.job_id=j.id AND os.download_state='verified') AND EXISTS(SELECT 1 FROM job_outputs os WHERE os.job_id=j.id AND os.remote_url IS NOT NULL)",
-      deleted:
-        "NOT EXISTS(SELECT 1 FROM job_outputs os WHERE os.job_id=j.id AND os.download_state!='deleted')"
-    };
-    if (filters.status !== 'all') clauses.push(statusClauses[filters.status]);
-    addDateFilters('j', filters.dateFrom, filters.dateTo, clauses, bindings);
+    addLibraryFilters(filters, clauses, bindings);
     const countBindings = [...bindings];
     addCursor('j', filters.cursor, clauses, bindings);
     const sql = `SELECT j.id,j.entry_key,j.workflow,j.public_model_id,j.prompt_text,j.created_at,j.completed_at,j.attention_code,
@@ -449,13 +577,13 @@ export class LibraryRepository extends DatabaseRepository {
       COALESCE(json_extract(j.guided_request_json,'$.aspectRatio'),json_extract(j.guided_request_json,'$.size')) aspect_ratio,
       (SELECT CASE WHEN SUM(o.download_state IN ('failed','expired'))>0 THEN 'Download needs attention' WHEN SUM(o.download_state='deleted')>0 THEN 'A local file was removed' WHEN SUM(o.download_state!='verified')>0 THEN 'Some outputs are not available locally' ELSE NULL END FROM job_outputs o WHERE o.job_id=j.id) warning,
       COALESCE((SELECT json_group_array(display_name) FROM (SELECT t.display_name FROM job_tags jt JOIN tags t ON t.id=jt.tag_id WHERE jt.job_id=j.id ORDER BY t.display_name)),'[]') tags_json,
-      (SELECT o.id FROM job_outputs o WHERE o.job_id=j.id ORDER BY o.favorite DESC,o.download_state='verified' DESC,o.output_order LIMIT 1) representative_id,
-      (SELECT o.media_kind FROM job_outputs o WHERE o.job_id=j.id ORDER BY o.favorite DESC,o.download_state='verified' DESC,o.output_order LIMIT 1) representative_kind,
-      (SELECT o.content_type FROM job_outputs o WHERE o.job_id=j.id ORDER BY o.favorite DESC,o.download_state='verified' DESC,o.output_order LIMIT 1) representative_type,
-      (SELECT o.download_state FROM job_outputs o WHERE o.job_id=j.id ORDER BY o.favorite DESC,o.download_state='verified' DESC,o.output_order LIMIT 1) representative_state,
-      (SELECT o.local_path FROM job_outputs o WHERE o.job_id=j.id ORDER BY o.favorite DESC,o.download_state='verified' DESC,o.output_order LIMIT 1) representative_path,
-      (SELECT o.pixel_width FROM job_outputs o WHERE o.job_id=j.id ORDER BY o.favorite DESC,o.download_state='verified' DESC,o.output_order LIMIT 1) representative_width,
-      (SELECT o.pixel_height FROM job_outputs o WHERE o.job_id=j.id ORDER BY o.favorite DESC,o.download_state='verified' DESC,o.output_order LIMIT 1) representative_height
+      ${representativeOutputSelect('id')} representative_id,
+      ${representativeOutputSelect('media_kind')} representative_kind,
+      ${representativeOutputSelect('content_type')} representative_type,
+      ${representativeOutputSelect('download_state')} representative_state,
+      ${representativeOutputSelect('local_path')} representative_path,
+      ${representativeOutputSelect('pixel_width')} representative_width,
+      ${representativeOutputSelect('pixel_height')} representative_height
       FROM jobs j WHERE ${clauses.join(' AND ')} ORDER BY j.created_at DESC,j.id DESC LIMIT ?`;
     const rows = this.database
       .query<LibraryRow, Binding[]>(sql)
@@ -506,6 +634,161 @@ export class LibraryRepository extends DatabaseRepository {
       nextCursor: hasMore && lastPageRow ? encodeCursor(lastPageRow) : null,
       total
     };
+  }
+  listViewerSequence(
+    filters: Omit<LibraryFiltersDto, 'cursor' | 'view'>,
+    cursor: string | null,
+    snapshot: string | null,
+    limit: number,
+    tokenContext: ViewerSequenceTokenContext,
+    queryObserver: ViewerSequenceQueryObserver = () => {}
+  ): GalleryViewerSequencePageDto {
+    return this.database.transaction(() => {
+      const pageSize = Math.min(200, Math.max(1, limit));
+      let phase: 'initial' | 'intermediate' | 'terminal' = snapshot ? 'intermediate' : 'initial';
+      const queryPlan = buildViewerSequenceQueryPlan(filters, cursor);
+      if (!queryPlan) throw new ViewerSequenceChangedError();
+      const filterSignature = viewerFilterSignature(filters);
+      const marker = () => {
+        const changes =
+          this.database.query<{ value: number }, []>('SELECT total_changes() value').get()?.value ??
+          0;
+        const version =
+          this.database.query<{ data_version: number }, []>('PRAGMA data_version').get()
+            ?.data_version ?? 0;
+        const value = `${changes}:${version}`;
+        queryObserver({ phase, operation: 'marker', bindings: 0, rows: 1, diagnostics: [value] });
+        return value;
+      };
+      const count = () => {
+        const value =
+          this.database
+            .query<{ count: number }, ViewerSequenceQueryBinding[]>(queryPlan.countSql)
+            .get(...queryPlan.countBindings)?.count ?? 0;
+        queryObserver({
+          phase,
+          operation: 'count',
+          bindings: queryPlan.countBindings.length,
+          rows: 1,
+          diagnostics: [String(value)]
+        });
+        return value;
+      };
+
+      let initialTotal: number;
+      let initialMarker: string;
+      if (snapshot) {
+        const token = decodeViewerToken(snapshot, tokenContext);
+        if (
+          token?.v !== 1 ||
+          token.n !== tokenContext.nonce ||
+          token.f !== filterSignature ||
+          token.p !== pageSize ||
+          typeof token.t !== 'number' ||
+          !Number.isSafeInteger(token.t) ||
+          typeof token.m !== 'string' ||
+          !cursor ||
+          !decodePageCursor(cursor)
+        ) {
+          throw new ViewerSequenceChangedError();
+        }
+        initialTotal = token.t;
+        initialMarker = token.m;
+        if (marker() !== initialMarker) throw new ViewerSequenceChangedError();
+      } else {
+        if (cursor) throw new ViewerSequenceChangedError();
+        initialMarker = marker();
+        initialTotal = count();
+      }
+
+      const keyRows = this.database
+        .query<{ id: string; created_at: string; output_id: string }, ViewerSequenceQueryBinding[]>(
+          queryPlan.pageSeekSql
+        )
+        .all(...queryPlan.pageSeekBindings, pageSize + 1);
+      queryObserver({
+        phase,
+        operation: 'page-seek',
+        bindings: queryPlan.pageSeekBindings.length + 1,
+        rows: keyRows.length
+      });
+      const hasMore = keyRows.length > pageSize;
+      const selected = keyRows.slice(0, pageSize);
+      if (
+        selected.some((row) => !row.output_id) ||
+        new Set(selected.map((row) => row.id)).size !== selected.length
+      )
+        throw new ViewerSequenceChangedError();
+
+      const ids = selected.map((row) => row.id);
+      const hydrated =
+        ids.length === 0
+          ? []
+          : this.database
+              .query<
+                {
+                  id: string;
+                  entry_key: string | null;
+                  workflow: string;
+                  public_model_id: string;
+                  prompt_text: string | null;
+                  created_at: string;
+                  output_id: string;
+                  media_kind: 'image' | 'video';
+                },
+                string[]
+              >(viewerSequencePageHydrateQuery(ids))
+              .all(...ids);
+      queryObserver({
+        phase,
+        operation: 'page-hydrate',
+        bindings: ids.length,
+        rows: hydrated.length
+      });
+      if (hydrated.length !== selected.length) throw new ViewerSequenceChangedError();
+      const hydratedById = new Map(hydrated.map((row) => [row.id, row]));
+      const items = selected.map((key) => {
+        const row = hydratedById.get(key.id);
+        if (!row || row.output_id !== key.output_id) throw new ViewerSequenceChangedError();
+        const model = resolveModel(row.entry_key, row.public_model_id, row.workflow);
+        return {
+          jobId: row.id,
+          displayName: model?.displayName ?? row.public_model_id,
+          provider: model?.provider ?? 'Unknown provider',
+          workflow: row.workflow,
+          promptExcerpt: row.prompt_text?.slice(0, 220) ?? null,
+          createdAt: row.created_at,
+          outputId: row.output_id,
+          mediaKind: row.media_kind,
+          mediaUrl: `/api/media/${encodeURIComponent(row.output_id)}`
+        } satisfies GalleryViewerItemDto;
+      });
+      const terminal = !hasMore;
+      if (terminal && snapshot) phase = 'terminal';
+      const total = terminal && snapshot ? count() : snapshot ? null : initialTotal;
+      if (terminal && snapshot && total !== initialTotal) throw new ViewerSequenceChangedError();
+      if (marker() !== initialMarker) throw new ViewerSequenceChangedError();
+      const lastSelected = selected.at(-1);
+      const nextCursor = hasMore && lastSelected ? encodeCursor(lastSelected) : null;
+      return {
+        items,
+        nextCursor,
+        snapshot:
+          snapshot ??
+          encodeViewerToken(
+            {
+              v: 1,
+              n: tokenContext.nonce,
+              f: filterSignature,
+              p: pageSize,
+              t: initialTotal,
+              m: initialMarker
+            },
+            tokenContext
+          ),
+        total
+      };
+    })();
   }
 
   async getImageNavigation(id: string, mediaRoot: string): Promise<ImageJobNavigationDto | null> {

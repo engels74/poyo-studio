@@ -21,7 +21,11 @@ import {
   type ViewerSession,
   wheelZoomFactor
 } from '$lib/features/gallery/viewer-transform';
-import type { LibraryGroupDto, SafeMediaSummary } from '$lib/features/library/contracts';
+import type {
+  GalleryViewerItemDto,
+  LibraryGroupDto,
+  SafeMediaSummary
+} from '$lib/features/library/contracts';
 import { dateTimeLabel } from '$lib/features/library/presentation';
 
 type ViewableGroup = LibraryGroupDto & {
@@ -30,6 +34,12 @@ type ViewableGroup = LibraryGroupDto & {
 
 interface Props {
   groups: LibraryGroupDto[];
+  items?: GalleryViewerItemDto[] | undefined;
+  complete?: boolean;
+  updating?: boolean;
+  selectedMediaWarning?: string | null;
+  sequenceError?: string | null;
+  onRetry?: () => void;
   open?: boolean;
   selectedOutputId?: string | null;
   triggerElement?: HTMLElement | null;
@@ -44,6 +54,12 @@ interface Registration {
 
 let {
   groups,
+  items,
+  complete = true,
+  updating = false,
+  selectedMediaWarning = null,
+  sequenceError = null,
+  onRetry,
   open = $bindable(false),
   selectedOutputId = $bindable<string | null>(null),
   triggerElement = $bindable<HTMLElement | null>(null)
@@ -65,13 +81,46 @@ let resizeTransitionFrame = $state<{ id: number; generation: number } | null>(nu
 let resizing = $state(false);
 let lastViewport = { width: 0, height: 0 };
 
-let viewableGroups = $derived(groups.filter(isViewable));
+function sequenceGroup(item: GalleryViewerItemDto): ViewableGroup {
+  return {
+    jobId: item.jobId,
+    entryKey: null,
+    displayName: item.displayName,
+    provider: item.provider,
+    modality: item.mediaKind,
+    workflow: item.workflow,
+    publicModelId: '',
+    promptExcerpt: item.promptExcerpt,
+    createdAt: item.createdAt,
+    completedAt: null,
+    outputCount: 1,
+    verifiedOutputCount: 1,
+    totalBytes: 0,
+    favorite: false,
+    pinned: false,
+    aspectRatio: null,
+    warning: null,
+    tags: [],
+    representative: {
+      outputId: item.outputId,
+      mediaKind: item.mediaKind,
+      contentType: null,
+      fileName: null,
+      pixelWidth: null,
+      pixelHeight: null,
+      downloadState: 'verified',
+      mediaUrl: item.mediaUrl
+    }
+  };
+}
+
+let viewableGroups = $derived(items ? items.map(sequenceGroup) : groups.filter(isViewable));
 let activeIndex = $derived(
   viewableGroups.findIndex((group) => group.representative.outputId === selectedOutputId)
 );
 let activeGroup = $derived(activeIndex >= 0 ? viewableGroups[activeIndex] : null);
-let canGoPrevious = $derived(activeIndex > 0);
-let canGoNext = $derived(activeIndex >= 0 && activeIndex < viewableGroups.length - 1);
+let canGoPrevious = $derived(complete && activeIndex > 0);
+let canGoNext = $derived(complete && activeIndex >= 0 && activeIndex < viewableGroups.length - 1);
 let readyImage = $derived(session.status === 'ready-image' ? session : null);
 let readyVideo = $derived(session.status === 'ready-video' ? session : null);
 let imagePannable = $derived(
@@ -650,6 +699,9 @@ $effect(() => {
               <button class="gallery-viewer-control focus-ring" type="button" aria-label="Previous item" disabled={!canGoPrevious} onclick={(event) => moveSelection(-1, event.currentTarget)}>←</button>
               <button class="gallery-viewer-control focus-ring" type="button" aria-label="Next item" disabled={!canGoNext} onclick={(event) => moveSelection(1, event.currentTarget)}>→</button>
               <button class="gallery-viewer-close focus-ring" type="button" onclick={() => requestClose('button')}>Close</button>
+              {#if updating}<p class="text-xs text-stage-muted" role="status">Updating Gallery…</p>{/if}
+              {#if selectedMediaWarning}<p class="text-xs text-warning" role="alert">{selectedMediaWarning}</p>{/if}
+              {#if sequenceError}<div class="flex items-center gap-2 text-xs text-warning" role="alert"><span>Gallery history could not be updated.</span>{#if onRetry}<button class="gallery-viewer-control focus-ring" type="button" onclick={onRetry}>Retry</button>{/if}</div>{/if}
             </div>
           </header>
           {#if activeGroup.representative.mediaKind === 'image'}

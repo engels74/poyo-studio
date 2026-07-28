@@ -1,10 +1,31 @@
 <script lang="ts">
+import { onMount, tick } from 'svelte';
 import { invalidateAll } from '$app/navigation';
 import GalleryViewer from '$lib/components/gallery/GalleryViewer.svelte';
 import MediaPreview from '$lib/components/library/MediaPreview.svelte';
 import AppIcon from '$lib/components/ui/AppIcon.svelte';
 import Badge from '$lib/components/ui/Badge.svelte';
 import LinkButton from '$lib/components/ui/LinkButton.svelte';
+import {
+  createGalleryLiveLifecycle,
+  type GalleryEventSource,
+  type GalleryLiveLifecycle,
+  type GalleryVisibility
+} from '$lib/features/gallery/live-lifecycle';
+import {
+  applyGalleryOutputChronology,
+  createGalleryRefreshCoordinator,
+  type GalleryLiveEvent,
+  type GalleryRefreshCoordinator
+} from '$lib/features/gallery/live-refresh';
+import {
+  createViewerSequenceController,
+  resolveViewerSelectionSeed,
+  type ViewerSequenceState,
+  viewerSequenceFilters,
+  viewerSequenceItems
+} from '$lib/features/gallery/viewer-sequence';
+import type { GalleryViewerItemDto } from '$lib/features/library/contracts';
 import {
   byteSizeLabel,
   dateTimeLabel,
@@ -18,14 +39,215 @@ let favoriteFeedback = $state('');
 let viewerOpen = $state(false);
 let selectedOutputId = $state<string | null>(null);
 let viewerTrigger = $state<HTMLElement | null>(null);
+let connection = $state<'connecting' | 'connected' | 'reconnecting'>('connecting');
+let galleryUpdate = $state('');
+let galleryLiveUpdateError = $state('');
+let viewerWarning = $state('');
+let sequenceState = $state<ViewerSequenceState>({
+  items: [],
+  total: 0,
+  complete: false,
+  updating: false,
+  generation: 0,
+  error: null,
+  overlay: null
+});
+let coordinator: GalleryRefreshCoordinator | null = null;
+let liveLifecycle: GalleryLiveLifecycle | null = null;
+let outputChronology = new Map<string, { eventId: number; removed: boolean; verified: boolean }>();
+let selectedSeed: GalleryViewerItemDto | null = null;
+let headController: AbortController | null = null;
+let sequenceLoadKey = '';
+let wasViewerOpen = false;
+let scrollInterventionGeneration = 0;
+let refreshGeneration = 0;
+
+const sequenceController = createViewerSequenceController({
+  onState: (state) => (sequenceState = state)
+});
+
+function selectedGridItem(outputId: string): GalleryViewerItemDto | null {
+  for (const group of data.page.items) {
+    const representative = group.representative;
+    if (representative?.outputId === outputId && representative.mediaUrl) {
+      return {
+        jobId: group.jobId,
+        displayName: group.displayName,
+        provider: group.provider,
+        workflow: group.workflow,
+        promptExcerpt: group.promptExcerpt,
+        createdAt: group.createdAt,
+        outputId: representative.outputId,
+        mediaKind: representative.mediaKind,
+        mediaUrl: representative.mediaUrl
+      };
+    }
+  }
+  return null;
+}
+function updateSelectedOutputId(outputId: string | null): void {
+  selectedOutputId = outputId;
+  const current = resolveViewerSelectionSeed(sequenceState, outputId, selectedSeed);
+  if (current?.outputId === outputId) {
+    selectedSeed = current;
+    viewerWarning = '';
+  }
+}
+
+function abortSequence(): void {
+  headController?.abort();
+  headController = null;
+  sequenceController.abort();
+}
+
+async function verifySelectedOverlay(): Promise<void> {
+  const selected = selectedSeed;
+  if (!selected || sequenceState.items.some((item) => item.outputId === selected.outputId)) {
+    viewerWarning = '';
+    return;
+  }
+  headController?.abort();
+  const controller = new AbortController();
+  headController = controller;
+  try {
+    const response = await fetch(selected.mediaUrl, { method: 'HEAD', signal: controller.signal });
+    if (controller.signal.aborted || selectedOutputId !== selected.outputId) return;
+    if (response.ok) {
+      sequenceController.setOverlay(selected);
+      viewerWarning = 'This selected media is no longer the current representative.';
+    } else if (response.status === 404 || response.status === 410) {
+      sequenceController.remove(selected.outputId);
+      selectedOutputId = null;
+      viewerOpen = false;
+    } else {
+      viewerWarning = 'Could not verify the selected media. It remains open.';
+    }
+  } catch {
+    if (!controller.signal.aborted && selectedOutputId === selected.outputId)
+      viewerWarning = 'Could not verify the selected media. It remains open.';
+  } finally {
+    if (headController === controller) headController = null;
+  }
+}
+
+async function loadViewerSequence(): Promise<void> {
+  if (!viewerOpen || document.hidden) return;
+  const result = await sequenceController.load(
+    viewerSequenceFilters(data.filters),
+    () => selectedSeed
+  );
+  if (result.type === 'complete') await verifySelectedOverlay();
+}
+
+function gridScrollAnchor(): { jobId: string; top: number } | null {
+  const anchor = [...document.querySelectorAll<HTMLElement>('[data-gallery-job-id]')].find(
+    (element) => element.getBoundingClientRect().bottom > 0
+  );
+  return anchor?.dataset.galleryJobId
+    ? { jobId: anchor.dataset.galleryJobId, top: anchor.getBoundingClientRect().top }
+    : null;
+}
+
+async function refreshGallery(): Promise<void> {
+  const anchor = gridScrollAnchor();
+  const refresh = ++refreshGeneration;
+  const scrollGeneration = scrollInterventionGeneration;
+  galleryUpdate = '';
+  await tick();
+  await invalidateAll();
+  galleryLiveUpdateError = '';
+  await tick();
+  if (
+    anchor &&
+    refresh === refreshGeneration &&
+    scrollGeneration === scrollInterventionGeneration
+  ) {
+    const current = [...document.querySelectorAll<HTMLElement>('[data-gallery-job-id]')].find(
+      (element) => element.dataset.galleryJobId === anchor.jobId
+    );
+    if (current) window.scrollBy({ top: current.getBoundingClientRect().top - anchor.top });
+  }
+  if (viewerOpen && !document.hidden) await loadViewerSequence();
+  galleryUpdate = 'Gallery updated.';
+}
+
+function requestRefresh(): Promise<void> {
+  return coordinator ? coordinator.request() : refreshGallery();
+}
 
 function openViewer(event: MouseEvent & { currentTarget: HTMLButtonElement }): void {
   const outputId = event.currentTarget.dataset.outputId;
   if (!outputId) return;
   selectedOutputId = outputId;
+  selectedSeed = selectedGridItem(outputId);
+  viewerWarning = '';
   viewerTrigger = event.currentTarget;
   viewerOpen = true;
 }
+
+$effect(() => {
+  const key = JSON.stringify(viewerSequenceFilters(data.filters));
+  if (!viewerOpen) {
+    if (wasViewerOpen) {
+      abortSequence();
+      sequenceController.reset();
+      selectedOutputId = null;
+      selectedSeed = null;
+      viewerWarning = '';
+    }
+    wasViewerOpen = false;
+    sequenceLoadKey = '';
+    return;
+  }
+  wasViewerOpen = true;
+  if (sequenceLoadKey === key) return;
+  sequenceLoadKey = key;
+  void loadViewerSequence();
+});
+
+onMount(() => {
+  const markScrollIntervention = () => (scrollInterventionGeneration += 1);
+  window.addEventListener('scroll', markScrollIntervention, { passive: true });
+  coordinator = createGalleryRefreshCoordinator(refreshGallery);
+  liveLifecycle = createGalleryLiveLifecycle({
+    createEventSource: (lastEventId) =>
+      new EventSource(
+        lastEventId === null
+          ? '/api/events/jobs'
+          : `/api/events/jobs?lastEventId=${encodeURIComponent(lastEventId)}`
+      ) as unknown as GalleryEventSource,
+    visibility: document as unknown as GalleryVisibility,
+    coordinator,
+    abortSequence,
+    onEvent: (event: GalleryLiveEvent) => {
+      outputChronology = applyGalleryOutputChronology(outputChronology, event);
+      if (event.outputId && outputChronology.get(event.outputId)?.removed) {
+        sequenceController.remove(event.outputId);
+        if (selectedOutputId === event.outputId) {
+          selectedOutputId = null;
+          viewerOpen = false;
+        }
+      }
+      return true;
+    },
+    onConnectionOpen: () => (connection = 'connected'),
+    onConnectionError: () => (connection = 'reconnecting'),
+    onRefreshError: () => {
+      galleryLiveUpdateError =
+        'Live Gallery updates could not be refreshed. Waiting for the next update.';
+    }
+  });
+  return () => {
+    window.removeEventListener('scroll', markScrollIntervention);
+    abortSequence();
+    liveLifecycle?.dispose();
+    liveLifecycle = null;
+    coordinator = null;
+    outputChronology.clear();
+    selectedSeed = null;
+    sequenceController.dispose();
+  };
+});
 
 function href(overrides: Record<string, string | boolean | null>): string {
   const query = new URLSearchParams();
@@ -59,7 +281,7 @@ async function setFavorite(jobId: string, favorite: boolean): Promise<void> {
       body: JSON.stringify({ favorite })
     });
     if (!response.ok) throw new Error('Favorite update failed.');
-    await invalidateAll();
+    await requestRefresh();
   } catch {
     favoriteFeedback = 'Favorite update failed.';
   } finally {
@@ -81,6 +303,9 @@ async function setFavorite(jobId: string, favorite: boolean): Promise<void> {
         <h2 id="gallery-heading" class="mt-1 text-xl font-semibold tracking-tight">Generation gallery</h2>
         <p class="mt-2 text-sm leading-6 text-muted-foreground">
           {data.page.total} grouped {data.page.total === 1 ? 'generation' : 'generations'} · {byteSizeLabel(data.storage.indexedBytes)} indexed locally
+        </p>
+        <p class="mt-1 text-xs text-muted-foreground" role="status" aria-live="polite">
+          Live updates: {connection}
         </p>
       </div>
       <div class="flex items-center gap-1 rounded bg-muted p-1" aria-label="Gallery view">
@@ -105,6 +330,8 @@ async function setFavorite(jobId: string, favorite: boolean): Promise<void> {
     </form>
 
     {#if favoriteFeedback}<p class="mt-4 rounded border border-border bg-muted px-4 py-3 text-sm" role="status">{favoriteFeedback}</p>{/if}
+    {#if galleryLiveUpdateError}<p class="mt-4 rounded border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive" role="status">{galleryLiveUpdateError}</p>{/if}
+    <div class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="gallery-live-status">{galleryUpdate}</div>
 
     {#if data.page.items.length}
       <div class={data.filters.view === 'grid' ? 'mt-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-3' : 'mt-3 divide-y divide-border'}>
@@ -113,7 +340,7 @@ async function setFavorite(jobId: string, favorite: boolean): Promise<void> {
           {@const mediaKind = representative?.mediaKind ?? group.modality}
           {@const mediaKindLabel = mediaKind === 'video' ? 'Video' : 'Image'}
           {@const viewerLabel = `View ${mediaKind} ${group.displayName}`}
-          <article class={data.filters.view === 'grid' ? 'group overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-xs)]' : 'grid gap-3 py-4 sm:grid-cols-[9rem_minmax(0,1fr)_auto] sm:items-center'}>
+          <article data-gallery-job-id={group.jobId} class={data.filters.view === 'grid' ? 'group overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-xs)]' : 'grid gap-3 py-4 sm:grid-cols-[9rem_minmax(0,1fr)_auto] sm:items-center'}>
             {#if representative?.mediaUrl}
               <button type="button" onclick={openViewer} class="focus-ring block w-full overflow-hidden rounded text-left" aria-label={viewerLabel} data-output-id={representative.outputId}>
                 <div
@@ -154,7 +381,16 @@ async function setFavorite(jobId: string, favorite: boolean): Promise<void> {
 
 <GalleryViewer
   groups={data.page.items}
+  items={sequenceState.complete ? viewerSequenceItems(sequenceState) : undefined}
+  complete={sequenceState.complete}
+  updating={sequenceState.updating}
+  selectedMediaWarning={viewerWarning || null}
+  sequenceError={sequenceState.error && sequenceState.error !== 'aborted' ? sequenceState.error : null}
+  onRetry={() => {
+    sequenceLoadKey = '';
+    void loadViewerSequence();
+  }}
   bind:open={viewerOpen}
-  bind:selectedOutputId
+  bind:selectedOutputId={() => selectedOutputId, updateSelectedOutputId}
   bind:triggerElement={viewerTrigger}
 />
