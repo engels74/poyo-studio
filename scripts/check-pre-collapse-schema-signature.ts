@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { openDatabase } from '../src/lib/server/platform/database';
+import { initialMigration } from '../migrations/0001-initial';
 import { databaseSchemaSignature } from '../tests/helpers/database-schema-signature';
 
 const repositoryRoot = resolve(import.meta.dir, '..');
@@ -35,7 +36,9 @@ async function main(): Promise<void> {
   };
   const temporary = await mkdtemp(join(tmpdir(), 'poyo-schema-signature-'));
   try {
-    const database = await openDatabase(join(temporary, 'studio.sqlite'));
+    const database = await openDatabase(join(temporary, 'studio.sqlite'), {
+      migrations: [initialMigration]
+    });
     try {
       if (JSON.stringify(databaseSchemaSignature(database)) !== JSON.stringify(fixture.schema)) {
         throw new Error(

@@ -134,12 +134,13 @@ rejects a linked root at startup and creates validated application-owned childre
 claim to isolate data from another process running as the same account that can replace the
 configured root itself.
 
-The application is unreleased and has one version-1 initial database migration. Databases from
-earlier development builds that recorded migration versions 2–4 are intentionally unsupported:
-they are rejected read-only and are not imported, rewritten, or upgraded. Delete the old local data
-root and start fresh rather than editing `schema_migrations`. The immutable schema-signature fixture
-retains those earlier migration details solely as historical provenance; it is checked against fresh
-version-1 installs and is neither an upgrade path nor a regeneration target.
+The current database schema is version 2. Canonical version-1 databases created by the immutable
+initial migration are supported as forward-only upgrade inputs and are upgraded transactionally to
+version 2. The version-1 schema-signature fixture remains immutable historical provenance: it is
+checked against version-1 installs and is neither a regeneration target nor an alternate upgrade
+path. Earlier development builds that recorded versions 2–4 have different migration names and
+checksums from the registered chain, so they are rejected read-only and are not imported, rewritten,
+or upgraded. Delete the old local data root and start fresh rather than editing `schema_migrations`.
 
 ## Important upstream limitations
 

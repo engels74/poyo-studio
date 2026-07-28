@@ -60,6 +60,18 @@ async function createCompatibleDatabase(databasePath: string): Promise<void> {
     database.close();
   }
 }
+async function createCanonicalVersionOneDatabase(databasePath: string): Promise<void> {
+  await mkdir(join(databasePath, '..'), { recursive: true });
+  const initialMigration = migrations[0];
+  if (!initialMigration) throw new Error('Expected the registered initial migration.');
+
+  const database = new Database(databasePath, { create: true, strict: true });
+  try {
+    migrateDatabase(database, [initialMigration]);
+  } finally {
+    database.close();
+  }
+}
 
 async function mutateSchema(databasePath: string, sql: string): Promise<void> {
   const database = new Database(databasePath, { strict: true });
@@ -138,21 +150,20 @@ describe('read-only database bootstrap preflight', () => {
     expect(await Bun.file(parent).exists()).toBe(false);
   });
 
-  test('accepts the fresh-only version-1 history without creating sidecars', async () => {
+  test('accepts a canonical version-2 database without creating sidecars', async () => {
     const databasePath = await path();
     await createCompatibleDatabase(databasePath);
-    expect(await preflightDatabase(databasePath)).toEqual({ state: 'compatible', maxVersion: 1 });
+    expect(await preflightDatabase(databasePath)).toEqual({ state: 'compatible', maxVersion: 2 });
     expect(await Bun.file(`${databasePath}-wal`).exists()).toBe(false);
     expect(await Bun.file(`${databasePath}-shm`).exists()).toBe(false);
     expect(await Bun.file(`${databasePath}-journal`).exists()).toBe(false);
   });
 
-  test('accepts a clean WAL-mode database without changing residual empty-WAL sidecars', async () => {
+  test('accepts canonical version-1 upgrade input read-only without changing bytes or sidecars', async () => {
     const databasePath = await path();
-    const database = await openDatabase(databasePath);
-    database.close();
-    const sidecars = [`${databasePath}-wal`, `${databasePath}-shm`, `${databasePath}-journal`];
+    await createCanonicalVersionOneDatabase(databasePath);
     const before = await snapshot(databasePath);
+    const sidecars = [`${databasePath}-wal`, `${databasePath}-shm`, `${databasePath}-journal`];
     const beforeSidecars = await Promise.all(
       sidecars.map(async (sidecar) => ({
         exists: await Bun.file(sidecar).exists(),
@@ -180,11 +191,51 @@ describe('read-only database bootstrap preflight', () => {
     ).toEqual(beforeSidecars);
   });
 
-  test('rejects exact migration rows with a missing application table without any mutation', async () => {
+  test('accepts a clean WAL-mode database without changing residual empty-WAL sidecars', async () => {
     const databasePath = await path();
-    await createCompatibleDatabase(databasePath);
-    await mutateSchema(databasePath, 'DROP TABLE balance_snapshots');
-    await expectRejectedWithoutMutation(databasePath);
+    const database = await openDatabase(databasePath);
+    database.close();
+    const sidecars = [`${databasePath}-wal`, `${databasePath}-shm`, `${databasePath}-journal`];
+    const before = await snapshot(databasePath);
+    const beforeSidecars = await Promise.all(
+      sidecars.map(async (sidecar) => ({
+        exists: await Bun.file(sidecar).exists(),
+        bytes: (await Bun.file(sidecar).exists())
+          ? new Uint8Array(await Bun.file(sidecar).arrayBuffer())
+          : null
+      }))
+    );
+
+    await expect(preflightDatabase(databasePath)).resolves.toEqual({
+      state: 'compatible',
+      maxVersion: 2
+    });
+
+    expect(await snapshot(databasePath)).toEqual(before);
+    expect(
+      await Promise.all(
+        sidecars.map(async (sidecar) => ({
+          exists: await Bun.file(sidecar).exists(),
+          bytes: (await Bun.file(sidecar).exists())
+            ? new Uint8Array(await Bun.file(sidecar).arrayBuffer())
+            : null
+        }))
+      )
+    ).toEqual(beforeSidecars);
+  });
+
+  test('rejects drifted canonical version-1 and version-2 schemas without mutation', async () => {
+    for (const version of [1, 2]) {
+      const databasePath = await path();
+      if (version === 1) {
+        await createCanonicalVersionOneDatabase(databasePath);
+      } else {
+        await createCompatibleDatabase(databasePath);
+      }
+      await mutateSchema(databasePath, 'DROP TABLE balance_snapshots');
+
+      await expectRejectedWithoutMutation(databasePath);
+    }
   });
 
   test('rejects exact migration rows with a changed index without any mutation', async () => {
@@ -248,37 +299,56 @@ describe('read-only database bootstrap preflight', () => {
     await expectRejectedWithoutMutation(databasePath);
   });
 
-  test('rejects a wrong version-1 identity without changing bytes, metadata, or sidecars', async () => {
-    const databasePath = await path();
-    await createSchemaHistory(databasePath, 1);
-    const before = await snapshot(databasePath);
-    const sidecars = [`${databasePath}-wal`, `${databasePath}-shm`, `${databasePath}-journal`];
-    const beforeSidecars = await Promise.all(sidecars.map((path) => Bun.file(path).exists()));
+  test('rejects wrong canonical version-1 and version-2 migration identities without mutation', async () => {
+    for (const version of [1, 2]) {
+      const databasePath = await path();
+      if (version === 1) {
+        await createCanonicalVersionOneDatabase(databasePath);
+      } else {
+        await createCompatibleDatabase(databasePath);
+      }
+      await mutateSchema(
+        databasePath,
+        `UPDATE schema_migrations SET name = 'wrong-${version}', checksum = 'wrong-${version}'
+         WHERE version = ${version}`
+      );
 
-    await expect(preflightDatabase(databasePath)).rejects.toMatchObject({
-      code: 'database_incompatible'
-    });
-
-    expect(await snapshot(databasePath)).toEqual(before);
-    expect(await Promise.all(sidecars.map((path) => Bun.file(path).exists()))).toEqual(
-      beforeSidecars
-    );
+      await expectRejectedWithoutMutation(databasePath);
+    }
   });
 
-  test('rejects a former version-4 history without changing DB metadata or creating WAL/SHM', async () => {
+  test('rejects a gap in the applied chain without mutation', async () => {
     const databasePath = await path();
-    await createSchemaHistory(databasePath, 4);
-    const before = await snapshot(databasePath);
+    await createCompatibleDatabase(databasePath);
+    await mutateSchema(databasePath, 'DELETE FROM schema_migrations WHERE version = 1');
 
-    await expect(preflightDatabase(databasePath)).rejects.toMatchObject({
-      name: 'DatabasePreflightError',
-      code: 'database_incompatible'
-    });
+    await expectRejectedWithoutMutation(databasePath);
+  });
 
-    expect(await snapshot(databasePath)).toEqual(before);
-    expect(await Bun.file(`${databasePath}-wal`).exists()).toBe(false);
-    expect(await Bun.file(`${databasePath}-shm`).exists()).toBe(false);
-    expect(await Bun.file(`${databasePath}-journal`).exists()).toBe(false);
+  test('rejects former development version-2 and version-4 identities without mutation', async () => {
+    for (const version of [2, 4]) {
+      const databasePath = await path();
+      await createCanonicalVersionOneDatabase(databasePath);
+      await mutateSchema(
+        databasePath,
+        `INSERT INTO schema_migrations(version, name, checksum, applied_at)
+         VALUES (${version}, 'development migration ${version}', 'development-${version}', '2026-07-17T00:00:00.000Z')`
+      );
+
+      await expectRejectedWithoutMutation(databasePath);
+    }
+  });
+
+  test('rejects a future migration version without changing DB metadata or creating WAL/SHM', async () => {
+    const databasePath = await path();
+    await createCanonicalVersionOneDatabase(databasePath);
+    await mutateSchema(
+      databasePath,
+      `INSERT INTO schema_migrations(version, name, checksum, applied_at)
+       VALUES (3, 'future migration', 'future-checksum', '2026-07-17T00:00:00.000Z')`
+    );
+
+    await expectRejectedWithoutMutation(databasePath);
   });
 
   test('fails closed on pending journal bytes and leaves every file unchanged', async () => {

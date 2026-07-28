@@ -164,20 +164,20 @@ export async function preflightDatabase(
     if (maxVersion > maximumVersion) {
       throw new DatabasePreflightError(
         'database_incompatible',
-        `Database schema ${maxVersion} is incompatible with this fresh-only application schema.`
+        `Database schema ${maxVersion} is not supported by the registered migration chain; the current compatible schema is ${maximumVersion}.`
       );
     }
-    const expected = registeredMigrations
-      .filter((migration) => migration.version <= maximumVersion)
+    const expectedPrefix = registeredMigrations
+      .filter((migration) => migration.version <= maxVersion)
       .map((migration) => ({
         version: migration.version,
         name: migration.name,
         checksum: migrationChecksum(migration)
       }));
-    if (JSON.stringify(applied) !== JSON.stringify(expected)) {
+    if (JSON.stringify(applied) !== JSON.stringify(expectedPrefix)) {
       throw new DatabasePreflightError(
         'database_incompatible',
-        'The selected database migration identity does not match this fresh-only application schema.'
+        'The selected database migration identity does not match the registered migration chain through its current compatible schema.'
       );
     }
     const integrity = database.query<Record<string, string>, []>('PRAGMA integrity_check').all();
@@ -199,7 +199,7 @@ export async function preflightDatabase(
     }
     if (
       databaseSchemaSignature(database) !==
-      canonicalDatabaseSchemaSignature(registeredMigrations, maximumVersion)
+      canonicalDatabaseSchemaSignature(registeredMigrations, maxVersion)
     ) {
       throw new DatabasePreflightError(
         'database_incompatible',
