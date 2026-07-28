@@ -1762,6 +1762,23 @@ test('Gallery adds late completed image and video in canonical order without rep
     const issues = trackBrowserIssues(page);
     await page.goto(`${harness.url}/gallery`);
     await page.getByText('Live updates: connected', { exact: true }).waitFor();
+    await page.getByTestId('gallery-live-status').evaluate((element) => {
+      const state = {
+        announcing: element.textContent?.includes('Gallery updated.') === true,
+        count: 0
+      };
+      const observer = new MutationObserver(() => {
+        const announcing = element.textContent?.includes('Gallery updated.') === true;
+        if (announcing && !state.announcing) state.count += 1;
+        state.announcing = announcing;
+      });
+      observer.observe(element, { childList: true, characterData: true, subtree: true });
+      (
+        window as Window & {
+          __galleryLiveAnnouncements?: { observer: MutationObserver; state: typeof state };
+        }
+      ).__galleryLiveAnnouncements = { observer, state };
+    });
 
     const existingCard = page.locator('article').filter({ hasText: labels.newest }).first();
     const initialUrl = page.url();
@@ -1784,6 +1801,22 @@ test('Gallery adds late completed image and video in canonical order without rep
       .getByRole('button', { name: `View image ${lateImage.label}`, exact: true })
       .first()
       .waitFor({ timeout: 30_000 });
+    await page.waitForFunction(
+      () =>
+        ((
+          window as Window & {
+            __galleryLiveAnnouncements?: { state: { count: number } };
+          }
+        ).__galleryLiveAnnouncements?.state.count ?? 0) >= 1
+    );
+    const announcementsAfterImage = await page.evaluate(
+      () =>
+        (
+          window as Window & {
+            __galleryLiveAnnouncements?: { state: { count: number } };
+          }
+        ).__galleryLiveAnnouncements?.state.count ?? 0
+    );
 
     const lateVideo = await seedLiveGalleryItem(harness, {
       label: 'Gallery Late Completed Video',
@@ -1796,6 +1829,29 @@ test('Gallery adds late completed image and video in canonical order without rep
       .getByRole('button', { name: `View video ${lateVideo.label}`, exact: true })
       .first()
       .waitFor({ timeout: 30_000 });
+    await page.waitForFunction(
+      (previousCount) =>
+        ((
+          window as Window & {
+            __galleryLiveAnnouncements?: { state: { count: number } };
+          }
+        ).__galleryLiveAnnouncements?.state.count ?? 0) > previousCount,
+      announcementsAfterImage
+    );
+    expect(
+      await page.evaluate(() => {
+        const announcements = (
+          window as Window & {
+            __galleryLiveAnnouncements?: {
+              observer: MutationObserver;
+              state: { count: number };
+            };
+          }
+        ).__galleryLiveAnnouncements;
+        announcements?.observer.disconnect();
+        return announcements?.state.count ?? 0;
+      })
+    ).toBeGreaterThanOrEqual(2);
 
     const cardLabels = await page
       .locator('article')
@@ -1820,6 +1876,91 @@ test('Gallery adds late completed image and video in canonical order without rep
     expect(await page.evaluate(() => history.length)).toBe(initialHistoryLength);
     expect(await page.evaluate(() => window.scrollY)).toBeGreaterThanOrEqual(
       Math.min(initialScroll, 180)
+    );
+    expect(issues.consoleErrors).toEqual([]);
+    expect(issues.pageErrors).toEqual([]);
+  } finally {
+    await context?.close();
+    await browser?.close();
+    await harness.cleanup();
+  }
+});
+test('Gallery keeps a selected old representative open while its canonical replacement loads', async () => {
+  const harness = await startBrowserAppHarness();
+  let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
+  let context:
+    | Awaited<ReturnType<Awaited<ReturnType<typeof chromium.launch>>['newContext']>>
+    | undefined;
+  try {
+    const seeded = await seedGallery(harness);
+    await harness.startApp();
+    browser = await chromium.launch({ headless: true });
+    context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const page = await context.newPage();
+    const issues = trackBrowserIssues(page);
+    await page.goto(`${harness.url}/gallery`);
+    const dialog = await openGalleryOutput(page, labels.newest, 'image');
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector('[data-testid="gallery-viewer-item-status"]')
+          ?.textContent?.includes('of 3') === true
+    );
+
+    const delayed = Promise.withResolvers<void>();
+    const requestStarted = Promise.withResolvers<void>();
+    const newestReplacementOutputId = `replacement-${seeded.newest.outputId}`;
+    const videoReplacementOutputId = `replacement-${seeded.video.outputId}`;
+
+    await page.route('**/api/library/viewer-sequence**', async (route) => {
+      const response = await route.fetch();
+      const payload = (await response.json()) as {
+        items: { jobId: string; outputId: string; mediaUrl: string }[];
+      };
+      payload.items = payload.items.map((item) =>
+        item.jobId === seeded.newest.jobId
+          ? {
+              ...item,
+              outputId: newestReplacementOutputId,
+              mediaUrl: `/api/media/${newestReplacementOutputId}`
+            }
+          : item.jobId === seeded.video.jobId
+            ? {
+                ...item,
+                outputId: videoReplacementOutputId,
+                mediaUrl: `/api/media/${videoReplacementOutputId}`
+              }
+            : item
+      );
+      requestStarted.resolve();
+      await delayed.promise;
+      await route.fulfill({ response, json: payload });
+    });
+
+    await seedLiveGalleryItem(harness, {
+      label: 'Gallery Replacement Refresh',
+      createdAt: '2026-07-20T20:05:00.000Z',
+      mediaKind: 'image',
+      fixture: 'tests/fixtures/media/gallery-landscape.png',
+      fileName: 'gallery-replacement-refresh.png'
+    });
+    await requestStarted.promise;
+    await dialog.getByRole('button', { name: 'Next item' }).click();
+    await expectSelection(dialog, {
+      label: labels.video,
+      position: '2 of 3',
+      mediaKind: 'video',
+      stage: 'selection changed during sequence refresh'
+    });
+
+    delayed.resolve();
+    await dialog
+      .getByText('This selected media is no longer the current representative.', { exact: true })
+      .waitFor();
+    expect(await dialog.isVisible()).toBe(true);
+    expect(await dialog.getByRole('heading').textContent()).toBe(labels.video);
+    expect(await dialog.getByRole('link', { name: 'Open job' }).getAttribute('href')).toBe(
+      `/jobs/${seeded.video.jobId}`
     );
     expect(issues.consoleErrors).toEqual([]);
     expect(issues.pageErrors).toEqual([]);

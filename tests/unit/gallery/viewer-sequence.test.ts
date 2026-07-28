@@ -3,6 +3,7 @@ import {
   createViewerSequenceController,
   parseViewerSequencePage,
   resolveViewerSelectionSeed,
+  type ViewerSequenceState,
   viewerSequenceFilters,
   viewerSequenceItems,
   viewerSequenceSearchParams
@@ -85,6 +86,67 @@ describe('viewer sequence', () => {
     expect(await pending).toMatchObject({ type: 'complete', total: 2 });
     expect(calls).toHaveLength(2);
     expect(controller.state.items.map((entry) => entry.outputId)).toEqual(['b', 'a']);
+  });
+
+  test('publishes a selected old representative with its canonical replacement atomically', async () => {
+    const published: ViewerSequenceState[] = [];
+    const selected = item('same-job', 'old-output');
+    const controller = createViewerSequenceController({
+      fetch: async () => response(page([item('same-job', 'new-output')], null, 1)),
+      onState: (state) => published.push(state)
+    });
+
+    await controller.load(viewerSequenceFilters(filters), () => selected);
+
+    const completed = published.filter((state) => state.complete);
+    expect(completed).toHaveLength(1);
+    const completedState = completed[0];
+    if (!completedState) throw new Error('Expected one completed viewer sequence state.');
+    expect(completedState.overlay).toBe(selected);
+    expect(viewerSequenceItems(completedState).map((entry) => entry.outputId)).toEqual([
+      'old-output',
+      'new-output'
+    ]);
+  });
+
+  test('uses the latest selected representative when a deferred load completes', async () => {
+    const deferred = Promise.withResolvers<Response>();
+    const published: ViewerSequenceState[] = [];
+    const original = item('first-job', 'first-old', '2026-01-02T00:00:00.000Z');
+    const latest = item('second-job', 'second-old');
+    let selected = original;
+    const controller = createViewerSequenceController({
+      fetch: () => deferred.promise,
+      onState: (state) => published.push(state)
+    });
+
+    const pending = controller.load(viewerSequenceFilters(filters), () => selected);
+    selected = latest;
+    deferred.resolve(
+      response(
+        page(
+          [
+            item('first-job', 'first-new', '2026-01-02T00:00:00.000Z'),
+            item('second-job', 'second-new')
+          ],
+          null,
+          2
+        )
+      )
+    );
+    await pending;
+
+    const completedState = published.find((state) => state.complete);
+    if (!completedState) throw new Error('Expected one completed viewer sequence state.');
+    expect(completedState.overlay).toBe(latest);
+    expect(viewerSequenceItems(completedState).map((entry) => entry.outputId)).toEqual([
+      'first-new',
+      'second-old',
+      'second-new'
+    ]);
+    expect(
+      viewerSequenceItems(completedState).some((entry) => entry.outputId === 'first-old')
+    ).toBe(false);
   });
 
   test('keeps the old complete list while a refresh is building and ignores stale work', async () => {

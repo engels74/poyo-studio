@@ -132,7 +132,10 @@ async function verifySelectedOverlay(): Promise<void> {
 
 async function loadViewerSequence(): Promise<void> {
   if (!viewerOpen || document.hidden) return;
-  const result = await sequenceController.load(viewerSequenceFilters(data.filters));
+  const result = await sequenceController.load(
+    viewerSequenceFilters(data.filters),
+    () => selectedSeed
+  );
   if (result.type === 'complete') await verifySelectedOverlay();
 }
 
@@ -149,6 +152,8 @@ async function refreshGallery(): Promise<void> {
   const anchor = gridScrollAnchor();
   const refresh = ++refreshGeneration;
   const scrollGeneration = scrollInterventionGeneration;
+  galleryUpdate = '';
+  await tick();
   await invalidateAll();
   galleryLiveUpdateError = '';
   await tick();
@@ -326,9 +331,7 @@ async function setFavorite(jobId: string, favorite: boolean): Promise<void> {
 
     {#if favoriteFeedback}<p class="mt-4 rounded border border-border bg-muted px-4 py-3 text-sm" role="status">{favoriteFeedback}</p>{/if}
     {#if galleryLiveUpdateError}<p class="mt-4 rounded border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive" role="status">{galleryLiveUpdateError}</p>{/if}
-    <div class="sr-only" role="status" aria-live="polite" aria-atomic="true">
-      Gallery connection {connection}. {galleryUpdate}
-    </div>
+    <div class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="gallery-live-status">{galleryUpdate}</div>
 
     {#if data.page.items.length}
       <div class={data.filters.view === 'grid' ? 'mt-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-3' : 'mt-3 divide-y divide-border'}>

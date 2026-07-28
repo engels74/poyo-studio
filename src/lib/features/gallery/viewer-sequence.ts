@@ -1,9 +1,9 @@
-import { isExactIsoUtcInstant } from '../library/contracts';
 import type {
   GalleryViewerItemDto,
   GalleryViewerSequencePageDto,
   LibraryFiltersDto
 } from '../library/contracts';
+import { isExactIsoUtcInstant } from '../library/contracts';
 
 export type ViewerSequenceFilters = Omit<LibraryFiltersDto, 'cursor' | 'view'>;
 export type ViewerSequenceError = 'aborted' | 'invalid_page' | 'request_failed' | 'changed';
@@ -141,6 +141,14 @@ export function viewerSequenceItems(state: ViewerSequenceState): GalleryViewerIt
     return state.items;
   return [...state.items, state.overlay].sort(compare);
 }
+const selectedOverlay = (
+  items: GalleryViewerItemDto[],
+  item: GalleryViewerItemDto | null
+): GalleryViewerItemDto | null =>
+  item &&
+  items.some((candidate) => candidate.jobId === item.jobId && candidate.outputId !== item.outputId)
+    ? item
+    : null;
 export function resolveViewerSelectionSeed(
   state: ViewerSequenceState,
   outputId: string | null,
@@ -170,7 +178,10 @@ export function createViewerSequenceController(options: ViewerSequenceController
     controller = null;
   };
 
-  async function load(filters: ViewerSequenceFilters): Promise<ViewerSequenceResult> {
+  async function load(
+    filters: ViewerSequenceFilters,
+    selectedSeed: () => GalleryViewerItemDto | null = () => state.overlay
+  ): Promise<ViewerSequenceResult> {
     abort();
     const generation = state.generation + 1;
     controller = new AbortController();
@@ -237,7 +248,8 @@ export function createViewerSequenceController(options: ViewerSequenceController
           total: initialTotal,
           complete: true,
           updating: false,
-          error: null
+          error: null,
+          overlay: selectedOverlay(building, selectedSeed())
         });
         controller = null;
         return { type: 'complete', items: building, total: initialTotal };
@@ -270,12 +282,7 @@ export function createViewerSequenceController(options: ViewerSequenceController
       set({ ...state, items, total: Math.min(state.total, items.length), overlay });
     },
     setOverlay(item: GalleryViewerItemDto | null): void {
-      const canonicalReplacement =
-        item &&
-        state.items.some(
-          (candidate) => candidate.jobId === item.jobId && candidate.outputId !== item.outputId
-        );
-      set({ ...state, overlay: canonicalReplacement ? item : null });
+      set({ ...state, overlay: selectedOverlay(state.items, item) });
     },
     reset(): void {
       abort();
