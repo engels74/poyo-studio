@@ -332,10 +332,16 @@ function requestClose(reason: 'button' | 'escape' | 'outside'): void {
 
 function restoreTrigger(event: Event): void {
   const target = triggerElement;
-  const fallback = fallbackFocusElement ?? focusBeforeOpen;
+  const captured = focusBeforeOpen;
   triggerElement = null;
   focusBeforeOpen = null;
-  const destination = target?.isConnected ? target : fallback?.isConnected ? fallback : null;
+  const destination = target?.isConnected
+    ? target
+    : fallbackFocusElement?.isConnected
+      ? fallbackFocusElement
+      : captured?.isConnected
+        ? captured
+        : null;
   if (destination) {
     event.preventDefault();
     destination.focus();
