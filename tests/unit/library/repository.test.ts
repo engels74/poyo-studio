@@ -713,6 +713,17 @@ describe('safe library activity projections', () => {
     ]);
     expect(JSON.stringify(firstPage.items)).not.toContain('/private/');
 
+    if (!firstCursor) throw new Error('Expected an activity pagination cursor.');
+    const canonicalCursor = JSON.parse(atob(firstCursor)) as Record<string, unknown>;
+    for (const occurredAt of ['2026-07-15T13:00:00+01:00', '2026-07-15T12:00:00Z']) {
+      const nonCanonicalCursor = { ...canonicalCursor, occurredAt };
+      expect(
+        repository
+          .listActivities({ ...jobs, cursor: btoa(JSON.stringify(nonCanonicalCursor)) }, 2)
+          .items.map((item) => item.id)
+      ).toEqual(firstPage.items.map((item) => item.id));
+    }
+
     const secondPage = repository.listActivities({ ...jobs, cursor: firstCursor ?? '' }, 3);
     expect(secondPage).toMatchObject({
       total: 5,

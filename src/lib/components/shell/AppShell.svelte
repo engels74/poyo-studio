@@ -57,7 +57,10 @@ $effect(() => {
   if (
     !untrack(() => balanceRefreshing) &&
     next &&
-    (!balance || Date.parse(next.fetchedAt) > Date.parse(balance.fetchedAt))
+    isExactBalanceTimestamp(next.fetchedAt) &&
+    (!balance ||
+      !isExactBalanceTimestamp(balance.fetchedAt) ||
+      Date.parse(next.fetchedAt) > Date.parse(balance.fetchedAt))
   ) {
     balance = next;
     balanceRefreshFailure = false;

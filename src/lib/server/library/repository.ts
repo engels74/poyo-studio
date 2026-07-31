@@ -265,13 +265,18 @@ function encodeActivityCursor(row: ActivityRow): string {
   );
 }
 
+function isCanonicalActivityTimestamp(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
+}
+
 function decodeActivityCursor(value: string): ActivityCursor | null {
   if (!value || value.length > 512) return null;
   try {
     const parsed = JSON.parse(atob(value)) as Partial<ActivityCursor>;
     if (
-      typeof parsed.occurredAt !== 'string' ||
-      !Number.isFinite(Date.parse(parsed.occurredAt)) ||
+      !isCanonicalActivityTimestamp(parsed.occurredAt) ||
       (parsed.kindOrdinal !== 1 && parsed.kindOrdinal !== 0) ||
       typeof parsed.tieId !== 'string' ||
       parsed.tieId.length < 8 ||

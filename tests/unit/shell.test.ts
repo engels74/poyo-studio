@@ -163,6 +163,8 @@ describe('account balance shell control', () => {
     expect(shell).toContain('balance.credits.toLocaleString()');
     expect(shell).toContain("' · Stale'");
     expect(shell).toContain('The latest balance refresh failed.');
+    expect(shell).toContain('isExactBalanceTimestamp(next.fetchedAt)');
+    expect(shell).toContain('!isExactBalanceTimestamp(balance.fetchedAt)');
     expect(shell).toContain('Date.parse(next.fetchedAt) > Date.parse(balance.fetchedAt)');
     expect(shell).not.toContain('Date.parse(next.fetchedAt) >= Date.parse(balance.fetchedAt)');
   });
