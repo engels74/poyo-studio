@@ -37,6 +37,29 @@ describe('jobs and library presentation contracts', () => {
       view: 'list'
     });
   });
+  test('preserves bounded activity filter values for repository cursor pages', () => {
+    expect(
+      parseJobFilters(
+        new URLSearchParams({
+          status: 'completed',
+          q: '  charge activity  ',
+          model: 'flux-schnell',
+          workflow: 'text-to-image',
+          from: '2026-07-16',
+          to: '2026-07-16',
+          cursor: 'activity-cursor'
+        })
+      )
+    ).toEqual({
+      status: 'completed',
+      q: 'charge activity',
+      model: 'flux-schnell',
+      workflow: 'text-to-image',
+      dateFrom: '2026-07-16',
+      dateTo: '2026-07-16',
+      cursor: 'activity-cursor'
+    });
+  });
 
   test('uses honest elapsed, byte and orthogonal status labels', () => {
     expect(

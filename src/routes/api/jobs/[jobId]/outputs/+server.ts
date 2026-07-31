@@ -27,7 +27,9 @@ export const GET: RequestHandler = async ({ params, setHeaders }) => {
     pixelHeight: output.pixelHeight,
     fileName: output.fileName,
     downloadState: output.downloadState,
-    localAvailable: output.localAvailable
+    localAvailable: output.localAvailable,
+    downloadCopyRequestedAt: output.downloadCopyRequestedAt ?? null,
+    downloadCopyRequestCount: output.downloadCopyRequestCount ?? 0
   }));
   return Response.json({
     outputs,

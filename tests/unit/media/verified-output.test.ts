@@ -2,6 +2,8 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdir, realpath, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import {
+  acceptVerifiedAttachmentRequest,
+  authorizeAcceptedAttachmentRequest,
   resolveVerifiedMediaOutput,
   serveVerifiedMediaOutput
 } from '../../../src/lib/server/media/verified-output';
@@ -21,7 +23,7 @@ async function outputFixture() {
        VALUES (?,?,0,'image','pending',?)`
     )
     .run(outputId, job.id, '2026-07-15T12:00:00.000Z');
-  return { fixture, outputId };
+  return { fixture, job, outputId };
 }
 
 describe('verified media output boundary', () => {
@@ -97,5 +99,121 @@ describe('verified media output boundary', () => {
       outputId
     );
     expect(rejected.status).toBe(403);
+  });
+
+  test('persists only accepted attachment requests and authorizes read-only delivery', async () => {
+    const { fixture, job, outputId } = await outputFixture();
+    const path = join(fixture.paths.media, 'job', 'accepted.png');
+    await mkdir(join(fixture.paths.media, 'job'), { recursive: true });
+    await writeFile(path, new Uint8Array([0x89, 0x50, 0x4e, 0x47]));
+    fixture.database
+      .query(
+        "UPDATE job_outputs SET local_path=?,content_type='image/png',download_state='verified' WHERE id=?"
+      )
+      .run(path, outputId);
+
+    const requestToken = crypto.randomUUID();
+    const request = new Request(`http://127.0.0.1/api/media/${outputId}/download`, {
+      method: 'POST'
+    });
+    const first = await acceptVerifiedAttachmentRequest(
+      request,
+      fixture.database,
+      fixture.paths.media,
+      outputId,
+      requestToken
+    );
+    const replay = await acceptVerifiedAttachmentRequest(
+      request,
+      fixture.database,
+      fixture.paths.media,
+      outputId,
+      requestToken
+    );
+
+    expect(first.replayed).toBe(false);
+    expect(replay).toEqual({ requestedAt: first.requestedAt, replayed: true });
+    expect(
+      fixture.database
+        .query<{ count: number }, []>('SELECT COUNT(*) count FROM attachment_requests')
+        .get()?.count
+    ).toBe(1);
+
+    authorizeAcceptedAttachmentRequest(request, fixture.database, outputId, requestToken);
+    authorizeAcceptedAttachmentRequest(request, fixture.database, outputId, requestToken);
+    expect(
+      fixture.database
+        .query<{ count: number }, []>('SELECT COUNT(*) count FROM attachment_requests')
+        .get()?.count
+    ).toBe(1);
+    const attachmentUrl = `http://127.0.0.1/api/media/${outputId}/download?request=${requestToken}`;
+    const ranged = await serveVerifiedMediaOutput(
+      new Request(attachmentUrl, { headers: { range: 'bytes=1-2' } }),
+      fixture.database,
+      fixture.paths.media,
+      outputId,
+      { attachment: true }
+    );
+    const head = await serveVerifiedMediaOutput(
+      new Request(attachmentUrl, { method: 'HEAD' }),
+      fixture.database,
+      fixture.paths.media,
+      outputId,
+      { attachment: true, head: true }
+    );
+    expect(ranged.status).toBe(206);
+    expect(await ranged.arrayBuffer()).toHaveLength(2);
+    expect(head.status).toBe(200);
+    expect(await head.arrayBuffer()).toHaveLength(0);
+    expect(
+      fixture.database
+        .query<{ count: number }, []>('SELECT COUNT(*) count FROM attachment_requests')
+        .get()?.count
+    ).toBe(1);
+    expect(() =>
+      authorizeAcceptedAttachmentRequest(request, fixture.database, outputId, crypto.randomUUID())
+    ).toThrow();
+
+    const otherOutputId = crypto.randomUUID();
+    fixture.database
+      .query(
+        `INSERT INTO job_outputs(
+           id,job_id,output_order,media_kind,local_path,content_type,download_state,created_at
+         ) VALUES (?,?,1,'image',?,'image/png','verified',?)`
+      )
+      .run(otherOutputId, job.id, path, '2026-07-15T12:00:00.000Z');
+    await expect(
+      acceptVerifiedAttachmentRequest(
+        request,
+        fixture.database,
+        fixture.paths.media,
+        otherOutputId,
+        requestToken
+      )
+    ).rejects.toMatchObject({
+      code: 'request_output_mismatch',
+      status: 409
+    });
+    const unavailableOutputId = crypto.randomUUID();
+    fixture.database
+      .query(
+        `INSERT INTO job_outputs(id,job_id,output_order,media_kind,download_state,created_at)
+         VALUES (?,?,2,'image','pending',?)`
+      )
+      .run(unavailableOutputId, job.id, '2026-07-15T12:00:00.000Z');
+    await expect(
+      acceptVerifiedAttachmentRequest(
+        request,
+        fixture.database,
+        fixture.paths.media,
+        unavailableOutputId,
+        crypto.randomUUID()
+      )
+    ).rejects.toMatchObject({ status: 404 });
+    expect(
+      fixture.database
+        .query<{ count: number }, []>('SELECT COUNT(*) count FROM attachment_requests')
+        .get()?.count
+    ).toBe(1);
   });
 });

@@ -72,6 +72,15 @@ async function createCanonicalVersionOneDatabase(databasePath: string): Promise<
     database.close();
   }
 }
+async function createCanonicalVersionTwoDatabase(databasePath: string): Promise<void> {
+  await mkdir(join(databasePath, '..'), { recursive: true });
+  const database = new Database(databasePath, { create: true, strict: true });
+  try {
+    migrateDatabase(database, migrations.slice(0, 2));
+  } finally {
+    database.close();
+  }
+}
 
 async function mutateSchema(databasePath: string, sql: string): Promise<void> {
   const database = new Database(databasePath, { strict: true });
@@ -150,13 +159,27 @@ describe('read-only database bootstrap preflight', () => {
     expect(await Bun.file(parent).exists()).toBe(false);
   });
 
-  test('accepts a canonical version-2 database without creating sidecars', async () => {
+  test('accepts a canonical version-3 database without creating sidecars', async () => {
     const databasePath = await path();
     await createCompatibleDatabase(databasePath);
-    expect(await preflightDatabase(databasePath)).toEqual({ state: 'compatible', maxVersion: 2 });
+    expect(await preflightDatabase(databasePath)).toEqual({ state: 'compatible', maxVersion: 3 });
     expect(await Bun.file(`${databasePath}-wal`).exists()).toBe(false);
     expect(await Bun.file(`${databasePath}-shm`).exists()).toBe(false);
     expect(await Bun.file(`${databasePath}-journal`).exists()).toBe(false);
+  });
+
+  test('accepts canonical version-2 upgrade input read-only without changing bytes or sidecars', async () => {
+    const databasePath = await path();
+    await createCanonicalVersionTwoDatabase(databasePath);
+    const before = await snapshot(databasePath);
+    const sidecars = [`${databasePath}-wal`, `${databasePath}-shm`, `${databasePath}-journal`];
+
+    await expect(preflightDatabase(databasePath)).resolves.toEqual({
+      state: 'compatible',
+      maxVersion: 2
+    });
+    expect(await snapshot(databasePath)).toEqual(before);
+    for (const sidecar of sidecars) expect(await Bun.file(sidecar).exists()).toBe(false);
   });
 
   test('accepts canonical version-1 upgrade input read-only without changing bytes or sidecars', async () => {
@@ -208,7 +231,7 @@ describe('read-only database bootstrap preflight', () => {
 
     await expect(preflightDatabase(databasePath)).resolves.toEqual({
       state: 'compatible',
-      maxVersion: 2
+      maxVersion: 3
     });
 
     expect(await snapshot(databasePath)).toEqual(before);
@@ -224,14 +247,12 @@ describe('read-only database bootstrap preflight', () => {
     ).toEqual(beforeSidecars);
   });
 
-  test('rejects drifted canonical version-1 and version-2 schemas without mutation', async () => {
-    for (const version of [1, 2]) {
+  test('rejects drifted canonical version-1 through version-3 schemas without mutation', async () => {
+    for (const version of [1, 2, 3]) {
       const databasePath = await path();
-      if (version === 1) {
-        await createCanonicalVersionOneDatabase(databasePath);
-      } else {
-        await createCompatibleDatabase(databasePath);
-      }
+      if (version === 1) await createCanonicalVersionOneDatabase(databasePath);
+      else if (version === 2) await createCanonicalVersionTwoDatabase(databasePath);
+      else await createCompatibleDatabase(databasePath);
       await mutateSchema(databasePath, 'DROP TABLE balance_snapshots');
 
       await expectRejectedWithoutMutation(databasePath);
@@ -299,14 +320,12 @@ describe('read-only database bootstrap preflight', () => {
     await expectRejectedWithoutMutation(databasePath);
   });
 
-  test('rejects wrong canonical version-1 and version-2 migration identities without mutation', async () => {
-    for (const version of [1, 2]) {
+  test('rejects wrong canonical version-1 through version-3 migration identities without mutation', async () => {
+    for (const version of [1, 2, 3]) {
       const databasePath = await path();
-      if (version === 1) {
-        await createCanonicalVersionOneDatabase(databasePath);
-      } else {
-        await createCompatibleDatabase(databasePath);
-      }
+      if (version === 1) await createCanonicalVersionOneDatabase(databasePath);
+      else if (version === 2) await createCanonicalVersionTwoDatabase(databasePath);
+      else await createCompatibleDatabase(databasePath);
       await mutateSchema(
         databasePath,
         `UPDATE schema_migrations SET name = 'wrong-${version}', checksum = 'wrong-${version}'
@@ -325,8 +344,8 @@ describe('read-only database bootstrap preflight', () => {
     await expectRejectedWithoutMutation(databasePath);
   });
 
-  test('rejects former development version-2 and version-4 identities without mutation', async () => {
-    for (const version of [2, 4]) {
+  test('rejects former development version-2 through version-4 identities without mutation', async () => {
+    for (const version of [2, 3, 4]) {
       const databasePath = await path();
       await createCanonicalVersionOneDatabase(databasePath);
       await mutateSchema(
@@ -345,7 +364,7 @@ describe('read-only database bootstrap preflight', () => {
     await mutateSchema(
       databasePath,
       `INSERT INTO schema_migrations(version, name, checksum, applied_at)
-       VALUES (3, 'future migration', 'future-checksum', '2026-07-17T00:00:00.000Z')`
+       VALUES (4, 'future migration', 'future-checksum', '2026-07-17T00:00:00.000Z')`
     );
 
     await expectRejectedWithoutMutation(databasePath);

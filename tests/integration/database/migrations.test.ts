@@ -27,6 +27,7 @@ async function databasePath(): Promise<string> {
 
 const expectedTables = [
   'app_settings',
+  'attachment_requests',
   'balance_snapshots',
   'cleanup_actions',
   'cleanup_attempts',
@@ -64,8 +65,8 @@ describe('database migrations', () => {
     }
   });
 
-  test('registers the exact version-1 and version-2 migration chain', () => {
-    expect(migrations.map((migration) => migration.version)).toEqual([1, 2]);
+  test('registers the exact version-1 through version-3 migration chain', () => {
+    expect(migrations.map((migration) => migration.version)).toEqual([1, 2, 3]);
     expect(migrations.at(-1)?.version).toBe(DATABASE_SCHEMA_VERSION);
   });
 
@@ -114,6 +115,45 @@ describe('database migrations', () => {
         )
         .all()
         .find((foreignKey) => foreignKey.from === 'managed_source_id');
+      const attachmentForeignKey = database
+        .query<{ table: string; from: string; to: string; on_delete: string }, []>(
+          'PRAGMA foreign_key_list(attachment_requests)'
+        )
+        .all()
+        .find((foreignKey) => foreignKey.from === 'job_output_id');
+      const attachmentIndexes = database
+        .query<{ name: string; unique: number }, []>('PRAGMA index_list(attachment_requests)')
+        .all();
+      database
+        .query(
+          `INSERT INTO jobs(id,workflow,public_model_id,local_phase,guided_request_json,correlation_id,created_at,updated_at)
+           VALUES ('migration-job','text-to-image','model','complete','{}','migration-correlation','2026-07-31T00:00:00.000Z','2026-07-31T00:00:00.000Z')`
+        )
+        .run();
+      database
+        .query(
+          `INSERT INTO job_outputs(id,job_id,output_order,media_kind,download_state,created_at)
+           VALUES ('migration-output','migration-job',0,'image','verified','2026-07-31T00:00:00.000Z')`
+        )
+        .run();
+      database
+        .query(
+          `INSERT INTO attachment_requests(id,request_token,job_output_id,requested_at)
+           VALUES ('migration-request','migration-token','migration-output','2026-07-31T00:00:00.000Z')`
+        )
+        .run();
+      expect(() =>
+        database
+          .query(
+            `INSERT INTO attachment_requests(id,request_token,job_output_id,requested_at)
+             VALUES ('migration-request-2','migration-token','migration-output','2026-07-31T00:01:00.000Z')`
+          )
+          .run()
+      ).toThrow();
+      database.query("DELETE FROM job_outputs WHERE id='migration-output'").run();
+      const attachmentCount = database
+        .query<{ count: number }, []>('SELECT COUNT(*) count FROM attachment_requests')
+        .get()?.count;
 
       expect(tables).toEqual(expectedTables);
       expect(indexes.length).toBeGreaterThanOrEqual(18);
@@ -131,6 +171,16 @@ describe('database migrations', () => {
       expect(inputColumns).toContain('managed_source_id');
       expect(outputColumns).toEqual(expect.arrayContaining(['pixel_width', 'pixel_height']));
       expect(sourceForeignKey).toMatchObject({ table: 'managed_sources', to: 'id' });
+      expect(attachmentForeignKey).toMatchObject({
+        table: 'job_outputs',
+        to: 'id',
+        on_delete: 'CASCADE'
+      });
+      expect(attachmentIndexes.some((index) => index.unique === 1)).toBe(true);
+      expect(
+        attachmentIndexes.some((index) => index.name === 'idx_attachment_requests_ledger')
+      ).toBe(true);
+      expect(attachmentCount).toBe(0);
       expect(journal?.journal_mode).toBe('wal');
       expect(health).toEqual({
         quickCheck: 'ok',
@@ -205,8 +255,8 @@ describe('database migrations', () => {
         upgraded
           .query<{ version: number }, []>('SELECT version FROM schema_migrations ORDER BY version')
           .all()
-      ).toEqual([{ version: 1 }, { version: 2 }]);
-      expect(databaseHealth(upgraded).schemaVersion).toBe(2);
+      ).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }]);
+      expect(databaseHealth(upgraded).schemaVersion).toBe(3);
       expect(
         upgraded
           .query<{ count: number }, []>(
@@ -224,7 +274,7 @@ describe('database migrations', () => {
         reopened
           .query<{ count: number }, []>('SELECT COUNT(*) AS count FROM schema_migrations')
           .get()?.count
-      ).toBe(2);
+      ).toBe(3);
       expect(
         reopened
           .query<{ id: string }, []>("SELECT id FROM job_outputs WHERE id = 'sentinel-output'")

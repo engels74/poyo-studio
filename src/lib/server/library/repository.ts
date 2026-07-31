@@ -7,6 +7,7 @@ import type {
   GalleryViewerItemDto,
   GalleryViewerSequencePageDto,
   ImageJobNavigationDto,
+  JobActivityDto,
   JobChronologyNeighborDto,
   JobDetailDto,
   JobFilterOptionsDto,
@@ -20,19 +21,21 @@ import type {
   LocalDeleteChoice,
   ModelFilterOption,
   SafeMediaSummary,
+  SafeConfigurationFieldDto,
   StorageStatisticsDto
 } from '../../features/library/contracts';
+import { isExactIsoUtcInstant } from '../../features/library/contracts';
 import { modelCatalogue } from '../../features/registry/catalogue';
 import { IMAGE_REGISTRY_ENTRIES } from '../../features/registry/image-registry';
 import { VIDEO_REGISTRY_ENTRIES } from '../../features/registry/video-registry';
 import { ManagedSourceRepository } from '../media/managed-sources';
+import { neutralSourceUploadName } from '../media/source-intake';
 import { MediaOutputError, resolveVerifiedMediaOutput } from '../media/verified-output';
 import { type AppPaths, resolvePathWithin } from '../platform/app-paths';
 import { DatabaseRepository } from '../platform/repository';
-import {
-  packDurableJobEventPayload,
-  sanitizeDurableJobEventPayload
-} from '../jobs/event-attention';
+import { packDurableJobEventPayload } from '../jobs/event-attention';
+import { taskChargeFromParts } from '../jobs/repository';
+import type { RemoteStatus } from '../jobs/types';
 import { publicIpv4GuardReason } from '../poyo/errors';
 
 export type ViewerSequenceQueryBinding = string | number | null;
@@ -71,7 +74,8 @@ type JobListRow = {
   workflow: string;
   public_model_id: string;
   local_phase: string;
-  remote_status: string;
+  remote_status: RemoteStatus;
+  remote_status_raw: string | null;
   failure_domain: string;
   attention_code: string | null;
   progress: number | null;
@@ -93,6 +97,22 @@ type JobListRow = {
   representative_path: string | null;
   representative_width: number | null;
   representative_height: number | null;
+  representative_copy_requested_at: string | null;
+  representative_copy_request_count: number;
+};
+type ActivityRow = JobListRow & {
+  activity_kind: 'job-created' | 'attachment-request';
+  occurred_at: string;
+  kind_ordinal: number;
+  tie_id: string;
+  attachment_path: string | null;
+  estimate_json: string | null;
+};
+
+type ActivityCursor = {
+  occurredAt: string;
+  kindOrdinal: number;
+  tieId: string;
 };
 
 type LibraryRow = {
@@ -119,16 +139,15 @@ type LibraryRow = {
   representative_path: string | null;
   representative_width: number | null;
   representative_height: number | null;
+  representative_copy_requested_at: string | null;
+  representative_copy_request_count: number;
 };
 
 type DetailJobRow = JobListRow & {
   poyo_task_id: string | null;
-  correlation_id: string;
-  retry_of_job_id: string | null;
   guided_request_json: string;
-  actual_payload_json: string;
-  expert_diff_json: string | null;
   submission_state: string | null;
+  estimate_json: string | null;
 };
 
 type InputRow = {
@@ -143,6 +162,7 @@ type InputRow = {
   managed_source_name: string | null;
   managed_source_bytes: number | null;
   managed_source_checksum: string | null;
+  managed_source_mime: string | null;
   managed_source_availability: 'available' | 'missing' | 'deleted' | null;
 };
 
@@ -166,6 +186,8 @@ type OutputRow = {
   pinned: number;
   verified_at: string | null;
   deleted_at: string | null;
+  download_copy_requested_at: string | null;
+  download_copy_request_count: number;
 };
 
 type AttemptRow = {
@@ -233,6 +255,38 @@ export function decodePageCursor(value: string): Cursor | null {
     return null;
   }
 }
+function encodeActivityCursor(row: ActivityRow): string {
+  return btoa(
+    JSON.stringify({
+      occurredAt: row.occurred_at,
+      kindOrdinal: row.kind_ordinal,
+      tieId: row.tie_id
+    } satisfies ActivityCursor)
+  );
+}
+
+function decodeActivityCursor(value: string): ActivityCursor | null {
+  if (!value || value.length > 512) return null;
+  try {
+    const parsed = JSON.parse(atob(value)) as Partial<ActivityCursor>;
+    if (
+      typeof parsed.occurredAt !== 'string' ||
+      !Number.isFinite(Date.parse(parsed.occurredAt)) ||
+      (parsed.kindOrdinal !== 1 && parsed.kindOrdinal !== 0) ||
+      typeof parsed.tieId !== 'string' ||
+      parsed.tieId.length < 8 ||
+      parsed.tieId.length > 128
+    )
+      return null;
+    return {
+      occurredAt: parsed.occurredAt,
+      kindOrdinal: parsed.kindOrdinal,
+      tieId: parsed.tieId
+    };
+  } catch {
+    return null;
+  }
+}
 
 function like(value: string): string {
   return `%${value.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}%`;
@@ -262,6 +316,46 @@ function addCursor(alias: string, value: string, clauses: string[], bindings: Bi
   if (!cursor) return;
   clauses.push(`(${alias}.created_at<? OR (${alias}.created_at=? AND ${alias}.id<?))`);
   bindings.push(cursor.createdAt, cursor.createdAt, cursor.id);
+}
+function addActivityFilters(
+  filters: Omit<JobFiltersDto, 'cursor'>,
+  occurredAt: string,
+  clauses: string[],
+  bindings: Binding[]
+): void {
+  const states: Record<Exclude<JobFiltersDto['status'], 'all'>, string> = {
+    queued:
+      "j.local_phase IN ('queued','validating','uploading','submission_prepared','submitting')",
+    running: "j.local_phase IN ('monitoring','downloading') AND j.remote_status!='failed'",
+    completed: "j.local_phase='complete' AND j.remote_status!='failed'",
+    failed: "j.remote_status='failed'",
+    attention: "j.local_phase='requires_attention'",
+    stale: "j.attention_code='stale'"
+  };
+  if (filters.status !== 'all') clauses.push(states[filters.status]);
+  if (filters.q) {
+    const search = like(filters.q);
+    clauses.push("(j.search_text LIKE ? ESCAPE '\\' OR j.public_model_id LIKE ? ESCAPE '\\')");
+    bindings.push(search, search);
+  }
+  if (filters.model) {
+    clauses.push('j.public_model_id=?');
+    bindings.push(filters.model);
+  }
+  if (filters.workflow) {
+    clauses.push('j.workflow=?');
+    bindings.push(filters.workflow);
+  }
+  if (filters.dateFrom) {
+    clauses.push(`${occurredAt}>=?`);
+    bindings.push(`${filters.dateFrom}T00:00:00.000Z`);
+  }
+  if (filters.dateTo) {
+    const exclusive = new Date(`${filters.dateTo}T00:00:00.000Z`);
+    exclusive.setUTCDate(exclusive.getUTCDate() + 1);
+    clauses.push(`${occurredAt}<?`);
+    bindings.push(exclusive.toISOString());
+  }
 }
 
 function modelIdsForProvider(provider: string): string[] {
@@ -379,6 +473,8 @@ function mediaSummary(row: {
   representative_path: string | null;
   representative_width: number | null;
   representative_height: number | null;
+  representative_copy_requested_at: string | null;
+  representative_copy_request_count: number;
 }): SafeMediaSummary | null {
   if (!row.representative_id || !row.representative_kind || !row.representative_state) return null;
   return {
@@ -392,7 +488,9 @@ function mediaSummary(row: {
     mediaUrl:
       row.representative_state === 'verified'
         ? `/api/media/${encodeURIComponent(row.representative_id)}`
-        : null
+        : null,
+    downloadCopyRequestedAt: row.representative_copy_requested_at,
+    downloadCopyRequestCount: row.representative_copy_request_count
   };
 }
 
@@ -425,6 +523,69 @@ function jobDto(row: JobListRow): JobListItemDto {
     verifiedOutputCount: row.verified_count,
     outputState: row.output_state,
     representative: mediaSummary(row)
+  };
+}
+function activityCost(row: ActivityRow): Extract<JobActivityDto, { kind: 'job-created' }>['cost'] {
+  const charge = taskChargeFromParts({
+    credits: row.actual_credits,
+    remoteStatus: row.remote_status,
+    remoteStatusRaw: row.remote_status_raw,
+    settledAt: row.last_polled_at
+  });
+  if (charge) {
+    return {
+      kind: 'charge',
+      credits: charge.credits,
+      terminalStatus: charge.terminalStatus,
+      settledAt: charge.settledAt
+    };
+  }
+  if (
+    row.estimated_credits === null ||
+    !Number.isFinite(row.estimated_credits) ||
+    !row.estimate_json
+  )
+    return { kind: 'unavailable' };
+  try {
+    const payload = JSON.parse(row.estimate_json) as { estimate?: Record<string, unknown> };
+    const estimate = payload.estimate;
+    if (
+      !estimate ||
+      estimate.credits !== row.estimated_credits ||
+      typeof estimate.signature !== 'string' ||
+      !['published', 'observed', 'blend'].includes(String(estimate.provenance)) ||
+      !(estimate.sourceVerifiedAt === null || isExactIsoUtcInstant(estimate.sourceVerifiedAt))
+    )
+      return { kind: 'unavailable' };
+    return {
+      kind: 'estimate',
+      credits: row.estimated_credits,
+      provenance: estimate.provenance as 'published' | 'observed' | 'blend',
+      sourceVerifiedAt: estimate.sourceVerifiedAt as string | null
+    };
+  } catch {
+    return { kind: 'unavailable' };
+  }
+}
+
+function activityDto(row: ActivityRow): JobActivityDto {
+  const job = jobDto(row);
+  if (row.activity_kind === 'attachment-request') {
+    return {
+      kind: 'attachment-request',
+      id: row.tie_id,
+      occurredAt: row.occurred_at,
+      job,
+      fileName: row.attachment_path ? basename(row.attachment_path) : null,
+      cost: null
+    };
+  }
+  return {
+    kind: 'job-created',
+    id: row.tie_id,
+    occurredAt: row.occurred_at,
+    job,
+    cost: activityCost(row)
   };
 }
 
@@ -475,13 +636,15 @@ export function buildViewerSequenceQueryPlan(
 }
 
 function viewerSequencePageHydrateQuery(ids: string[]): string {
-  return `SELECT j.id,j.entry_key,j.workflow,j.public_model_id,j.prompt_text,j.created_at,o.id output_id,o.media_kind
+  return `SELECT j.id,j.entry_key,j.workflow,j.public_model_id,j.prompt_text,j.created_at,o.id output_id,o.media_kind,
+           (SELECT MAX(ar.requested_at) FROM attachment_requests ar WHERE ar.job_output_id=o.id) download_copy_requested_at,
+           (SELECT COUNT(*) FROM attachment_requests ar WHERE ar.job_output_id=o.id) download_copy_request_count
          FROM jobs j JOIN job_outputs o ON o.id=${representativeOutputSelect('id')}
          WHERE j.id IN (${ids.map(() => '?').join(',')})`;
 }
 
 function listSelect(): string {
-  return `j.id,j.entry_key,j.workflow,j.public_model_id,j.local_phase,j.remote_status,j.failure_domain,j.attention_code,j.progress,j.estimated_credits,j.actual_credits,j.prompt_text,j.last_polled_at,j.created_at,j.started_at,j.updated_at,j.completed_at,
+  return `j.id,j.entry_key,j.workflow,j.public_model_id,j.local_phase,j.remote_status,j.remote_status_raw,j.failure_domain,j.attention_code,j.progress,j.estimated_credits,j.actual_credits,j.prompt_text,j.last_polled_at,j.created_at,j.started_at,j.updated_at,j.completed_at,
     (SELECT COUNT(*) FROM job_outputs o WHERE o.job_id=j.id) output_count,
     (SELECT COUNT(*) FROM job_outputs o WHERE o.job_id=j.id AND o.download_state='verified') verified_count,
     (SELECT CASE WHEN COUNT(*)=0 THEN NULL WHEN SUM(o.download_state='verified')=COUNT(*) THEN 'verified' WHEN SUM(o.download_state IN ('failed','expired'))>0 THEN 'attention' WHEN SUM(o.download_state='downloading')>0 THEN 'downloading' ELSE 'pending' END FROM job_outputs o WHERE o.job_id=j.id) output_state,
@@ -491,7 +654,9 @@ function listSelect(): string {
     ${representativeOutputSelect('download_state')} representative_state,
     ${representativeOutputSelect('local_path')} representative_path,
     ${representativeOutputSelect('pixel_width')} representative_width,
-    ${representativeOutputSelect('pixel_height')} representative_height`;
+    ${representativeOutputSelect('pixel_height')} representative_height,
+    (SELECT MAX(ar.requested_at) FROM attachment_requests ar WHERE ar.job_output_id=${representativeOutputSelect('id')}) representative_copy_requested_at,
+    (SELECT COUNT(*) FROM attachment_requests ar WHERE ar.job_output_id=${representativeOutputSelect('id')}) representative_copy_request_count`;
 }
 
 function tagArray(source: string): string[] {
@@ -503,6 +668,99 @@ function tagArray(source: string): string[] {
   } catch {
     return [];
   }
+}
+
+const aspectRatioValue = /^[1-9][0-9]{0,3}:[1-9][0-9]{0,3}$/;
+const dimensionValue = /^[1-9][0-9]{1,4}[xX][1-9][0-9]{1,4}$/;
+const namedSizeValues = new Set(['SD', 'HD', 'FHD', 'QHD', 'UHD', '1K', '2K', '4K', '8K']);
+
+type ConfigurationRule = {
+  key: SafeConfigurationFieldDto['key'];
+  label: string;
+  project: (value: unknown) => string | null;
+};
+
+function finiteNumber(value: unknown, minimum: number, maximum: number): string | null {
+  return typeof value === 'number' &&
+    Number.isFinite(value) &&
+    !Object.is(value, -0) &&
+    value >= minimum &&
+    value <= maximum
+    ? String(value)
+    : null;
+}
+
+function integer(value: unknown, minimum: number, maximum: number): string | null {
+  return typeof value === 'number' &&
+    Number.isSafeInteger(value) &&
+    !Object.is(value, -0) &&
+    value >= minimum &&
+    value <= maximum
+    ? String(value)
+    : null;
+}
+
+const configurationRules: readonly ConfigurationRule[] = [
+  {
+    key: 'aspectRatio',
+    label: 'Aspect ratio',
+    project: (value) => (typeof value === 'string' && aspectRatioValue.test(value) ? value : null)
+  },
+  {
+    key: 'size',
+    label: 'Size',
+    project: (value) =>
+      typeof value === 'string' && (dimensionValue.test(value) || namedSizeValues.has(value))
+        ? value
+        : null
+  },
+  {
+    key: 'resolution',
+    label: 'Resolution',
+    project: (value) =>
+      typeof value === 'string' && (dimensionValue.test(value) || namedSizeValues.has(value))
+        ? value
+        : null
+  },
+  { key: 'width', label: 'Width', project: (value) => integer(value, 1, 32768) },
+  { key: 'height', label: 'Height', project: (value) => integer(value, 1, 32768) },
+  { key: 'duration', label: 'Duration', project: (value) => finiteNumber(value, 0.1, 3600) },
+  { key: 'fps', label: 'FPS', project: (value) => finiteNumber(value, 1, 240) },
+  { key: 'frames', label: 'Frames', project: (value) => integer(value, 1, 1_000_000) },
+  { key: 'seed', label: 'Seed', project: (value) => integer(value, 0, 4_294_967_295) },
+  { key: 'steps', label: 'Steps', project: (value) => integer(value, 1, 1000) },
+  {
+    key: 'guidanceScale',
+    label: 'Guidance scale',
+    project: (value) => finiteNumber(value, 0, 100)
+  },
+  {
+    key: 'promptStrength',
+    label: 'Prompt strength',
+    project: (value) => finiteNumber(value, 0, 1)
+  },
+  { key: 'outputCount', label: 'Output count', project: (value) => integer(value, 1, 100) }
+];
+
+export function projectSafeConfiguration(source: unknown): SafeConfigurationFieldDto[] {
+  if (!source || typeof source !== 'object' || Array.isArray(source)) return [];
+  const fields: SafeConfigurationFieldDto[] = [];
+  for (const rule of configurationRules) {
+    const descriptor = Object.getOwnPropertyDescriptor(source, rule.key);
+    if (!descriptor || !('value' in descriptor)) continue;
+    const value = rule.project(descriptor.value);
+    if (value !== null) fields.push({ key: rule.key, label: rule.label, value });
+  }
+  return fields;
+}
+
+function requestedAspectRatio(fields: SafeConfigurationFieldDto[]): string | null {
+  const ratio = fields.find((field) => field.key === 'aspectRatio');
+  if (ratio) return ratio.value;
+  const size = fields.find((field) => field.key === 'size' && dimensionValue.test(field.value));
+  if (!size) return null;
+  const [width, height] = size.value.toLowerCase().split('x');
+  return width && height ? `${width}:${height}` : null;
 }
 
 export class LibraryRepository extends DatabaseRepository {
@@ -561,6 +819,59 @@ export class LibraryRepository extends DatabaseRepository {
       total
     };
   }
+  listActivities(filters: JobFiltersDto, limit = 40): CursorPage<JobActivityDto> {
+    const jobClauses = ['1=1'];
+    const attachmentClauses = ['1=1'];
+    const jobBindings: Binding[] = [];
+    const attachmentBindings: Binding[] = [];
+    addActivityFilters(filters, 'j.created_at', jobClauses, jobBindings);
+    addActivityFilters(filters, 'ar.requested_at', attachmentClauses, attachmentBindings);
+
+    const jobSelect = `SELECT 'job-created' activity_kind,j.created_at occurred_at,1 kind_ordinal,
+      j.id tie_id,NULL attachment_path,
+      (SELECT e.safe_payload_json FROM job_events e WHERE e.job_id=j.id AND e.event_type='job.created' ORDER BY e.event_id LIMIT 1) estimate_json,
+      ${listSelect()} FROM jobs j WHERE ${jobClauses.join(' AND ')}`;
+    const attachmentSelect = `SELECT 'attachment-request' activity_kind,ar.requested_at occurred_at,0 kind_ordinal,
+      ar.id tie_id,o.local_path attachment_path,NULL estimate_json,
+      ${listSelect()} FROM attachment_requests ar
+      JOIN job_outputs o ON o.id=ar.job_output_id
+      JOIN jobs j ON j.id=o.job_id
+      WHERE ${attachmentClauses.join(' AND ')}`;
+    const activities = `${jobSelect} UNION ALL ${attachmentSelect}`;
+    const countBindings = [...jobBindings, ...attachmentBindings];
+    const cursor = decodeActivityCursor(filters.cursor);
+    const pageBindings = [...countBindings];
+    const cursorClause = cursor
+      ? 'WHERE (occurred_at<? OR (occurred_at=? AND (kind_ordinal<? OR (kind_ordinal=? AND tie_id<?))))'
+      : '';
+    if (cursor)
+      pageBindings.push(
+        cursor.occurredAt,
+        cursor.occurredAt,
+        cursor.kindOrdinal,
+        cursor.kindOrdinal,
+        cursor.tieId
+      );
+    const cappedLimit = Math.min(100, Math.max(1, limit));
+    const rows = this.database
+      .query<ActivityRow, Binding[]>(
+        `WITH activities AS (${activities})
+         SELECT * FROM activities ${cursorClause}
+         ORDER BY occurred_at DESC,kind_ordinal DESC,tie_id DESC LIMIT ?`
+      )
+      .all(...pageBindings, cappedLimit + 1);
+    const pageRows = rows.slice(0, cappedLimit);
+    const lastRow = pageRows.at(-1);
+    const total =
+      this.database
+        .query<{ count: number }, Binding[]>(`SELECT COUNT(*) count FROM (${activities})`)
+        .get(...countBindings)?.count ?? 0;
+    return {
+      items: pageRows.map(activityDto),
+      nextCursor: rows.length > cappedLimit && lastRow ? encodeActivityCursor(lastRow) : null,
+      total
+    };
+  }
 
   listLibrary(filters: LibraryFiltersDto, limit = 24): CursorPage<LibraryGroupDto> {
     const clauses: string[] = [];
@@ -583,7 +894,9 @@ export class LibraryRepository extends DatabaseRepository {
       ${representativeOutputSelect('download_state')} representative_state,
       ${representativeOutputSelect('local_path')} representative_path,
       ${representativeOutputSelect('pixel_width')} representative_width,
-      ${representativeOutputSelect('pixel_height')} representative_height
+      ${representativeOutputSelect('pixel_height')} representative_height,
+      (SELECT MAX(ar.requested_at) FROM attachment_requests ar WHERE ar.job_output_id=${representativeOutputSelect('id')}) representative_copy_requested_at,
+      (SELECT COUNT(*) FROM attachment_requests ar WHERE ar.job_output_id=${representativeOutputSelect('id')}) representative_copy_request_count
       FROM jobs j WHERE ${clauses.join(' AND ')} ORDER BY j.created_at DESC,j.id DESC LIMIT ?`;
     const rows = this.database
       .query<LibraryRow, Binding[]>(sql)
@@ -735,6 +1048,8 @@ export class LibraryRepository extends DatabaseRepository {
                   created_at: string;
                   output_id: string;
                   media_kind: 'image' | 'video';
+                  download_copy_requested_at: string | null;
+                  download_copy_request_count: number;
                 },
                 string[]
               >(viewerSequencePageHydrateQuery(ids))
@@ -760,7 +1075,9 @@ export class LibraryRepository extends DatabaseRepository {
           createdAt: row.created_at,
           outputId: row.output_id,
           mediaKind: row.media_kind,
-          mediaUrl: `/api/media/${encodeURIComponent(row.output_id)}`
+          mediaUrl: `/api/media/${encodeURIComponent(row.output_id)}`,
+          downloadCopyRequestedAt: row.download_copy_requested_at,
+          downloadCopyRequestCount: row.download_copy_request_count
         } satisfies GalleryViewerItemDto;
       });
       const terminal = !hasMore;
@@ -865,7 +1182,7 @@ export class LibraryRepository extends DatabaseRepository {
   async getJobDetail(id: string): Promise<JobDetailDto | null> {
     const row = this.database
       .query<DetailJobRow, [string]>(
-        `SELECT ${listSelect()},j.poyo_task_id,j.correlation_id,j.retry_of_job_id,j.guided_request_json,j.actual_payload_json,j.expert_diff_json,(SELECT state FROM submission_intents si WHERE si.job_id=j.id) submission_state FROM jobs j WHERE j.id=?`
+        `SELECT ${listSelect()},j.poyo_task_id,j.guided_request_json,(SELECT state FROM submission_intents si WHERE si.job_id=j.id) submission_state,(SELECT e.safe_payload_json FROM job_events e WHERE e.job_id=j.id AND e.event_type='job.created' ORDER BY e.event_id LIMIT 1) estimate_json FROM jobs j WHERE j.id=?`
       )
       .get(id);
     if (!row) return null;
@@ -876,7 +1193,12 @@ export class LibraryRepository extends DatabaseRepository {
       .all(id);
     const attemptsByOutput = Map.groupBy(attempts, (item) => item.output_id);
     const outputRows = this.database
-      .query<OutputRow, [string]>('SELECT * FROM job_outputs WHERE job_id=? ORDER BY output_order')
+      .query<OutputRow, [string]>(
+        `SELECT o.*,
+           (SELECT MAX(ar.requested_at) FROM attachment_requests ar WHERE ar.job_output_id=o.id) download_copy_requested_at,
+           (SELECT COUNT(*) FROM attachment_requests ar WHERE ar.job_output_id=o.id) download_copy_request_count
+         FROM job_outputs o WHERE o.job_id=? ORDER BY o.output_order`
+      )
       .all(id);
     const outputs: JobOutputDto[] = [];
     for (const output of outputRows) {
@@ -896,12 +1218,12 @@ export class LibraryRepository extends DatabaseRepository {
         fileName: output.local_path ? basename(output.local_path) : null,
         downloadState: output.download_state,
         mediaUrl: localAvailable ? `/api/media/${encodeURIComponent(output.id)}` : null,
+        downloadCopyRequestedAt: output.download_copy_requested_at,
+        downloadCopyRequestCount: output.download_copy_request_count,
         remoteAvailable: Boolean(output.remote_url),
         remoteHost,
         remoteExpiresAt: output.remote_expires_at,
         byteSize: output.byte_size,
-        checksum: output.checksum,
-        signature: output.signature,
         aspectRatio: output.aspect_ratio,
         pixelWidth: output.pixel_width,
         pixelHeight: output.pixel_height,
@@ -910,12 +1232,10 @@ export class LibraryRepository extends DatabaseRepository {
         localAvailable,
         verifiedAt: output.verified_at,
         deletedAt: output.deleted_at,
-        metadata: output.remote_metadata_json ? JSON.parse(output.remote_metadata_json) : null,
         attempts: (attemptsByOutput.get(output.id) ?? []).map((attempt) => ({
           attempt: attempt.attempt,
           status: attempt.status,
           bytesReceived: attempt.bytes_received,
-          error: attempt.safe_error_json ? JSON.parse(attempt.safe_error_json) : null,
           startedAt: attempt.started_at,
           completedAt: attempt.completed_at
         }))
@@ -924,7 +1244,8 @@ export class LibraryRepository extends DatabaseRepository {
     const inputs: JobInputDto[] = this.database
       .query<InputRow, [string]>(
         `SELECT ji.*,ms.original_name managed_source_name,ms.byte_size managed_source_bytes,
-          ms.checksum managed_source_checksum,ms.availability managed_source_availability
+          ms.checksum managed_source_checksum,ms.mime_type managed_source_mime,
+          ms.availability managed_source_availability
          FROM job_inputs ji LEFT JOIN managed_sources ms ON ms.id=ji.managed_source_id
          WHERE ji.job_id=? ORDER BY ji.role,ji.input_order`
       )
@@ -942,15 +1263,17 @@ export class LibraryRepository extends DatabaseRepository {
               : 'unknown',
         sourceLabel:
           input.managed_source_name ?? safeUrlLabel(input.source_url ?? input.upload_url),
+        originalName: input.managed_source_name,
+        neutralUploadName:
+          input.managed_source_id && input.managed_source_mime
+            ? neutralSourceUploadName(input.managed_source_id, input.managed_source_mime)
+            : null,
         availability: input.managed_source_availability ?? input.availability,
-        managedSourceId: input.managed_source_id,
         byteSize: input.managed_source_bytes,
-        checksum: input.managed_source_checksum,
         localConsequence:
           input.managed_source_availability === 'available'
             ? 'retained'
-            : (input.managed_source_availability ?? 'not-managed'),
-        metadata: JSON.parse(input.metadata_json)
+            : (input.managed_source_availability ?? 'not-managed')
       }));
     const history: JobHistoryDto[] = this.database
       .query<HistoryRow, [string]>(
@@ -961,27 +1284,28 @@ export class LibraryRepository extends DatabaseRepository {
         eventId: event.event_id,
         eventType: event.event_type,
         localPhase: event.local_phase,
-        remoteStatusRaw: event.remote_status_raw,
         remoteStatus: event.remote_status,
         failureDomain: event.failure_domain,
         progress: event.progress,
-        payload: (() => {
-          const payload = event.safe_payload_json ? JSON.parse(event.safe_payload_json) : null;
-          return sanitizeDurableJobEventPayload(payload).payload;
-        })(),
         observedAt: event.observed_at,
         authority: event.event_type === 'status.observed' ? 'poyo' : 'local'
       }));
+    const configuration = projectSafeConfiguration(JSON.parse(row.guided_request_json));
     return {
       ...jobDto(row),
       prompt: row.prompt_text,
-      poyoTaskId: row.poyo_task_id,
-      correlationId: row.correlation_id,
-      retryOfJobId: row.retry_of_job_id,
+      poyoTaskLinked: row.poyo_task_id !== null,
       submissionState: row.submission_state,
-      guidedRequest: JSON.parse(row.guided_request_json),
-      normalizedPayload: JSON.parse(row.actual_payload_json),
-      expertDiff: row.expert_diff_json ? JSON.parse(row.expert_diff_json) : [],
+      cost: activityCost({
+        ...row,
+        activity_kind: 'job-created',
+        occurred_at: row.created_at,
+        kind_ordinal: 1,
+        tie_id: row.id,
+        attachment_path: null
+      }),
+      configuration,
+      requestedAspectRatio: requestedAspectRatio(configuration),
       inputs,
       outputs,
       history,
@@ -1178,8 +1502,7 @@ export class LibraryRepository extends DatabaseRepository {
 function safeUrlLabel(value: string | null): string {
   if (!value) return 'Source metadata unavailable';
   try {
-    const url = new URL(value);
-    return `${url.hostname}${url.pathname}`.slice(0, 180);
+    return new URL(value).hostname.slice(0, 180);
   } catch {
     return 'Source URL unavailable';
   }

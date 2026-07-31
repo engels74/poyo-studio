@@ -113,6 +113,8 @@ function validPage(page: {
     mediaKind: string;
     mediaUrl: string;
     createdAt: string;
+    downloadCopyRequestedAt?: string | null;
+    downloadCopyRequestCount?: number;
   }>;
   nextCursor: string | null;
   snapshot: string;
@@ -131,6 +133,8 @@ function validPage(page: {
   const outputs = new Set<string>();
   let previous: [string, string] | null = null;
   for (const item of page.items) {
+    const downloadCopyRequestedAt = item.downloadCopyRequestedAt ?? null;
+    const downloadCopyRequestCount = item.downloadCopyRequestCount ?? 0;
     if (
       typeof item.jobId !== 'string' ||
       !item.jobId ||
@@ -139,6 +143,10 @@ function validPage(page: {
       !['image', 'video'].includes(item.mediaKind) ||
       !isExactIsoUtcInstant(item.createdAt) ||
       item.mediaUrl !== `/api/media/${encodeURIComponent(item.outputId)}` ||
+      (downloadCopyRequestedAt !== null && !isExactIsoUtcInstant(downloadCopyRequestedAt)) ||
+      !Number.isSafeInteger(downloadCopyRequestCount) ||
+      downloadCopyRequestCount < 0 ||
+      (downloadCopyRequestCount === 0) !== (downloadCopyRequestedAt === null) ||
       jobs.has(item.jobId) ||
       outputs.has(item.outputId)
     )

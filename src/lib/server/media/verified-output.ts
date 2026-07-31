@@ -36,6 +36,128 @@ export interface VerifiedMediaOutput {
   contentType: string;
   size: number;
 }
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export class AttachmentRequestError extends Error {
+  constructor(
+    readonly code:
+      | 'invalid_request'
+      | 'unknown_request'
+      | 'request_output_mismatch'
+      | 'request_busy',
+    readonly status: 400 | 404 | 409 | 503,
+    message: string
+  ) {
+    super(message);
+    this.name = 'AttachmentRequestError';
+  }
+}
+
+export interface AcceptedAttachmentRequest {
+  requestedAt: string;
+  replayed: boolean;
+}
+
+function assertAttachmentRequestValues(outputId: string, requestToken: string): void {
+  if (!uuidPattern.test(outputId) || !uuidPattern.test(requestToken)) {
+    throw new AttachmentRequestError('invalid_request', 400, 'Attachment request is invalid.');
+  }
+}
+
+function isDatabaseBusy(error: unknown): boolean {
+  return error instanceof Error && /\bSQLITE_BUSY\b/i.test(error.message);
+}
+
+export async function acceptVerifiedAttachmentRequest(
+  request: Request,
+  database: Database,
+  mediaRoot: string,
+  outputId: string,
+  requestToken: string
+): Promise<AcceptedAttachmentRequest> {
+  assertPrivateMediaRequest(request);
+  assertAttachmentRequestValues(outputId, requestToken);
+  await resolveVerifiedMediaOutput(database, mediaRoot, outputId);
+
+  const requestedAt = new Date().toISOString();
+  try {
+    return database.transaction(() => {
+      const existing = database
+        .query<{ job_output_id: string; requested_at: string }, [string]>(
+          'SELECT job_output_id,requested_at FROM attachment_requests WHERE request_token=?'
+        )
+        .get(requestToken);
+      if (existing) {
+        if (existing.job_output_id !== outputId) {
+          throw new AttachmentRequestError(
+            'request_output_mismatch',
+            409,
+            'Attachment request conflicts with this output.'
+          );
+        }
+        return { requestedAt: existing.requested_at, replayed: true };
+      }
+
+      database
+        .query(
+          'INSERT INTO attachment_requests(id,request_token,job_output_id,requested_at) VALUES (?,?,?,?)'
+        )
+        .run(crypto.randomUUID(), requestToken, outputId, requestedAt);
+      return { requestedAt, replayed: false };
+    })();
+  } catch (error) {
+    if (error instanceof AttachmentRequestError) throw error;
+    if (isDatabaseBusy(error)) {
+      throw new AttachmentRequestError('request_busy', 503, 'Attachment requests are busy.');
+    }
+    try {
+      const existing = database
+        .query<{ job_output_id: string; requested_at: string }, [string]>(
+          'SELECT job_output_id,requested_at FROM attachment_requests WHERE request_token=?'
+        )
+        .get(requestToken);
+      if (!existing) throw error;
+      if (existing.job_output_id !== outputId) {
+        throw new AttachmentRequestError(
+          'request_output_mismatch',
+          409,
+          'Attachment request conflicts with this output.'
+        );
+      }
+      return { requestedAt: existing.requested_at, replayed: true };
+    } catch (recoveryError) {
+      if (isDatabaseBusy(recoveryError)) {
+        throw new AttachmentRequestError('request_busy', 503, 'Attachment requests are busy.');
+      }
+      throw recoveryError;
+    }
+  }
+}
+
+export function authorizeAcceptedAttachmentRequest(
+  request: Request,
+  database: Database,
+  outputId: string,
+  requestToken: string
+): void {
+  assertPrivateMediaRequest(request);
+  assertAttachmentRequestValues(outputId, requestToken);
+  const accepted = database
+    .query<{ job_output_id: string }, [string]>(
+      'SELECT job_output_id FROM attachment_requests WHERE request_token=?'
+    )
+    .get(requestToken);
+  if (!accepted) {
+    throw new AttachmentRequestError('unknown_request', 404, 'Attachment request was not found.');
+  }
+  if (accepted.job_output_id !== outputId) {
+    throw new AttachmentRequestError(
+      'request_output_mismatch',
+      409,
+      'Attachment request conflicts with this output.'
+    );
+  }
+}
 
 export async function resolveVerifiedMediaOutput(
   database: Database,
