@@ -1,5 +1,5 @@
 <script lang="ts">
-import { afterNavigate, invalidateAll } from '$app/navigation';
+import { afterNavigate, invalidate, invalidateAll } from '$app/navigation';
 import { page } from '$app/state';
 import { onMount, untrack, type Snippet } from 'svelte';
 import AppIcon from '$lib/components/ui/AppIcon.svelte';
@@ -15,6 +15,10 @@ import {
 } from '$lib/navigation';
 import { dateLabel } from '$lib/features/library/presentation';
 import type { PublicIpv4StatusDto } from '$lib/features/settings/public-ipv4-guard';
+import {
+  isBalanceSnapshotStale,
+  isExactBalanceTimestamp
+} from '$lib/features/account/balance-freshness';
 import ThemeToggle from './ThemeToggle.svelte';
 import PublicIpv4Status from './PublicIpv4Status.svelte';
 
@@ -23,6 +27,7 @@ interface Props {
   summary: {
     activeJobs: number;
     balance: { email: string | null; credits: number; fetchedAt: string } | null;
+    apiKey: { status: 'configured' | 'missing' | 'unavailable' | 'error' };
     publicIpv4Status: PublicIpv4StatusDto;
   };
 }
@@ -34,7 +39,11 @@ let routeAnnouncement = $state('');
 let initialNavigation = true;
 let publicIpv4Status = $state(untrack(() => summary.publicIpv4Status));
 let checkingPublicIpv4 = $state(false);
-
+let balance = $state(untrack(() => summary.balance));
+let balanceRefreshing = $state(false);
+let balanceRefreshFailure = $state(false);
+let balanceRefreshPromise: Promise<void> | null = null;
+let nowMs = $state(Date.now());
 let pathname = $derived(page.url.pathname);
 let routeTitle = $derived(getRouteTitle(pathname));
 let studioRoute = $derived(isStudioPath(pathname));
@@ -43,6 +52,117 @@ $effect(() => {
   const next = summary.publicIpv4Status;
   if (!untrack(() => checkingPublicIpv4)) publicIpv4Status = next;
 });
+$effect(() => {
+  const next = summary.balance;
+  if (
+    !untrack(() => balanceRefreshing) &&
+    next &&
+    isExactBalanceTimestamp(next.fetchedAt) &&
+    (!balance ||
+      !isExactBalanceTimestamp(balance.fetchedAt) ||
+      Date.parse(next.fetchedAt) > Date.parse(balance.fetchedAt))
+  ) {
+    balance = next;
+    balanceRefreshFailure = false;
+  }
+});
+
+const balanceStale = $derived(balance !== null && isBalanceSnapshotStale(balance.fetchedAt, nowMs));
+const balanceSnapshotTime = $derived(
+  balance && isExactBalanceTimestamp(balance.fetchedAt)
+    ? new Date(balance.fetchedAt).toLocaleString()
+    : null
+);
+const balanceStatusLabel = $derived.by(() => {
+  if (summary.apiKey.status === 'missing')
+    return balance
+      ? `${balance.credits.toLocaleString()} credits · No API key`
+      : 'Balance unavailable · No API key';
+  if (summary.apiKey.status === 'unavailable')
+    return balance
+      ? `${balance.credits.toLocaleString()} credits · Credential unavailable`
+      : 'Balance unavailable · Credential unavailable';
+  if (summary.apiKey.status === 'error')
+    return balance
+      ? `${balance.credits.toLocaleString()} credits · Credential error`
+      : 'Balance unavailable · Credential error';
+  if (balanceRefreshing)
+    return balance
+      ? `${balance.credits.toLocaleString()} credits · Refreshing`
+      : 'Refreshing balance';
+  if (balanceRefreshFailure)
+    return balance
+      ? `${balance.credits.toLocaleString()} credits · Refresh failed`
+      : 'Refresh failed';
+  if (!balance) return 'Balance not checked';
+  return `${balance.credits.toLocaleString()} credits${balanceStale ? ' · Stale' : ''}`;
+});
+const balanceStatusDetail = $derived.by(() => {
+  const snapshot = balanceSnapshotTime ? ` Last snapshot: ${balanceSnapshotTime}.` : '';
+  if (summary.apiKey.status === 'missing')
+    return `Add an API key in Settings to refresh the balance.${snapshot}`;
+  if (summary.apiKey.status === 'unavailable')
+    return `The credential store is unavailable.${snapshot}`;
+  if (summary.apiKey.status === 'error')
+    return `The credential store reported an error.${snapshot}`;
+  if (balanceRefreshing) return `Refreshing account balance.${snapshot}`;
+  if (balanceRefreshFailure) return `The latest balance refresh failed.${snapshot}`;
+  if (!balance) return 'The account balance has not been checked yet.';
+  if (!balanceSnapshotTime)
+    return 'Balance snapshot timestamp unavailable. Stale; refresh recommended.';
+  return `Balance snapshot from ${balanceSnapshotTime}.${balanceStale ? ' Stale; refresh recommended.' : ''}`;
+});
+
+function isBalanceSnapshot(value: unknown): value is NonNullable<Props['summary']['balance']> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const snapshot = value as Record<string, unknown>;
+  return (
+    Object.keys(snapshot).sort().join(',') === 'credits,email,fetchedAt' &&
+    (snapshot.email === null ||
+      (typeof snapshot.email === 'string' && snapshot.email.length <= 320)) &&
+    typeof snapshot.credits === 'number' &&
+    Number.isFinite(snapshot.credits) &&
+    snapshot.credits >= 0 &&
+    isExactBalanceTimestamp(snapshot.fetchedAt)
+  );
+}
+
+async function refreshBalance(): Promise<void> {
+  if (balanceRefreshPromise) return balanceRefreshPromise;
+  if (summary.apiKey.status !== 'configured') return;
+
+  balanceRefreshPromise = (async () => {
+    balanceRefreshing = true;
+    balanceRefreshFailure = false;
+    try {
+      const response = await fetch('/api/account/balance', {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'content-type': 'application/json' },
+        body: '{}'
+      });
+      const result: unknown = await response.json();
+      if (
+        !response.ok ||
+        !result ||
+        typeof result !== 'object' ||
+        !isBalanceSnapshot((result as Record<string, unknown>).balance)
+      ) {
+        throw new Error('Balance refresh response was invalid.');
+      }
+      balance = (result as { balance: NonNullable<Props['summary']['balance']> }).balance;
+      nowMs = Date.now();
+      await invalidate('app:account-balance');
+    } catch {
+      balanceRefreshFailure = true;
+    } finally {
+      balanceRefreshing = false;
+      balanceRefreshPromise = null;
+    }
+  })();
+
+  return balanceRefreshPromise;
+}
 
 function toggleSidebar(): void {
   sidebarCollapsed = !sidebarCollapsed;
@@ -86,6 +206,10 @@ async function refreshPublicIpv4(): Promise<void> {
 onMount(() => {
   const stored = localStorage.getItem('poyo-studio-sidebar-collapsed');
   sidebarCollapsed = stored === null ? window.innerWidth < 1536 : stored === 'true';
+  const staleTimer = window.setInterval(() => {
+    nowMs = Date.now();
+  }, 60_000);
+  return () => window.clearInterval(staleTimer);
 });
 
 afterNavigate(() => {
@@ -222,6 +346,20 @@ afterNavigate(() => {
       </div>
       <div class="flex shrink-0 items-center gap-2">
         <div class={sidebarCollapsed ? '' : 'lg:hidden'}>
+          <button
+            type="button"
+            class="focus-ring flex min-h-9 max-w-28 items-center gap-1.5 rounded-[var(--radius)] border border-border px-2 text-xs font-semibold tabular-nums hover:bg-muted disabled:cursor-not-allowed disabled:opacity-70 sm:max-w-48"
+            aria-label="Refresh Poyo account balance"
+            aria-busy={balanceRefreshing}
+            title={balanceStatusDetail}
+            disabled={summary.apiKey.status !== 'configured' || balanceRefreshing}
+            onclick={() => void refreshBalance()}
+          >
+            <AppIcon name={balanceRefreshing ? 'refresh' : 'wallet'} size={15} />
+            <span class="min-w-0 truncate" aria-live="polite" aria-atomic="true">{balanceStatusLabel}</span>
+          </button>
+        </div>
+        <div class={sidebarCollapsed ? '' : 'lg:hidden'}>
           <PublicIpv4Status
             status={publicIpv4Status}
             checking={checkingPublicIpv4}
@@ -285,10 +423,6 @@ afterNavigate(() => {
           <div class="flex items-center justify-between gap-4 px-3 py-2 text-sm">
             <span class="text-muted-foreground">Active jobs</span>
             <span class="font-semibold">{summary.activeJobs}</span>
-          </div>
-          <div class="flex items-center justify-between gap-4 px-3 py-2 text-sm">
-            <span class="text-muted-foreground">Poyo balance</span>
-            <span class="font-semibold">{summary.balance ? `${summary.balance.credits.toLocaleString()} credits` : 'Not connected'}</span>
           </div>
           <ThemeToggle class="mt-2 w-full justify-start" />
         </div>

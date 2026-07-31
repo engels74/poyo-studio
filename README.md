@@ -134,13 +134,14 @@ rejects a linked root at startup and creates validated application-owned childre
 claim to isolate data from another process running as the same account that can replace the
 configured root itself.
 
-The current database schema is version 2. Canonical version-1 databases created by the immutable
-initial migration are supported as forward-only upgrade inputs and are upgraded transactionally to
-version 2. The version-1 schema-signature fixture remains immutable historical provenance: it is
-checked against version-1 installs and is neither a regeneration target nor an alternate upgrade
-path. Earlier development builds that recorded versions 2–4 have different migration names and
-checksums from the registered chain, so they are rejected read-only and are not imported, rewritten,
-or upgraded. Delete the old local data root and start fresh rather than editing `schema_migrations`.
+The current database schema is version 3. Canonical version-1 and version-2 databases created by
+the registered immutable migrations are supported as forward-only upgrade inputs and are upgraded
+transactionally to version 3. The version-1 schema-signature fixture remains immutable historical
+provenance: it is checked against version-1 installs and is neither a regeneration target nor an
+alternate upgrade path. Earlier development builds that recorded versions 2–4 have different
+migration names and checksums from the registered chain, so they are rejected read-only and are not
+imported, rewritten, or upgraded. Delete the old local data root and start fresh rather than editing
+`schema_migrations`.
 
 ## Important upstream limitations
 
@@ -149,6 +150,12 @@ or upgraded. Delete the old local data root and start fresh rather than editing 
   and video stream layouts that cannot be preserved and verified safely are rejected. A single-frame
   oriented JPEG may be re-encoded while its visible orientation, dimensions, and color profile are
   verified because the current cross-platform toolchain has no universal lossless orientation path.
+- Filename privacy is separate from content fingerprinting: managed uploads use a neutral UUID name
+  with the validated media extension, while the original basename remains local provenance.
+  Per-upload byte randomization is intentionally disabled because no format-valid transformation is
+  proven safe across every supported image and video container. A future opt-in design must use
+  per-format transforms, preserve decode/probe results and managed-source checksums, reuse identical
+  transformed bytes for retries, enforce size limits, and clean ephemeral artifacts on every exit.
 - Poyo documents no task cancellation, task/file/upload deletion, task-history API,
   submission-idempotency mechanism, dynamic model/capability listing, or pricing-estimate API.
 - Remote cleanup is therefore unavailable; local deletion is never presented as remote

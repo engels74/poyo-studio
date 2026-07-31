@@ -119,8 +119,11 @@ export function mediaFrameAspectRatio(
 }
 
 const dateTimeFormatter = new Intl.DateTimeFormat('en-GB', {
-  dateStyle: 'medium',
-  timeStyle: 'short',
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
   timeZone: 'UTC'
 });
 const dateFormatter = new Intl.DateTimeFormat('en-GB', {
@@ -130,7 +133,9 @@ const dateFormatter = new Intl.DateTimeFormat('en-GB', {
 
 export function dateTimeLabel(value: string): string {
   const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? dateTimeFormatter.format(date) : 'Unknown';
+  return Number.isFinite(date.getTime())
+    ? dateTimeFormatter.format(date).replace(', ', ' at ')
+    : 'Unknown';
 }
 
 export function dateLabel(value: string): string {

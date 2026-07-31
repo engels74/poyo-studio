@@ -46,6 +46,8 @@ export interface SafeMediaSummary {
   pixelHeight: number | null;
   downloadState: 'pending' | 'downloading' | 'verified' | 'failed' | 'expired' | 'deleted';
   mediaUrl: string | null;
+  downloadCopyRequestedAt?: string | null;
+  downloadCopyRequestCount?: number;
 }
 
 export interface JobListItemDto {
@@ -75,6 +77,37 @@ export interface JobListItemDto {
   outputState: string | null;
   representative: SafeMediaSummary | null;
 }
+export type ActivityCostDto =
+  | {
+      kind: 'charge';
+      credits: number;
+      terminalStatus: 'finished' | 'failed' | 'cancelled';
+      settledAt: string;
+    }
+  | {
+      kind: 'estimate';
+      credits: number;
+      provenance: 'published' | 'observed' | 'blend';
+      sourceVerifiedAt: string | null;
+    }
+  | { kind: 'unavailable' };
+
+export type JobActivityDto =
+  | {
+      kind: 'job-created';
+      id: string;
+      occurredAt: string;
+      job: JobListItemDto;
+      cost: ActivityCostDto;
+    }
+  | {
+      kind: 'attachment-request';
+      id: string;
+      occurredAt: string;
+      job: JobListItemDto;
+      fileName: string | null;
+      cost: null;
+    };
 export interface JobChronologyNeighborDto {
   jobId: string;
   displayName: string;
@@ -127,6 +160,8 @@ export interface GalleryViewerItemDto {
   outputId: string;
   mediaKind: 'image' | 'video';
   mediaUrl: string;
+  downloadCopyRequestedAt?: string | null;
+  downloadCopyRequestCount?: number;
 }
 
 export interface GalleryViewerSequencePageDto {
@@ -142,19 +177,17 @@ export interface JobInputDto {
   mediaKind: 'image' | 'video';
   sourceKind: 'local' | 'remote' | 'uploaded' | 'unknown';
   sourceLabel: string;
+  originalName: string | null;
+  neutralUploadName: string | null;
   availability: string;
-  managedSourceId: string | null;
   byteSize: number | null;
-  checksum: string | null;
   localConsequence: 'retained' | 'missing' | 'deleted' | 'not-managed';
-  metadata: Record<string, unknown>;
 }
 
 export interface DownloadAttemptDto {
   attempt: number;
   status: 'started' | 'verified' | 'failed' | 'expired';
   bytesReceived: number;
-  error: Record<string, unknown> | null;
   startedAt: string;
   completedAt: string | null;
 }
@@ -165,15 +198,12 @@ export interface JobOutputDto extends SafeMediaSummary {
   remoteHost: string | null;
   remoteExpiresAt: string | null;
   byteSize: number | null;
-  checksum: string | null;
-  signature: string | null;
   aspectRatio: string | null;
   favorite: boolean;
   pinned: boolean;
   localAvailable: boolean;
   verifiedAt: string | null;
   deletedAt: string | null;
-  metadata: Record<string, unknown> | null;
   attempts: DownloadAttemptDto[];
 }
 
@@ -181,24 +211,39 @@ export interface JobHistoryDto {
   eventId: number;
   eventType: string;
   localPhase: string;
-  remoteStatusRaw: string | null;
   remoteStatus: string;
   failureDomain: string;
   progress: number | null;
-  payload: Record<string, unknown> | null;
   observedAt: string;
   authority: 'poyo' | 'local';
 }
 
+export interface SafeConfigurationFieldDto {
+  key:
+    | 'aspectRatio'
+    | 'size'
+    | 'resolution'
+    | 'width'
+    | 'height'
+    | 'duration'
+    | 'fps'
+    | 'frames'
+    | 'seed'
+    | 'steps'
+    | 'guidanceScale'
+    | 'promptStrength'
+    | 'outputCount';
+  label: string;
+  value: string;
+}
+
 export interface JobDetailDto extends JobListItemDto {
   prompt: string | null;
-  poyoTaskId: string | null;
-  correlationId: string;
-  retryOfJobId: string | null;
+  poyoTaskLinked: boolean;
   submissionState: string | null;
-  guidedRequest: Record<string, unknown>;
-  normalizedPayload: Record<string, unknown>;
-  expertDiff: Array<{ key: string; value: unknown; status?: string }>;
+  cost: ActivityCostDto;
+  configuration: SafeConfigurationFieldDto[];
+  requestedAspectRatio: string | null;
   inputs: JobInputDto[];
   outputs: JobOutputDto[];
   history: JobHistoryDto[];

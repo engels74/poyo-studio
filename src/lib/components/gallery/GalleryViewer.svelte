@@ -27,6 +27,7 @@ import type {
   SafeMediaSummary
 } from '$lib/features/library/contracts';
 import { dateTimeLabel } from '$lib/features/library/presentation';
+import { downloadCopy } from '$lib/features/library/attachment-request';
 
 type ViewableGroup = LibraryGroupDto & {
   representative: SafeMediaSummary & { mediaUrl: string };
@@ -43,6 +44,8 @@ interface Props {
   open?: boolean;
   selectedOutputId?: string | null;
   triggerElement?: HTMLElement | null;
+  onactivityinvalidate?: () => Promise<void>;
+  fallbackFocusElement?: HTMLElement | null;
 }
 
 interface Registration {
@@ -62,7 +65,9 @@ let {
   onRetry,
   open = $bindable(false),
   selectedOutputId = $bindable<string | null>(null),
-  triggerElement = $bindable<HTMLElement | null>(null)
+  triggerElement = $bindable<HTMLElement | null>(null),
+  onactivityinvalidate,
+  fallbackFocusElement = null
 }: Props = $props();
 let lifecycle = $state(initialViewerLifecycleState());
 let session = $state<ViewerSession>({ status: 'ended', generation: 0 });
@@ -73,7 +78,12 @@ let video = $state<HTMLVideoElement | null>(null);
 let registration = $state<Registration | null>(null);
 let reducedMotion = $state(false);
 let interactionMessage = $state('');
+let downloadPending = $state<string | null>(null);
+let downloadFeedback = $state('');
+let downloadRequests = $state(new Map<string, string>());
 let captureIds = new Map<number, CaptureIdentity[]>();
+let focusBeforeOpen: HTMLElement | null = null;
+let wasOpen = false;
 let captureSerial = 0;
 let tokenCounter = 0;
 let resizeFrame = $state<{ id: number; generation: number } | null>(null);
@@ -109,7 +119,9 @@ function sequenceGroup(item: GalleryViewerItemDto): ViewableGroup {
       pixelWidth: null,
       pixelHeight: null,
       downloadState: 'verified',
-      mediaUrl: item.mediaUrl
+      mediaUrl: item.mediaUrl,
+      downloadCopyRequestedAt: item.downloadCopyRequestedAt ?? null,
+      downloadCopyRequestCount: item.downloadCopyRequestCount ?? 0
     }
   };
 }
@@ -123,6 +135,13 @@ let canGoPrevious = $derived(complete && activeIndex > 0);
 let canGoNext = $derived(complete && activeIndex >= 0 && activeIndex < viewableGroups.length - 1);
 let readyImage = $derived(session.status === 'ready-image' ? session : null);
 let readyVideo = $derived(session.status === 'ready-video' ? session : null);
+let activeDownloadRequestedAt = $derived(
+  activeGroup
+    ? (downloadRequests.get(activeGroup.representative.outputId) ??
+        activeGroup.representative.downloadCopyRequestedAt ??
+        null)
+    : null
+);
 let imagePannable = $derived(
   Boolean(
     readyImage &&
@@ -141,6 +160,25 @@ let contentClass = $derived(
 
 function isViewable(group: LibraryGroupDto): group is ViewableGroup {
   return Boolean(group.representative?.mediaUrl);
+}
+
+function requestActiveDownload(): void {
+  if (!activeGroup || downloadPending) return;
+  const outputId = activeGroup.representative.outputId;
+  downloadPending = outputId;
+  downloadFeedback = '';
+  void downloadCopy(outputId, {
+    onaccepted: ({ requestedAt }) => {
+      downloadRequests = new Map(downloadRequests).set(outputId, requestedAt);
+      downloadFeedback = 'Download copy requested.';
+      downloadPending = null;
+    },
+    ...(onactivityinvalidate ? { oninvalidate: onactivityinvalidate } : {}),
+    onerror: () => {
+      downloadFeedback = 'Download copy request failed.';
+      downloadPending = null;
+    }
+  });
 }
 
 function pointFor(event: PointerEvent | WheelEvent | MouseEvent): Point {
@@ -242,6 +280,9 @@ function syncLifecycle(snapshot: BoundSnapshot): void {
 }
 
 $effect.pre(() => {
+  if (open && !wasOpen)
+    focusBeforeOpen = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  wasOpen = open;
   const snapshot: BoundSnapshot =
     activeGroup && open
       ? {
@@ -291,10 +332,19 @@ function requestClose(reason: 'button' | 'escape' | 'outside'): void {
 
 function restoreTrigger(event: Event): void {
   const target = triggerElement;
+  const captured = focusBeforeOpen;
   triggerElement = null;
-  if (target?.isConnected) {
+  focusBeforeOpen = null;
+  const destination = target?.isConnected
+    ? target
+    : fallbackFocusElement?.isConnected
+      ? fallbackFocusElement
+      : captured?.isConnected
+        ? captured
+        : null;
+  if (destination) {
     event.preventDefault();
-    target.focus();
+    destination.focus();
   }
 }
 
@@ -768,6 +818,14 @@ $effect(() => {
                   ></video>
                 {/if}
               {/key}
+              {#if activeDownloadRequestedAt}
+                <span
+                  class="absolute top-3 right-3 z-10 inline-flex size-8 items-center justify-center rounded-full border border-success/40 bg-background/90 text-success shadow-[var(--shadow-sm)]"
+                  role="img"
+                  aria-label={`Download copy requested ${dateTimeLabel(activeDownloadRequestedAt)}`}
+                  title={`Download copy requested ${dateTimeLabel(activeDownloadRequestedAt)}`}
+                >✓<span class="sr-only">Download</span></span>
+              {/if}
               {#if session.status === 'loading'}
                 <p class="gallery-viewer-state" role="status" data-testid="gallery-viewer-loading">Loading media…</p>
               {/if}
@@ -788,12 +846,13 @@ $effect(() => {
               <nav class="flex flex-wrap gap-2" aria-label="Selected media actions">
                 <a class="gallery-viewer-action focus-ring rounded border border-stage-border px-3 py-2 text-xs font-semibold hover:bg-stage-border" href={`/jobs/${activeGroup.jobId}`}>Open job</a>
                 <a class="gallery-viewer-action focus-ring rounded border border-stage-border px-3 py-2 text-xs font-semibold hover:bg-stage-border" href={activeGroup.representative.mediaUrl} target="_blank" rel="noreferrer">Open full size</a>
-                <a class="gallery-viewer-action focus-ring rounded border border-stage-border px-3 py-2 text-xs font-semibold hover:bg-stage-border" href={`/api/media/${activeGroup.representative.outputId}/download`} download data-sveltekit-reload>Download</a>
+                <button class="gallery-viewer-action focus-ring rounded border border-stage-border px-3 py-2 text-xs font-semibold hover:bg-stage-border" type="button" onclick={requestActiveDownload} disabled={downloadPending !== null}>Download copy</button>
               </nav>
             </div>
             <p id="gallery-viewer-instructions" class="sr-only">Use the zoom controls, mouse wheel, drag, double click, or keyboard shortcuts. Arrow keys pan a zoomed image and otherwise move between items.</p>
             <p class="sr-only" role="status" aria-live="polite" data-testid="gallery-viewer-item-status">{activeGroup.representative.mediaKind}, item {activeIndex + 1} of {viewableGroups.length}: {activeGroup.displayName}</p>
             <p class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="gallery-viewer-interaction-status">{interactionMessage}</p>
+            <p class="sr-only" role="status" aria-live="polite" aria-atomic="true">{downloadFeedback}</p>
           </footer>
         </div>
       {/if}

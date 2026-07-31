@@ -1,6 +1,6 @@
 <script lang="ts">
 import { onMount, tick } from 'svelte';
-import { invalidateAll } from '$app/navigation';
+import { invalidate, invalidateAll } from '$app/navigation';
 import GalleryViewer from '$lib/components/gallery/GalleryViewer.svelte';
 import MediaPreview from '$lib/components/library/MediaPreview.svelte';
 import AppIcon from '$lib/components/ui/AppIcon.svelte';
@@ -39,6 +39,7 @@ let favoriteFeedback = $state('');
 let viewerOpen = $state(false);
 let selectedOutputId = $state<string | null>(null);
 let viewerTrigger = $state<HTMLElement | null>(null);
+let viewerFallbackFocus = $state<HTMLElement | null>(null);
 let connection = $state<'connecting' | 'connected' | 'reconnecting'>('connecting');
 let galleryUpdate = $state('');
 let galleryLiveUpdateError = $state('');
@@ -79,7 +80,9 @@ function selectedGridItem(outputId: string): GalleryViewerItemDto | null {
         createdAt: group.createdAt,
         outputId: representative.outputId,
         mediaKind: representative.mediaKind,
-        mediaUrl: representative.mediaUrl
+        mediaUrl: representative.mediaUrl,
+        downloadCopyRequestedAt: representative.downloadCopyRequestedAt ?? null,
+        downloadCopyRequestCount: representative.downloadCopyRequestCount ?? 0
       };
     }
   }
@@ -181,6 +184,8 @@ function openViewer(event: MouseEvent & { currentTarget: HTMLButtonElement }): v
   selectedOutputId = outputId;
   selectedSeed = selectedGridItem(outputId);
   viewerWarning = '';
+  viewerFallbackFocus =
+    document.activeElement instanceof HTMLElement ? document.activeElement : null;
   viewerTrigger = event.currentTarget;
   viewerOpen = true;
 }
@@ -344,9 +349,18 @@ async function setFavorite(jobId: string, favorite: boolean): Promise<void> {
             {#if representative?.mediaUrl}
               <button type="button" onclick={openViewer} class="focus-ring block w-full overflow-hidden rounded text-left" aria-label={viewerLabel} data-output-id={representative.outputId}>
                 <div
+                  class="relative"
                   style={`aspect-ratio: ${data.filters.view === 'grid' ? mediaFrameAspectRatio(representative.pixelWidth, representative.pixelHeight, group.aspectRatio) : '16 / 9'};`}
                 >
                   <MediaPreview mediaKind={representative.mediaKind} src={representative.mediaUrl} alt={`Preview for ${group.displayName}`} fit="contain" preload="none" class="size-full" />
+                  {#if representative.downloadCopyRequestedAt}
+                    <span
+                      class="absolute right-2 bottom-2 inline-flex size-7 items-center justify-center rounded-full border border-success/40 bg-background/90 text-success shadow-[var(--shadow-sm)]"
+                      role="img"
+                      aria-label={`Download copy requested ${dateTimeLabel(representative.downloadCopyRequestedAt)}`}
+                      title={`Download copy requested ${dateTimeLabel(representative.downloadCopyRequestedAt)}`}
+                    >✓<span class="sr-only">Download</span></span>
+                  {/if}
                 </div>
               </button>
             {:else}
@@ -390,7 +404,9 @@ async function setFavorite(jobId: string, favorite: boolean): Promise<void> {
     sequenceLoadKey = '';
     void loadViewerSequence();
   }}
+  onactivityinvalidate={() => invalidate('app:jobs-activity')}
   bind:open={viewerOpen}
   bind:selectedOutputId={() => selectedOutputId, updateSelectedOutputId}
   bind:triggerElement={viewerTrigger}
+  fallbackFocusElement={viewerFallbackFocus}
 />

@@ -5,7 +5,8 @@ import { loadOnboardingState } from '$lib/server/settings/onboarding-gate';
 import type { OperationsSettings } from '$lib/server/settings/operations-settings';
 import type { LayoutServerLoad } from './$types';
 
-export const load: LayoutServerLoad = async ({ url }) => {
+export const load: LayoutServerLoad = async ({ url, depends }) => {
+  depends('app:account-balance');
   const platform = await getPlatformServices();
   const onboarding = await loadOnboardingState(platform);
   // Keep browser navigation in onboarding until the user explicitly completes or dismisses it.
@@ -25,6 +26,7 @@ export const load: LayoutServerLoad = async ({ url }) => {
     shellSummary: {
       activeJobs,
       balance: latestBalance(platform.database),
+      apiKey: { status: (await platform.apiKey.status()).status },
       publicIpv4Status: await platform.publicIpv4.status()
     },
     onboarding,

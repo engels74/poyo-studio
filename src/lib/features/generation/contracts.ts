@@ -72,6 +72,8 @@ export interface StudioOutputDto {
   fileName: string | null;
   downloadState: string;
   localAvailable: boolean;
+  downloadCopyRequestedAt?: string | null;
+  downloadCopyRequestCount?: number;
 }
 
 export interface StudioJobDto {

@@ -151,3 +151,55 @@ describe('theme and accessibility foundations', () => {
     expect(manifest.toLowerCase()).not.toContain('tailwind');
   });
 });
+describe('account balance shell control', () => {
+  test('renders distinct account states and identifies stale snapshots without hiding the balance', async () => {
+    const shell = await Bun.file('src/lib/components/shell/AppShell.svelte').text();
+
+    expect(shell).toContain('isBalanceSnapshotStale');
+    expect(shell).toContain("summary.apiKey.status === 'missing'");
+    expect(shell).toContain("summary.apiKey.status === 'unavailable'");
+    expect(shell).toContain("summary.apiKey.status === 'error'");
+    expect(shell).toContain("if (!balance) return 'Balance not checked';");
+    expect(shell).toContain('balance.credits.toLocaleString()');
+    expect(shell).toContain("' · Stale'");
+    expect(shell).toContain('The latest balance refresh failed.');
+    expect(shell).toContain('isExactBalanceTimestamp(next.fetchedAt)');
+    expect(shell).toContain('!isExactBalanceTimestamp(balance.fetchedAt)');
+    expect(shell).toContain('Date.parse(next.fetchedAt) > Date.parse(balance.fetchedAt)');
+    expect(shell).not.toContain('Date.parse(next.fetchedAt) >= Date.parse(balance.fetchedAt)');
+  });
+
+  test('keeps download copy controls single-flight while requests are pending', async () => {
+    const gallery = await Bun.file('src/lib/components/gallery/GalleryViewer.svelte').text();
+    const studio = await Bun.file('src/lib/components/studio/StudioWorkspace.svelte').text();
+
+    expect(gallery).toContain('if (!activeGroup || downloadPending) return;');
+    expect(gallery).toContain('disabled={downloadPending !== null}');
+    expect(studio).toContain('if (downloadPending) return;');
+    expect(studio).toContain('downloadPending = output.outputId;');
+    expect(studio.match(/downloadPending = null;/g)?.length).toBe(2);
+    expect(studio).toContain('disabled={downloadPending !== null}');
+  });
+
+  test('does not render malformed balance snapshot timestamps as Invalid Date', async () => {
+    const shell = await Bun.file('src/lib/components/shell/AppShell.svelte').text();
+
+    expect(shell).toContain('balance && isExactBalanceTimestamp(balance.fetchedAt)');
+    expect(shell).toContain('Balance snapshot timestamp unavailable. Stale; refresh recommended.');
+  });
+
+  test('makes balance refresh accessible, single-flight, non-cacheable, and invalidates its account data', async () => {
+    const shell = await Bun.file('src/lib/components/shell/AppShell.svelte').text();
+
+    expect(shell).toContain('aria-label="Refresh Poyo account balance"');
+    expect(shell).toContain('aria-busy={balanceRefreshing}');
+    expect(shell).toContain(
+      "disabled={summary.apiKey.status !== 'configured' || balanceRefreshing}"
+    );
+    expect(shell).toContain('if (balanceRefreshPromise) return balanceRefreshPromise;');
+    expect(shell).toContain("if (summary.apiKey.status !== 'configured') return;");
+    expect(shell).toContain("method: 'POST'");
+    expect(shell).toContain("cache: 'no-store'");
+    expect(shell).toContain("await invalidate('app:account-balance');");
+  });
+});

@@ -1,5 +1,6 @@
 <script lang="ts">
 import { onMount, untrack } from 'svelte';
+import { invalidate } from '$app/navigation';
 import AppIcon from '$lib/components/ui/AppIcon.svelte';
 import Badge from '$lib/components/ui/Badge.svelte';
 import Button from '$lib/components/ui/Button.svelte';
@@ -19,6 +20,9 @@ import type {
   MediaToolReadinessDto
 } from '$lib/features/settings/contracts';
 import { mediaKindSanitizationReady } from '$lib/features/settings/media-privacy';
+import { isBalanceSnapshotStale } from '$lib/features/account/balance-freshness';
+import { downloadCopy } from '$lib/features/library/attachment-request';
+import { dateTimeLabel } from '$lib/features/library/presentation';
 import {
   type BrowserMediaMetadata,
   mediaMetadataLabel,
@@ -212,6 +216,9 @@ let restoredMessage = $state('');
 let outputs = $state<StudioOutputDto[] | null>(null);
 let outputsError = $state('');
 let selectedOutput = $state(0);
+let downloadCopyFeedback = $state('');
+let downloadPending = $state<string | null>(null);
+let downloadRequests = $state(new Map<string, string>());
 let outputCandidateStates = $state<StudioResultCandidateStates>({});
 let loadingOutputs = $derived(Object.values(outputCandidateStates).includes('loading'));
 let activeJobOwnsStage = $derived.by(() => {
@@ -231,9 +238,8 @@ let batch = $state<StudioBatch>({
 let batchHydrated = $state(false);
 let batchSubmitting = $state(false);
 let editingBatchItemId = $state<string | null>(null);
-const balanceStaleMs = 10 * 60_000;
 let balanceStale = $derived(
-  balance !== null && nowMs > 0 && nowMs - new Date(balance.fetchedAt).getTime() > balanceStaleMs
+  balance !== null && nowMs > 0 && isBalanceSnapshotStale(balance.fetchedAt, nowMs)
 );
 let currentEstimate = $derived(preview?.estimate ?? null);
 let displayedTaskCharge = $derived(
@@ -1517,6 +1523,24 @@ function dismissResultPreview(): void {
   selectedOutput = 0;
 }
 
+function requestStudioDownload(output: StudioOutputDto): void {
+  if (downloadPending) return;
+  downloadPending = output.outputId;
+  downloadCopyFeedback = '';
+  void downloadCopy(output.outputId, {
+    onaccepted: ({ requestedAt }) => {
+      downloadRequests = new Map(downloadRequests).set(output.outputId, requestedAt);
+      downloadCopyFeedback = 'Download copy requested.';
+      downloadPending = null;
+    },
+    oninvalidate: () => invalidate('app:jobs-activity'),
+    onerror: () => {
+      downloadCopyFeedback = 'Download copy request failed.';
+      downloadPending = null;
+    }
+  });
+}
+
 async function savePreset(): Promise<void> {
   presetMessage = '';
   try {
@@ -1723,7 +1747,7 @@ onMount(() => {
   // Balance freshness: refresh once if it is missing or stale, then tick a clock so the "stale"
   // indicator stays live without hammering the upstream balance endpoint.
   nowMs = Date.now();
-  if (hasApiKey && (!balance || nowMs - new Date(balance.fetchedAt).getTime() > balanceStaleMs)) {
+  if (hasApiKey && (!balance || isBalanceSnapshotStale(balance.fetchedAt, nowMs))) {
     void refreshBalanceSnapshot();
   }
   const balanceTick = window.setInterval(() => (nowMs = Date.now()), 60_000);
@@ -2363,12 +2387,23 @@ onMount(() => {
         {#if current && current.mediaUrl}
           <div class="flex w-full max-w-4xl flex-col items-center gap-4">
             <h2 id={`${data.modality}-stage-heading`} class="sr-only">Generated {data.modality} result</h2>
-            {#if current.mediaKind === 'video'}
-              <!-- svelte-ignore a11y_media_has_caption -->
-              <video src={current.mediaUrl} controls class="max-h-[68vh] max-w-full rounded-[var(--radius)] shadow-[var(--shadow-sm)]"></video>
-            {:else}
-              <img src={current.mediaUrl} alt={`Generated ${data.modality} for ${resultJob.publicModelId}`} class="max-h-[68vh] w-auto max-w-full rounded-[var(--radius)] object-contain shadow-[var(--shadow-sm)]" />
-            {/if}
+            <div class="relative">
+              {#if current.mediaKind === 'video'}
+                <!-- svelte-ignore a11y_media_has_caption -->
+                <video src={current.mediaUrl} controls class="max-h-[68vh] max-w-full rounded-[var(--radius)] shadow-[var(--shadow-sm)]"></video>
+              {:else}
+                <img src={current.mediaUrl} alt={`Generated ${data.modality} for ${resultJob.publicModelId}`} class="max-h-[68vh] w-auto max-w-full rounded-[var(--radius)] object-contain shadow-[var(--shadow-sm)]" />
+              {/if}
+              {#if downloadRequests.get(current.outputId) ?? current.downloadCopyRequestedAt}
+                {@const copyRequestedAt = downloadRequests.get(current.outputId) ?? current.downloadCopyRequestedAt}
+                <span
+                  class="absolute right-2 bottom-2 inline-flex size-7 items-center justify-center rounded-full border border-success/40 bg-background/90 text-success shadow-[var(--shadow-sm)]"
+                  role="img"
+                  aria-label={`Download copy requested ${dateTimeLabel(copyRequestedAt ?? '')}`}
+                  title={`Download copy requested ${dateTimeLabel(copyRequestedAt ?? '')}`}
+                >✓<span class="sr-only">Download</span></span>
+              {/if}
+            </div>
             {#if shown.length > 1}
               <div class="flex flex-wrap justify-center gap-2" aria-label="Generated outputs">
                 {#each shown as output, index (output.outputId)}
@@ -2386,9 +2421,10 @@ onMount(() => {
             <div class="flex flex-wrap items-center justify-center gap-2">
               <LinkButton href={`/jobs?selected=${resultJob.id}`} target="_blank" rel="noopener noreferrer" variant="outline" class="border-stage-border bg-stage-elevated text-stage-foreground hover:bg-stage-border">View job</LinkButton>
               <a href={current.mediaUrl} target="_blank" rel="noopener" class="focus-ring inline-flex min-h-9 items-center gap-2 rounded-[var(--radius)] border border-stage-border bg-stage-elevated px-3.5 text-sm font-semibold text-stage-foreground hover:bg-stage-border">Open</a>
-              <a href={current.mediaUrl} download={current.fileName ?? ''} class="focus-ring inline-flex min-h-9 items-center gap-2 rounded-[var(--radius)] border border-stage-border bg-stage-elevated px-3.5 text-sm font-semibold text-stage-foreground hover:bg-stage-border">Download</a>
+              <button type="button" onclick={() => requestStudioDownload(current)} disabled={downloadPending !== null} class="focus-ring inline-flex min-h-9 items-center gap-2 rounded-[var(--radius)] border border-stage-border bg-stage-elevated px-3.5 text-sm font-semibold text-stage-foreground hover:bg-stage-border">Download copy</button>
               <Button variant="ghost" class="text-stage-muted hover:bg-stage-elevated hover:text-stage-foreground" onclick={dismissResultPreview}>Remix</Button>
             </div>
+            <p class="sr-only" role="status" aria-live="polite" aria-atomic="true">{downloadCopyFeedback}</p>
           </div>
         {/if}
       {:else if activeJob}

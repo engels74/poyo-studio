@@ -3,7 +3,10 @@ import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { JobFiltersDto, LibraryFiltersDto } from '../../../src/lib/features/library/contracts';
 import { JOB_EVENT_METADATA_KEY } from '../../../src/lib/server/jobs/event-attention';
-import { LibraryRepository } from '../../../src/lib/server/library/repository';
+import {
+  LibraryRepository,
+  projectSafeConfiguration
+} from '../../../src/lib/server/library/repository';
 import type {
   ViewerSequenceQueryObservation,
   ViewerSequenceTokenContext
@@ -221,7 +224,7 @@ describe('server-side jobs and grouped library repository', () => {
     const outwardEvent = (await repository.getJobDetail(job.id))?.history.find(
       (event) => event.eventType === 'output.local_file_removed'
     );
-    expect(outwardEvent?.payload).toEqual({ outputId: output.id });
+    expect(outwardEvent).not.toHaveProperty('payload');
     expect(JSON.stringify(outwardEvent)).not.toContain(JOB_EVENT_METADATA_KEY);
     expect(JSON.stringify(outwardEvent)).not.toContain('public_ipv4_guard_match');
   });
@@ -242,7 +245,7 @@ describe('server-side jobs and grouped library repository', () => {
     });
   });
 
-  test('accounts managed sources once and exposes missing-file history without local paths', async () => {
+  test('preserves safe original-to-neutral source provenance without raw storage details', async () => {
     const { fixture, job } = await completedGeneration('managed-source');
     const sourceId = crypto.randomUUID();
     const relativePath = `2026-07/${sourceId}.png`;
@@ -256,7 +259,7 @@ describe('server-side jobs and grouped library repository', () => {
       )
       .run(
         sourceId,
-        'safe-source.png',
+        'original-source-name.png',
         'image',
         'image/png',
         8,
@@ -293,14 +296,16 @@ describe('server-side jobs and grouped library repository', () => {
     });
     const detail = await repository.getJobDetail(job.id);
     expect(detail?.inputs[0]).toMatchObject({
-      managedSourceId: sourceId,
       sourceKind: 'local',
-      sourceLabel: 'safe-source.png',
+      sourceLabel: 'original-source-name.png',
+      originalName: 'original-source-name.png',
+      neutralUploadName: `${sourceId}.png`,
       availability: 'missing',
       localConsequence: 'missing',
-      byteSize: 8,
-      checksum: 'source-checksum'
+      byteSize: 8
     });
+    expect(detail?.inputs[0]).not.toHaveProperty('checksum');
+    expect(detail?.inputs[0]).not.toHaveProperty('managedSourceId');
     expect(detail?.inputs[0]).not.toHaveProperty('localPath');
   });
 
@@ -352,23 +357,8 @@ describe('server-side jobs and grouped library repository', () => {
       );
 
     const history = (await new LibraryRepository(fixture.database).getJobDetail(job.id))?.history;
-    expect(history?.find((event) => event.eventType === 'job.created')?.payload).toMatchObject({
-      estimate: {
-        credits: null,
-        signature: null,
-        registryVersion: 'image-2026-07-20.1',
-        pricingHash: null
-      }
-    });
-    expect(history?.find((event) => event.eventType === 'submission.unknown')?.payload).toBeNull();
-    expect(history?.find((event) => event.eventType === 'poll.policy_blocked')?.payload).toEqual({
-      marker: 'retained',
-      policy: 'ip_guard_blocked',
-      reason: 'match'
-    });
-    expect(history?.find((event) => event.eventType === 'malformed.metadata')?.payload).toEqual({
-      marker: 'malformed'
-    });
+    expect(history?.every((event) => !('payload' in event))).toBe(true);
+    expect(history?.every((event) => !('remoteStatusRaw' in event))).toBe(true);
     expect(JSON.stringify(history)).not.toContain(JOB_EVENT_METADATA_KEY);
     expect(JSON.stringify(history)).not.toContain('public_ipv4_guard_match');
   });
@@ -501,6 +491,270 @@ describe('server-side jobs and grouped library repository', () => {
     expect(
       (await repository.getImageNavigation(current.job.id, fixture.paths.media))?.next?.jobId
     ).toBe(remainingTie);
+  });
+});
+describe('safe library activity projections', () => {
+  test('projects only the fixed-order configuration grammar without evaluating accessors', () => {
+    const source = Object.assign(Object.create({ width: 1024 }), {
+      outputCount: 100,
+      promptStrength: 0,
+      guidanceScale: 100,
+      steps: 1000,
+      seed: 4_294_967_295,
+      frames: 1_000_000,
+      fps: 240,
+      duration: 3600,
+      height: 32768,
+      width: 1,
+      resolution: '8K',
+      size: '32768x32768',
+      aspectRatio: '1:1',
+      ignored: 'raw-record-canary',
+      prompt: '<script>raw-record-canary</script>'
+    });
+    const getterCanary = Object.create(null) as Record<string, unknown>;
+    Object.defineProperty(getterCanary, 'fps', {
+      enumerable: true,
+      get() {
+        throw new Error('Configuration accessors must not run.');
+      }
+    });
+
+    expect(projectSafeConfiguration(getterCanary)).toEqual([]);
+    expect(projectSafeConfiguration(source)).toEqual([
+      { key: 'aspectRatio', label: 'Aspect ratio', value: '1:1' },
+      { key: 'size', label: 'Size', value: '32768x32768' },
+      { key: 'resolution', label: 'Resolution', value: '8K' },
+      { key: 'width', label: 'Width', value: '1' },
+      { key: 'height', label: 'Height', value: '32768' },
+      { key: 'duration', label: 'Duration', value: '3600' },
+      { key: 'fps', label: 'FPS', value: '240' },
+      { key: 'frames', label: 'Frames', value: '1000000' },
+      { key: 'seed', label: 'Seed', value: '4294967295' },
+      { key: 'steps', label: 'Steps', value: '1000' },
+      { key: 'guidanceScale', label: 'Guidance scale', value: '100' },
+      { key: 'promptStrength', label: 'Prompt strength', value: '0' },
+      { key: 'outputCount', label: 'Output count', value: '100' }
+    ]);
+    expect(
+      projectSafeConfiguration({
+        width: 1,
+        height: 32768,
+        duration: 0.1,
+        fps: 1,
+        frames: 1,
+        seed: 0,
+        steps: 1,
+        guidanceScale: 0,
+        promptStrength: 1,
+        outputCount: 1
+      })
+    ).toEqual([
+      { key: 'width', label: 'Width', value: '1' },
+      { key: 'height', label: 'Height', value: '32768' },
+      { key: 'duration', label: 'Duration', value: '0.1' },
+      { key: 'fps', label: 'FPS', value: '1' },
+      { key: 'frames', label: 'Frames', value: '1' },
+      { key: 'seed', label: 'Seed', value: '0' },
+      { key: 'steps', label: 'Steps', value: '1' },
+      { key: 'guidanceScale', label: 'Guidance scale', value: '0' },
+      { key: 'promptStrength', label: 'Prompt strength', value: '1' },
+      { key: 'outputCount', label: 'Output count', value: '1' }
+    ]);
+    expect(JSON.stringify(projectSafeConfiguration(source))).not.toContain('raw-record-canary');
+
+    expect(
+      projectSafeConfiguration({
+        aspectRatio: '1:1<script>',
+        size: '32769x1',
+        resolution: 'FHD ',
+        width: 0,
+        height: 32769,
+        duration: 0.099,
+        fps: 240.1,
+        frames: 1.5,
+        seed: -0,
+        steps: Number.POSITIVE_INFINITY,
+        guidanceScale: '0',
+        promptStrength: null,
+        outputCount: true
+      })
+    ).toEqual([]);
+    expect(projectSafeConfiguration(null)).toEqual([]);
+    expect(projectSafeConfiguration([])).toEqual([]);
+  });
+
+  test('projects ordered activity costs and safe DTOs without a balance currency fallback', async () => {
+    const fixture = await createJobFixture();
+    cleanups.push(fixture.cleanup);
+    const insertJob = fixture.database.query(
+      `INSERT INTO jobs(
+        id,workflow,public_model_id,local_phase,remote_status,failure_domain,
+        guided_request_json,actual_payload_json,estimated_credits,actual_credits,last_polled_at,prompt_text,
+        search_text,correlation_id,created_at,updated_at
+      ) VALUES (?,?,?,'complete','finished','none','{}','{}',?,?,?,?,?,?,?,?)`
+    );
+    const insertOutput = fixture.database.query(
+      `INSERT INTO job_outputs(
+        id,job_id,output_order,media_kind,local_path,download_state,favorite,pinned,created_at
+      ) VALUES (?, ?, 0, 'image', ?, 'verified', 0, 0, ?)`
+    );
+    const insertAttachment = fixture.database.query(
+      'INSERT INTO attachment_requests(id,request_token,job_output_id,requested_at) VALUES (?,?,?,?)'
+    );
+    const insertCreatedEvent = fixture.database.query(
+      `INSERT INTO job_events(
+        job_id,event_type,local_phase,remote_status,failure_domain,safe_payload_json,observed_at
+      ) VALUES (?, 'job.created', 'complete', 'finished', 'none', ?, ?)`
+    );
+    fixture.database.transaction(() => {
+      insertJob.run(
+        'activity-charge-job',
+        'text-to-image',
+        'flux-schnell',
+        null,
+        0,
+        '2026-07-15T12:00:00.000Z',
+        'charge activity',
+        'charge activity',
+        'activity-charge',
+        '2026-07-15T12:00:00.000Z',
+        '2026-07-15T12:00:00.000Z'
+      );
+      insertOutput.run(
+        'activity-charge-output',
+        'activity-charge-job',
+        '/private/charge-output.png',
+        '2026-07-15T12:00:00.000Z'
+      );
+      insertAttachment.run(
+        'activity-charge-attachment',
+        crypto.randomUUID(),
+        'activity-charge-output',
+        '2026-07-15T12:00:00.000Z'
+      );
+
+      insertJob.run(
+        'activity-estimate-job',
+        'text-to-image',
+        'flux-schnell',
+        2.5,
+        null,
+        null,
+        'estimate activity',
+        'estimate activity',
+        'activity-estimate',
+        '2026-07-15T11:00:00.000Z',
+        '2026-07-15T11:00:00.000Z'
+      );
+      insertCreatedEvent.run(
+        'activity-estimate-job',
+        JSON.stringify({
+          estimate: {
+            credits: 2.5,
+            signature: 'safe-estimate',
+            provenance: 'observed',
+            sourceVerifiedAt: '2026-07-20T00:00:00.000Z'
+          }
+        }),
+        '2026-07-15T11:00:00.000Z'
+      );
+
+      insertJob.run(
+        'activity-unavailable-job',
+        'text-to-image',
+        'flux-schnell',
+        4,
+        null,
+        null,
+        'unavailable activity',
+        'unavailable activity',
+        'activity-unavailable',
+        '2026-07-14T10:00:00.000Z',
+        '2026-07-14T10:00:00.000Z'
+      );
+      insertOutput.run(
+        'activity-unavailable-output',
+        'activity-unavailable-job',
+        '/private/unavailable-output.png',
+        '2026-07-14T10:00:00.000Z'
+      );
+      insertAttachment.run(
+        'activity-later-attachment',
+        crypto.randomUUID(),
+        'activity-unavailable-output',
+        '2026-07-16T10:00:00.000Z'
+      );
+    })();
+
+    const repository = new LibraryRepository(fixture.database);
+    const firstPage = repository.listActivities(jobs, 2);
+    const firstCursor = firstPage.nextCursor;
+    expect(firstPage).toMatchObject({ total: 5, nextCursor: expect.any(String) });
+    expect(firstPage.items).toMatchObject([
+      {
+        kind: 'attachment-request',
+        id: 'activity-later-attachment',
+        occurredAt: '2026-07-16T10:00:00.000Z',
+        fileName: 'unavailable-output.png',
+        cost: null
+      },
+      {
+        kind: 'job-created',
+        id: 'activity-charge-job',
+        occurredAt: '2026-07-15T12:00:00.000Z',
+        cost: {
+          kind: 'charge',
+          credits: 0,
+          terminalStatus: 'finished',
+          settledAt: '2026-07-15T12:00:00.000Z'
+        }
+      }
+    ]);
+    expect(JSON.stringify(firstPage.items)).not.toContain('/private/');
+
+    if (!firstCursor) throw new Error('Expected an activity pagination cursor.');
+    const canonicalCursor = JSON.parse(atob(firstCursor)) as Record<string, unknown>;
+    for (const occurredAt of ['2026-07-15T13:00:00+01:00', '2026-07-15T12:00:00Z']) {
+      const nonCanonicalCursor = { ...canonicalCursor, occurredAt };
+      expect(
+        repository
+          .listActivities({ ...jobs, cursor: btoa(JSON.stringify(nonCanonicalCursor)) }, 2)
+          .items.map((item) => item.id)
+      ).toEqual(firstPage.items.map((item) => item.id));
+    }
+
+    const secondPage = repository.listActivities({ ...jobs, cursor: firstCursor ?? '' }, 3);
+    expect(secondPage).toMatchObject({
+      total: 5,
+      nextCursor: null,
+      items: [
+        {
+          kind: 'attachment-request',
+          id: 'activity-charge-attachment',
+          cost: null
+        },
+        {
+          kind: 'job-created',
+          id: 'activity-estimate-job',
+          cost: {
+            kind: 'estimate',
+            credits: 2.5,
+            provenance: 'observed',
+            sourceVerifiedAt: '2026-07-20T00:00:00.000Z'
+          }
+        },
+        {
+          kind: 'job-created',
+          id: 'activity-unavailable-job',
+          cost: { kind: 'unavailable' }
+        }
+      ]
+    });
+    expect(repository.listActivities({ ...jobs, dateFrom: '2026-07-16' }).items).toMatchObject([
+      { kind: 'attachment-request', id: 'activity-later-attachment' }
+    ]);
+    expect(repository.listActivities({ ...jobs, q: 'charge' }).total).toBe(2);
   });
 });
 

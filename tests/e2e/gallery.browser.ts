@@ -37,8 +37,14 @@ interface SeededGallery {
 function isExpectedLifecycleRequestAbort(request: Request): boolean {
   if (request.failure()?.errorText !== 'net::ERR_ABORTED') return false;
 
-  const pathname = new URL(request.url()).pathname;
-  return pathname === '/api/library/viewer-sequence' || pathname === '/api/events/jobs';
+  const url = new URL(request.url());
+  if (url.pathname === '/api/library/viewer-sequence' || url.pathname === '/api/events/jobs')
+    return true;
+  return (
+    request.method() === 'GET' &&
+    /^\/api\/media\/[^/]+\/download$/.test(url.pathname) &&
+    url.searchParams.has('request')
+  );
 }
 
 async function seedGallery(harness: BrowserAppHarness): Promise<SeededGallery> {
@@ -610,7 +616,7 @@ test('Gallery viewer preserves context across mixed media, focus, actions and re
     expect((await liveStatus.textContent())?.trim()).toBe(`image, item 1 of 3: ${labels.newest}`);
     const creationTime = dialog.getByTestId('gallery-viewer-footer').locator('time');
     expect(await creationTime.getAttribute('datetime')).toBe('2026-07-20T20:04:00.000Z');
-    expect((await creationTime.textContent())?.trim()).toBe('20 Jul 2026, 20:04');
+    expect((await creationTime.textContent())?.trim()).toBe('20 Jul 2026 at 20:04');
     expect(await seriousAccessibilityViolations(page)).toEqual([]);
     await page.waitForFunction(
       () =>
@@ -666,7 +672,7 @@ test('Gallery viewer preserves context across mixed media, focus, actions and re
       zoomIn,
       dialog.getByRole('link', { name: 'Open job' }),
       dialog.getByRole('link', { name: 'Open full size' }),
-      dialog.getByRole('link', { name: 'Download' })
+      dialog.getByRole('button', { name: 'Download copy', exact: true })
     ]) {
       await target.scrollIntoViewIfNeeded();
       const box = await target.boundingBox();
@@ -969,7 +975,7 @@ test('Gallery viewer preserves context across mixed media, focus, actions and re
     });
     expect((await liveStatus.textContent())?.trim()).toBe(`video, item 2 of 3: ${labels.video}`);
     expect(await creationTime.getAttribute('datetime')).toBe('2026-07-20T20:03:00.000Z');
-    expect((await creationTime.textContent())?.trim()).toBe('20 Jul 2026, 20:03');
+    expect((await creationTime.textContent())?.trim()).toBe('20 Jul 2026 at 20:03');
     const video = dialog.locator('video');
     expect(await video.evaluate((element: HTMLVideoElement) => element.controls)).toBe(true);
     expect(await video.getAttribute('playsinline')).not.toBeNull();
@@ -1135,39 +1141,67 @@ test('Gallery viewer preserves context across mixed media, focus, actions and re
     expect(await fullSize.getAttribute('href')).toBe(`/api/media/${seeded.video.outputId}`);
     expect(await fullSize.getAttribute('target')).toBe('_blank');
     expect(await fullSize.getAttribute('rel')).toContain('noreferrer');
-    const download = dialog.getByRole('link', { name: 'Download' });
-    expect(await download.getAttribute('href')).toBe(
-      `/api/media/${seeded.video.outputId}/download`
+    const download = dialog.getByRole('button', { name: 'Download copy', exact: true });
+    expect(await download.count()).toBe(1);
+    const acceptedRequest = page.waitForRequest(
+      (request) =>
+        request.method() === 'POST' &&
+        new URL(request.url()).pathname === `/api/media/${seeded.video.outputId}/download`
     );
-    expect(await download.getAttribute('download')).not.toBeNull();
-    expect(await download.getAttribute('data-sveltekit-reload')).not.toBeNull();
-
-    await previous.click();
-    const newestFullSize = dialog.getByRole('link', { name: 'Open full size' });
-    const popupPromise = page.waitForEvent('popup');
-    await newestFullSize.click();
-    const popup = await popupPromise;
-    await popup.waitForLoadState('domcontentloaded');
-    expect(new URL(popup.url()).pathname).toBe(`/api/media/${seeded.newest.outputId}`);
-    expect(await popup.evaluate(() => window.opener === null)).toBe(true);
-    expect(new URL(page.url()).pathname).toBe('/gallery');
-    await popup.close();
-
-    const downloadResult = await page.evaluate(async (href) => {
-      const response = await fetch(href);
-      await response.arrayBuffer();
-      return {
-        status: response.status,
-        disposition: response.headers.get('content-disposition'),
-        cache: response.headers.get('cache-control'),
-        resourcePolicy: response.headers.get('cross-origin-resource-policy')
-      };
-    }, `/api/media/${seeded.newest.outputId}/download`);
-    expect(downloadResult.status).toBe(200);
-    expect(downloadResult.disposition).toContain('attachment');
-    expect(downloadResult.disposition).toContain('gallery-newest.png');
-    expect(downloadResult.cache).toBe('private, no-store');
-    expect(downloadResult.resourcePolicy).toBe('same-origin');
+    const acceptedResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        new URL(response.url()).pathname === `/api/media/${seeded.video.outputId}/download`
+    );
+    const nativeDownload = page.waitForRequest(
+      (request) =>
+        request.method() === 'GET' &&
+        new URL(request.url()).pathname === `/api/media/${seeded.video.outputId}/download`
+    );
+    await download.click();
+    const [post, response, get] = await Promise.all([
+      acceptedRequest,
+      acceptedResponse,
+      nativeDownload
+    ]);
+    expect(response.status()).toBe(201);
+    const body = JSON.parse(post.postData() ?? '{}') as Record<string, unknown>;
+    expect(Object.keys(body)).toEqual(['requestToken']);
+    expect(typeof body.requestToken).toBe('string');
+    if (typeof body.requestToken !== 'string')
+      throw new Error('Expected an attachment request token.');
+    expect(body.requestToken).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    );
+    const requestTokens = new URL(get.url()).searchParams.getAll('request');
+    expect(requestTokens).toEqual([body.requestToken]);
+    await dialog.getByText('Download copy requested.', { exact: true }).waitFor();
+    await page.reload();
+    await page
+      .locator('article')
+      .filter({ hasText: labels.video })
+      .getByRole('button', { name: `View video ${labels.video}`, exact: true })
+      .first()
+      .click();
+    await dialog.getByRole('img', { name: /^Download copy requested / }).waitFor();
+    expect(await dialog.getByText('Saved', { exact: true }).count()).toBe(0);
+    expect(await dialog.getByText('Downloaded', { exact: true }).count()).toBe(0);
+    await page.evaluate((downloadPath) => {
+      const originalFetch = window.fetch;
+      window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const requestUrl = input instanceof Request ? input.url : input.toString();
+        if (
+          new URL(requestUrl, window.location.href).pathname === downloadPath &&
+          init?.method === 'POST'
+        ) {
+          window.fetch = originalFetch;
+          return new Response(null, { status: 503 });
+        }
+        return originalFetch(input, init);
+      }) as typeof window.fetch;
+    }, `/api/media/${seeded.video.outputId}/download`);
+    await download.click();
+    await dialog.getByText('Download copy request failed.', { exact: true }).waitFor();
     const renderedHtml = await page.content();
     expect(renderedHtml).not.toContain(harness.appData);
     expect(renderedHtml).not.toContain(harness.syntheticKey);
@@ -1225,7 +1259,7 @@ test('Gallery viewer preserves context across mixed media, focus, actions and re
       dialog.getByRole('button', { name: 'Close' }),
       dialog.getByRole('link', { name: 'Open job' }),
       dialog.getByRole('link', { name: 'Open full size' }),
-      dialog.getByRole('link', { name: 'Download' })
+      dialog.getByRole('button', { name: 'Download copy', exact: true })
     ]) {
       await control.scrollIntoViewIfNeeded();
       const box = await control.boundingBox();
@@ -1304,6 +1338,9 @@ test('Gallery viewer preserves context across mixed media, focus, actions and re
     await disconnectedTrigger.evaluate((element) => element.remove());
     await page.keyboard.press('Escape');
     await dialog.waitFor({ state: 'detached' });
+    await page.waitForFunction(
+      () => document.activeElement?.getAttribute('aria-label') === 'Grid view'
+    );
     expect(
       await fallbackFocusTarget.evaluate((element) => document.activeElement === element)
     ).toBe(true);
@@ -1453,10 +1490,12 @@ test('Gallery viewer retains ready media identity through collapse, reflow, canc
     }));
     expect(footerReflow.scrollWidth).toBeLessThanOrEqual(footerReflow.clientWidth);
     expect(footerReflow.actionRows).toBeGreaterThan(0);
-    for (const actionName of ['Open job', 'Open full size', 'Download']) {
+    for (const actionName of ['Open job', 'Open full size']) {
       await dialog.getByRole('link', { name: actionName }).scrollIntoViewIfNeeded();
       expect(await dialog.getByRole('link', { name: actionName }).isVisible()).toBe(true);
     }
+    await dialog.getByRole('button', { name: 'Download copy' }).scrollIntoViewIfNeeded();
+    expect(await dialog.getByRole('button', { name: 'Download copy' }).isVisible()).toBe(true);
 
     const staleImage = await image.evaluate((element) => {
       (window as Window & { __galleryStaleImage?: HTMLImageElement }).__galleryStaleImage =

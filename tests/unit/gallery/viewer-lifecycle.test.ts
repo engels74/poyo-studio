@@ -227,4 +227,12 @@ describe('viewer lifecycle generation and binding edges', () => {
       mediaKind: 'image'
     });
   });
+  test('falls through disconnected explicit targets when restoring focus', async () => {
+    const viewer = await Bun.file('src/lib/components/gallery/GalleryViewer.svelte').text();
+
+    expect(viewer).toContain('const captured = focusBeforeOpen;');
+    expect(viewer).toMatch(
+      /fallbackFocusElement\?\.isConnected[\s\S]+captured\?\.isConnected[\s\S]+captured/
+    );
+  });
 });
