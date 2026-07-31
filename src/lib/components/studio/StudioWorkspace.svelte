@@ -217,6 +217,7 @@ let outputs = $state<StudioOutputDto[] | null>(null);
 let outputsError = $state('');
 let selectedOutput = $state(0);
 let downloadCopyFeedback = $state('');
+let downloadPending = $state<string | null>(null);
 let downloadRequests = $state(new Map<string, string>());
 let outputCandidateStates = $state<StudioResultCandidateStates>({});
 let loadingOutputs = $derived(Object.values(outputCandidateStates).includes('loading'));
@@ -1523,15 +1524,19 @@ function dismissResultPreview(): void {
 }
 
 function requestStudioDownload(output: StudioOutputDto): void {
+  if (downloadPending) return;
+  downloadPending = output.outputId;
   downloadCopyFeedback = '';
   void downloadCopy(output.outputId, {
     onaccepted: ({ requestedAt }) => {
       downloadRequests = new Map(downloadRequests).set(output.outputId, requestedAt);
       downloadCopyFeedback = 'Download copy requested.';
+      downloadPending = null;
     },
     oninvalidate: () => invalidate('app:jobs-activity'),
     onerror: () => {
       downloadCopyFeedback = 'Download copy request failed.';
+      downloadPending = null;
     }
   });
 }
@@ -2416,7 +2421,7 @@ onMount(() => {
             <div class="flex flex-wrap items-center justify-center gap-2">
               <LinkButton href={`/jobs?selected=${resultJob.id}`} target="_blank" rel="noopener noreferrer" variant="outline" class="border-stage-border bg-stage-elevated text-stage-foreground hover:bg-stage-border">View job</LinkButton>
               <a href={current.mediaUrl} target="_blank" rel="noopener" class="focus-ring inline-flex min-h-9 items-center gap-2 rounded-[var(--radius)] border border-stage-border bg-stage-elevated px-3.5 text-sm font-semibold text-stage-foreground hover:bg-stage-border">Open</a>
-              <button type="button" onclick={() => requestStudioDownload(current)} class="focus-ring inline-flex min-h-9 items-center gap-2 rounded-[var(--radius)] border border-stage-border bg-stage-elevated px-3.5 text-sm font-semibold text-stage-foreground hover:bg-stage-border">Download copy</button>
+              <button type="button" onclick={() => requestStudioDownload(current)} disabled={downloadPending !== null} class="focus-ring inline-flex min-h-9 items-center gap-2 rounded-[var(--radius)] border border-stage-border bg-stage-elevated px-3.5 text-sm font-semibold text-stage-foreground hover:bg-stage-border">Download copy</button>
               <Button variant="ghost" class="text-stage-muted hover:bg-stage-elevated hover:text-stage-foreground" onclick={dismissResultPreview}>Remix</Button>
             </div>
             <p class="sr-only" role="status" aria-live="polite" aria-atomic="true">{downloadCopyFeedback}</p>

@@ -840,7 +840,7 @@ $effect(() => {
               <nav class="flex flex-wrap gap-2" aria-label="Selected media actions">
                 <a class="gallery-viewer-action focus-ring rounded border border-stage-border px-3 py-2 text-xs font-semibold hover:bg-stage-border" href={`/jobs/${activeGroup.jobId}`}>Open job</a>
                 <a class="gallery-viewer-action focus-ring rounded border border-stage-border px-3 py-2 text-xs font-semibold hover:bg-stage-border" href={activeGroup.representative.mediaUrl} target="_blank" rel="noreferrer">Open full size</a>
-                <button class="gallery-viewer-action focus-ring rounded border border-stage-border px-3 py-2 text-xs font-semibold hover:bg-stage-border" type="button" onclick={requestActiveDownload} disabled={downloadPending === activeGroup.representative.outputId}>Download copy</button>
+                <button class="gallery-viewer-action focus-ring rounded border border-stage-border px-3 py-2 text-xs font-semibold hover:bg-stage-border" type="button" onclick={requestActiveDownload} disabled={downloadPending !== null}>Download copy</button>
               </nav>
             </div>
             <p id="gallery-viewer-instructions" class="sr-only">Use the zoom controls, mouse wheel, drag, double click, or keyboard shortcuts. Arrow keys pan a zoomed image and otherwise move between items.</p>

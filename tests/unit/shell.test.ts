@@ -167,6 +167,25 @@ describe('account balance shell control', () => {
     expect(shell).not.toContain('Date.parse(next.fetchedAt) >= Date.parse(balance.fetchedAt)');
   });
 
+  test('keeps download copy controls single-flight while requests are pending', async () => {
+    const gallery = await Bun.file('src/lib/components/gallery/GalleryViewer.svelte').text();
+    const studio = await Bun.file('src/lib/components/studio/StudioWorkspace.svelte').text();
+
+    expect(gallery).toContain('if (!activeGroup || downloadPending) return;');
+    expect(gallery).toContain('disabled={downloadPending !== null}');
+    expect(studio).toContain('if (downloadPending) return;');
+    expect(studio).toContain('downloadPending = output.outputId;');
+    expect(studio.match(/downloadPending = null;/g)?.length).toBe(2);
+    expect(studio).toContain('disabled={downloadPending !== null}');
+  });
+
+  test('does not render malformed balance snapshot timestamps as Invalid Date', async () => {
+    const shell = await Bun.file('src/lib/components/shell/AppShell.svelte').text();
+
+    expect(shell).toContain('balance && isExactBalanceTimestamp(balance.fetchedAt)');
+    expect(shell).toContain('Balance snapshot timestamp unavailable. Stale; refresh recommended.');
+  });
+
   test('makes balance refresh accessible, single-flight, non-cacheable, and invalidates its account data', async () => {
     const shell = await Bun.file('src/lib/components/shell/AppShell.svelte').text();
 

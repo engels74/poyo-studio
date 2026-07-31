@@ -65,7 +65,11 @@ $effect(() => {
 });
 
 const balanceStale = $derived(balance !== null && isBalanceSnapshotStale(balance.fetchedAt, nowMs));
-const balanceSnapshotTime = $derived(balance ? new Date(balance.fetchedAt).toLocaleString() : null);
+const balanceSnapshotTime = $derived(
+  balance && isExactBalanceTimestamp(balance.fetchedAt)
+    ? new Date(balance.fetchedAt).toLocaleString()
+    : null
+);
 const balanceStatusLabel = $derived.by(() => {
   if (summary.apiKey.status === 'missing')
     return balance
@@ -101,6 +105,8 @@ const balanceStatusDetail = $derived.by(() => {
   if (balanceRefreshing) return `Refreshing account balance.${snapshot}`;
   if (balanceRefreshFailure) return `The latest balance refresh failed.${snapshot}`;
   if (!balance) return 'The account balance has not been checked yet.';
+  if (!balanceSnapshotTime)
+    return 'Balance snapshot timestamp unavailable. Stale; refresh recommended.';
   return `Balance snapshot from ${balanceSnapshotTime}.${balanceStale ? ' Stale; refresh recommended.' : ''}`;
 });
 
