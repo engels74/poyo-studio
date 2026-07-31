@@ -7,6 +7,7 @@ import { JobRepository } from '../../src/lib/server/jobs/repository';
 import { TEST_MEDIA_ORIGIN } from '../../src/lib/server/jobs/runtime-settings';
 import { LibraryRepository } from '../../src/lib/server/library/repository';
 import { startBrowserAppHarness } from '../helpers/browser-app-harness';
+import { pageHasNoHorizontalOverflow } from '../helpers/browser-assertions';
 
 setDefaultTimeout(60_000);
 
@@ -73,6 +74,10 @@ test('job detail reveals lifecycle history in bounded pages', async () => {
     await page.getByText('Showing 45 of 45', { exact: true }).waitFor();
     expect(await entries.count()).toBe(45);
     expect(await page.getByRole('button', { name: 'Show 20 older events' }).count()).toBe(0);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`${harness.url}/jobs`);
+    await page.getByRole('heading', { name: 'Activity ledger', level: 2 }).waitFor();
+    expect(await pageHasNoHorizontalOverflow(page)).toBe(true);
   } finally {
     await context.close();
     await browser.close();

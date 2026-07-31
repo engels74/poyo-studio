@@ -2149,14 +2149,14 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     await createMultiOutputImage(page);
 
     await page.goto(`${harness.url}/jobs`);
-    await page.getByRole('heading', { name: 'Generation history' }).waitFor();
+    await page.getByRole('heading', { name: 'Activity ledger' }).waitFor();
     expect(await page.getByText('Flux Schnell', { exact: true }).count()).toBeGreaterThan(0);
     expect(await page.getByText(/Grok Imagine Video/).count()).toBeGreaterThan(0);
     await page.getByRole('link', { name: 'Completed' }).click();
     await page.waitForURL(
       (url) => url.pathname === '/jobs' && url.searchParams.get('status') === 'completed'
     );
-    await page.getByText('7 tracked jobs').waitFor();
+    await page.getByText(/^7 recorded activities\./).waitFor();
 
     await page.goto(`${harness.url}/gallery`);
     await page.getByRole('heading', { name: 'Generation gallery' }).waitFor();
@@ -2298,14 +2298,30 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     expect(new URL(resultPage.url()).pathname).toMatch(/^\/api\/media\//);
     await resultPage.close();
 
-    const downloadHref = await page
-      .getByRole('link', { name: 'Download copy' })
-      .first()
-      .getAttribute('href');
-    if (!downloadHref) throw new Error('Download action did not expose a media route.');
-    const downloadResponse = await page.request.get(new URL(downloadHref, harness.url).toString());
-    expect(downloadResponse.status()).toBe(200);
-    expect(downloadResponse.headers()['content-disposition']).toContain('attachment;');
+    const download = page.getByRole('button', { name: 'Download copy', exact: true }).first();
+    const acceptedRequest = page.waitForRequest(
+      (request) =>
+        request.method() === 'POST' &&
+        /^\/api\/media\/[^/]+\/download$/.test(new URL(request.url()).pathname)
+    );
+    const nativeDownload = page.waitForRequest(
+      (request) =>
+        request.method() === 'GET' &&
+        /^\/api\/media\/[^/]+\/download$/.test(new URL(request.url()).pathname)
+    );
+    await download.click();
+    const [post, get] = await Promise.all([acceptedRequest, nativeDownload]);
+    const body = JSON.parse(post.postData() ?? '{}') as Record<string, unknown>;
+    expect(Object.keys(body)).toEqual(['requestToken']);
+    expect(typeof body.requestToken).toBe('string');
+    if (typeof body.requestToken !== 'string')
+      throw new Error('Expected an attachment request token.');
+    expect(body.requestToken).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    );
+    expect(new URL(get.url()).pathname).toBe(new URL(post.url()).pathname);
+    expect(new URL(get.url()).searchParams.getAll('request')).toEqual([body.requestToken]);
+    await page.getByText('Download copy requested.', { exact: true }).waitFor();
     await page.getByRole('link', { name: 'Remix image' }).first().waitFor();
     await page.getByRole('link', { name: 'Animate in Video Studio' }).first().click();
     const remixedVideoInspector = page.locator('#parameter-inspector');

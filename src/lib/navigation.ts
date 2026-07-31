@@ -43,10 +43,10 @@ const videoStudio: NavigationItem = {
 };
 
 const jobs: NavigationItem = {
-  label: 'Jobs',
+  label: 'Activity',
   href: '/jobs',
   icon: 'jobs',
-  description: 'Durable generation queue and history'
+  description: 'Generation work and download-copy receipts'
 };
 
 const gallery: NavigationItem = {

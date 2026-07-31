@@ -1,6 +1,6 @@
 <script lang="ts">
 import { untrack } from 'svelte';
-import { goto, invalidateAll } from '$app/navigation';
+import { goto, invalidate, invalidateAll } from '$app/navigation';
 import AppIcon from '$lib/components/ui/AppIcon.svelte';
 import Badge from '$lib/components/ui/Badge.svelte';
 import LinkButton from '$lib/components/ui/LinkButton.svelte';
@@ -16,6 +16,7 @@ import {
   elapsedLabel,
   mediaFrameAspectRatio
 } from '$lib/features/library/presentation';
+import { downloadCopy } from '$lib/features/library/attachment-request';
 import MediaPreview from './MediaPreview.svelte';
 import StatusBadge from './StatusBadge.svelte';
 
@@ -31,6 +32,7 @@ let tags = $state(untrack(() => job.tags.join(', ')));
 let deleteChoices = $state<Record<string, LocalDeleteChoice>>({});
 let promptExpanded = $state(false);
 let promptCopyStatus = $state('');
+let downloadRequests = $state(new Map<string, string>());
 let promptCanCollapse = $derived((job.prompt?.length ?? 0) > 220);
 const historyPageSize = 20;
 let visibleHistoryCount = $state(historyPageSize);
@@ -44,13 +46,12 @@ let comparisonLeft = $derived(
 let comparisonRight = $derived(
   job.outputs.find((output) => output.outputId === comparisonRightId) ?? job.outputs[1]
 );
-let requestedAspectRatio = $derived(
-  typeof job.guidedRequest.aspectRatio === 'string'
-    ? job.guidedRequest.aspectRatio
-    : typeof job.guidedRequest.size === 'string'
-      ? job.guidedRequest.size
-      : null
-);
+let requestedAspectRatio = $derived(job.requestedAspectRatio);
+function costLabel(): string {
+  if (job.cost.kind === 'charge') return `Charged ${job.cost.credits} cr`;
+  if (job.cost.kind === 'estimate') return `Estimated ${job.cost.credits} cr`;
+  return 'Unavailable';
+}
 
 async function post(path: string, body: Record<string, unknown> = {}): Promise<Response> {
   const response = await fetch(path, {
@@ -80,6 +81,24 @@ async function action(name: string, callback: () => Promise<void>): Promise<void
   } finally {
     pending = null;
   }
+}
+
+function requestDownloadCopy(outputId: string): void {
+  if (pending) return;
+  pending = `download-copy:${outputId}`;
+  feedback = '';
+  void downloadCopy(outputId, {
+    onaccepted: ({ requestedAt }) => {
+      downloadRequests = new Map(downloadRequests).set(outputId, requestedAt);
+      feedback = 'Download copy requested.';
+      pending = null;
+    },
+    oninvalidate: () => invalidate('app:jobs-activity'),
+    onerror: () => {
+      feedback = 'Download copy request failed.';
+      pending = null;
+    }
+  });
 }
 
 function refresh(): void {
@@ -249,14 +268,14 @@ function removeOutput(outputId: string): void {
     <div class="min-w-0">
       <p class="eyebrow-label">{job.provider} · {job.workflow}</p>
       <h1 class="mt-1 text-2xl font-semibold tracking-tight">{job.displayName}</h1>
-      <div class="mt-3 flex flex-wrap items-center gap-2"><StatusBadge localPhase={job.localPhase} remoteStatus={job.remoteStatus} attentionCode={job.attentionCode} /><Badge>{job.publicModelId}</Badge>{#if job.poyoTaskId}<Badge tone="info">Poyo task linked</Badge>{/if}</div>
+      <div class="mt-3 flex flex-wrap items-center gap-2"><StatusBadge localPhase={job.localPhase} remoteStatus={job.remoteStatus} attentionCode={job.attentionCode} /><Badge>{job.publicModelId}</Badge>{#if job.poyoTaskLinked}<Badge tone="info">Poyo task linked</Badge>{/if}</div>
     </div>
     <div class="flex flex-wrap gap-2">
       <LinkButton href={`/studio/${job.modality}?fromJob=${job.id}`} variant="outline">Edit in studio</LinkButton>
-      {#if job.poyoTaskId}<button onclick={refresh} disabled={pending !== null} class="focus-ring inline-flex min-h-9 items-center gap-2 rounded border border-border px-3 text-sm font-semibold"><AppIcon name="refresh" size={15} /> Refresh status</button>{/if}
+      {#if job.poyoTaskLinked}<button onclick={refresh} disabled={pending !== null} class="focus-ring inline-flex min-h-9 items-center gap-2 rounded border border-border px-3 text-sm font-semibold"><AppIcon name="refresh" size={15} /> Refresh status</button>{/if}
       {#if job.attentionCode === 'submission_unknown'}
         <button onclick={retryAmbiguous} disabled={pending !== null} class="focus-ring min-h-9 rounded bg-warning px-3 text-sm font-semibold text-warning-foreground">Acknowledge risk and retry</button>
-      {:else if !(job.attentionCode === 'ip_guard_blocked' && job.poyoTaskId)}
+      {:else if !(job.attentionCode === 'ip_guard_blocked' && job.poyoTaskLinked)}
         <button onclick={rerun} disabled={pending !== null} class="focus-ring min-h-9 rounded bg-primary px-3 text-sm font-semibold text-primary-foreground">Run again</button>
       {/if}
     </div>
@@ -265,8 +284,8 @@ function removeOutput(outputId: string): void {
   {#if job.attentionCode === 'submission_unknown'}<div class="mt-4 rounded border border-warning/40 bg-warning/10 p-4 text-sm"><strong>Submission outcome is unknown.</strong> Status checks are safe. A new paid retry is available only after you explicitly accept the risk that Poyo may charge for both requests.</div>{/if}
   {#if job.attentionCode === 'ip_guard_blocked'}
     <div class="mt-4 rounded border border-warning/40 bg-warning/10 p-4 text-sm">
-      <strong>{job.poyoTaskId ? 'Monitoring paused by IP guard.' : job.ipGuardReason === 'unavailable' ? 'IP check unavailable.' : job.ipGuardReason === 'misconfigured' ? 'IP guard settings invalid.' : 'Blocked by IP guard.'}</strong>
-      <p class="mt-1 leading-6">{attentionDescription(job.attentionCode, job.ipGuardReason ?? null, Boolean(job.poyoTaskId))}</p>
+      <strong>{job.poyoTaskLinked ? 'Monitoring paused by IP guard.' : job.ipGuardReason === 'unavailable' ? 'IP check unavailable.' : job.ipGuardReason === 'misconfigured' ? 'IP guard settings invalid.' : 'Blocked by IP guard.'}</strong>
+      <p class="mt-1 leading-6">{attentionDescription(job.attentionCode, job.ipGuardReason ?? null, job.poyoTaskLinked)}</p>
       <a href="/settings#public-ip-guard" class="focus-ring mt-2 inline-block rounded font-semibold underline underline-offset-2">Review IP guard settings</a>
     </div>
   {/if}
@@ -321,17 +340,26 @@ function removeOutput(outputId: string): void {
           {/if}
           <div class="mt-4 grid gap-5 sm:grid-cols-2">
             {#each job.outputs as output (output.outputId)}
+              {@const copyRequestedAt = downloadRequests.get(output.outputId) ?? output.downloadCopyRequestedAt}
               <article class="overflow-hidden rounded-lg border border-border bg-card">
-                <div style={`aspect-ratio: ${mediaFrameAspectRatio(output.pixelWidth, output.pixelHeight, output.aspectRatio ?? requestedAspectRatio)};`}>
+                <div class="relative" style={`aspect-ratio: ${mediaFrameAspectRatio(output.pixelWidth, output.pixelHeight, output.aspectRatio ?? requestedAspectRatio)};`}>
                   <MediaPreview mediaKind={output.mediaKind} src={output.mediaUrl} alt={`${job.displayName} output ${output.outputOrder + 1}`} fit="contain" class="size-full" controls={output.mediaKind === 'video'} viewable />
+                  {#if copyRequestedAt}
+                    <span
+                      class="absolute right-2 bottom-2 z-10 inline-flex size-7 items-center justify-center rounded-full border border-success/40 bg-background/90 text-success shadow-[var(--shadow-sm)]"
+                      role="img"
+                      aria-label={`Download copy requested ${dateTimeLabel(copyRequestedAt)}`}
+                      title={`Download copy requested ${dateTimeLabel(copyRequestedAt)}`}
+                    >✓<span class="sr-only">Download</span></span>
+                  {/if}
                 </div>
                 <div class="p-4">
                   <div class="flex flex-wrap items-center justify-between gap-2"><p class="text-sm font-semibold">Output {output.outputOrder + 1}</p><Badge tone={output.localAvailable ? 'success' : output.downloadState === 'failed' ? 'danger' : 'warning'}>{output.downloadState}</Badge></div>
-                  <dl class="mt-3 grid grid-cols-2 gap-3 text-xs"><div><dt class="text-muted-foreground">File</dt><dd class="mt-1 truncate font-medium">{output.fileName ?? 'No local file'}</dd></div><div><dt class="text-muted-foreground">Size</dt><dd class="mt-1 font-medium">{output.byteSize === null ? '—' : byteSizeLabel(output.byteSize)}</dd></div><div><dt class="text-muted-foreground">Dimensions</dt><dd class="mt-1 font-medium">{output.pixelWidth && output.pixelHeight ? `${output.pixelWidth} × ${output.pixelHeight}` : '—'}</dd></div><div><dt class="text-muted-foreground">Remote</dt><dd class="mt-1 font-medium">{output.remoteHost ?? 'Unavailable'}</dd></div><div><dt class="text-muted-foreground">Checksum</dt><dd class="mt-1 truncate font-mono">{output.checksum?.slice(0, 12) ?? '—'}</dd></div></dl>
+                  <dl class="mt-3 grid grid-cols-2 gap-3 text-xs"><div><dt class="text-muted-foreground">File</dt><dd class="mt-1 truncate font-medium">{output.fileName ?? 'No local file'}</dd></div><div><dt class="text-muted-foreground">Size</dt><dd class="mt-1 font-medium">{output.byteSize === null ? '—' : byteSizeLabel(output.byteSize)}</dd></div><div><dt class="text-muted-foreground">Dimensions</dt><dd class="mt-1 font-medium">{output.pixelWidth && output.pixelHeight ? `${output.pixelWidth} × ${output.pixelHeight}` : '—'}</dd></div><div><dt class="text-muted-foreground">Remote</dt><dd class="mt-1 font-medium">{output.remoteHost ?? 'Unavailable'}</dd></div></dl>
                   <div class="mt-4 flex flex-wrap gap-2">
                     {#if output.localAvailable}
                       <a href={output.mediaUrl ?? '#'} target="_blank" rel="noreferrer" class="focus-ring rounded border border-border px-2.5 py-1.5 text-xs font-semibold">Open in browser</a>
-                      <a href={`/api/media/${output.outputId}/download`} download data-sveltekit-reload class="focus-ring rounded border border-border px-2.5 py-1.5 text-xs font-semibold">Download copy</a>
+                      <button type="button" onclick={() => requestDownloadCopy(output.outputId)} disabled={pending !== null} class="focus-ring rounded border border-border px-2.5 py-1.5 text-xs font-semibold">Download copy</button>
                     {/if}
                     {#if output.remoteAvailable && !output.localAvailable}<button onclick={() => retryDownload(output.outputId)} disabled={pending !== null} class="focus-ring rounded border border-border px-2.5 py-1.5 text-xs font-semibold">Download again</button>{/if}
                     {#if output.remoteAvailable && output.mediaKind === 'image'}
@@ -359,7 +387,7 @@ function removeOutput(outputId: string): void {
     </main>
 
     <aside class="space-y-6">
-      <section class="border-b border-border pb-5"><p class="eyebrow-label">Summary</p><dl class="mt-3 grid grid-cols-2 gap-4 text-xs"><div><dt class="text-muted-foreground">Created</dt><dd class="mt-1 font-medium">{dateTimeLabel(job.createdAt)}</dd></div><div><dt class="text-muted-foreground">Elapsed</dt><dd class="mt-1 font-medium">{elapsedLabel(job.startedAt ?? job.createdAt, job.completedAt)}</dd></div><div><dt class="text-muted-foreground">Credits</dt><dd class="mt-1 font-medium">{job.actualCredits ?? job.estimatedCredits ?? 'Unknown'}</dd></div><div><dt class="text-muted-foreground">Last check</dt><dd class="mt-1 font-medium">{job.lastPolledAt ? dateTimeLabel(job.lastPolledAt) : 'Never'}</dd></div></dl></section>
+      <section class="border-b border-border pb-5"><p class="eyebrow-label">Summary</p><dl class="mt-3 grid grid-cols-2 gap-4 text-xs"><div><dt class="text-muted-foreground">Created</dt><dd class="mt-1 font-medium tabular-nums">{dateTimeLabel(job.createdAt)}</dd></div><div><dt class="text-muted-foreground">Elapsed</dt><dd class="mt-1 font-medium tabular-nums">{elapsedLabel(job.startedAt ?? job.createdAt, job.completedAt)}</dd></div><div><dt class="text-muted-foreground">Credits</dt><dd class="mt-1 font-medium tabular-nums">{costLabel()}</dd></div><div><dt class="text-muted-foreground">Last check</dt><dd class="mt-1 font-medium tabular-nums">{job.lastPolledAt ? dateTimeLabel(job.lastPolledAt) : 'Never'}</dd></div></dl></section>
       <section class="border-b border-border pb-5"><p class="eyebrow-label">Organize</p><div class="mt-3 flex flex-wrap gap-2"><button onclick={() => toggle('favorite', !job.outputs.some((output) => output.favorite))} disabled={pending !== null} class="focus-ring inline-flex min-h-8 items-center gap-2 rounded border border-border px-3 text-xs font-semibold"><AppIcon name="heart" size={14} /> {job.outputs.some((output) => output.favorite) ? 'Unfavorite' : 'Favorite'}</button><button onclick={() => toggle('pin', !job.outputs.some((output) => output.pinned))} disabled={pending !== null} class="focus-ring min-h-8 rounded border border-border px-3 text-xs font-semibold">{job.outputs.some((output) => output.pinned) ? 'Unpin' : 'Pin'}</button></div><label class="mt-4 block text-xs font-semibold" for="job-tags">Tags, comma separated</label><div class="mt-2 flex gap-2"><input id="job-tags" bind:value={tags} class="focus-ring min-w-0 flex-1 rounded border border-input bg-background px-3 text-sm" /><button onclick={saveTags} disabled={pending !== null} class="focus-ring rounded border border-border px-3 text-xs font-semibold">Save</button></div></section>
       <section class="border-b border-border pb-5">
         <div class="flex items-center justify-between gap-2">
@@ -374,10 +402,39 @@ function removeOutput(outputId: string): void {
         {/if}
         <p class="sr-only" role="status" aria-live="polite">{promptCopyStatus}</p>
       </section>
-      {#if job.inputs.length}<section class="border-b border-border pb-5"><p class="eyebrow-label">Inputs</p><ul class="mt-3 space-y-3">{#each job.inputs as input}<li class="text-xs"><p class="font-semibold">{input.role} · {input.mediaKind}</p><p class="mt-1 break-all text-muted-foreground">{input.sourceLabel} · {input.availability}</p></li>{/each}</ul></section>{/if}
-      <details class="border-b border-border pb-5"><summary class="cursor-pointer text-xs font-semibold">Submitted configuration</summary><pre class="mt-3 max-h-80 overflow-auto rounded bg-muted p-3 text-[0.6875rem] leading-5">{JSON.stringify(job.guidedRequest, null, 2)}</pre></details>
-      <details class="border-b border-border pb-5"><summary class="cursor-pointer text-xs font-semibold">Normalized Poyo payload</summary><pre class="mt-3 max-h-80 overflow-auto rounded bg-muted p-3 text-[0.6875rem] leading-5">{JSON.stringify(job.normalizedPayload, null, 2)}</pre></details>
-      <p class="text-xs leading-5 text-muted-foreground">Local job <code>{job.id}</code>{#if job.poyoTaskId}<br />Poyo task <code>{job.poyoTaskId}</code>{/if}<br />Correlation <code>{job.correlationId}</code></p>
+      {#if job.inputs.length}
+        <section class="border-b border-border pb-5">
+          <p class="eyebrow-label">Inputs</p>
+          <ul class="mt-3 space-y-3">
+            {#each job.inputs as input}
+              <li class="min-w-0 text-xs">
+                <p class="font-semibold">{input.role} · {input.mediaKind}</p>
+                {#if input.originalName && input.neutralUploadName}
+                  <p class="mt-1 flex min-w-0 items-center gap-1 text-muted-foreground" aria-label={`${input.originalName} uploaded to Poyo as ${input.neutralUploadName}`}>
+                    <span class="truncate" title={input.originalName}>{input.originalName}</span>
+                    <span aria-hidden="true">→</span>
+                    <span class="truncate font-mono" title={input.neutralUploadName}>{input.neutralUploadName}</span>
+                  </p>
+                {:else}
+                  <p class="mt-1 truncate text-muted-foreground" title={input.sourceLabel}>{input.sourceLabel}</p>
+                {/if}
+                <p class="mt-1 text-muted-foreground">{input.availability}</p>
+              </li>
+            {/each}
+          </ul>
+        </section>
+      {/if}
+      {#if job.configuration.length}
+        <section class="border-b border-border pb-5">
+          <p class="eyebrow-label">Submitted configuration</p>
+          <dl class="mt-3 grid grid-cols-2 gap-3 text-xs">
+            {#each job.configuration as field (field.key)}
+              <div><dt class="text-muted-foreground">{field.label}</dt><dd class="mt-1 font-mono font-medium">{field.value}</dd></div>
+            {/each}
+          </dl>
+        </section>
+      {/if}
+      <p class="text-xs leading-5 text-muted-foreground">Local job <code>{job.id}</code>{#if job.poyoTaskLinked}<br />Poyo task linked{/if}</p>
     </aside>
   </div>
 </div>

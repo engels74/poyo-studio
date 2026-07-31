@@ -3,21 +3,27 @@ import { jobHttpError } from '$lib/server/jobs/http';
 import { getPlatformServices } from '$lib/server/platform/runtime';
 import { readSameOriginJson } from '$lib/server/platform/request-security';
 import type { RequestHandler } from './$types';
+const noStore = { 'cache-control': 'private, no-store' };
 
 export const GET: RequestHandler = async () => {
   const platform = await getPlatformServices();
-  return Response.json({
-    balance: latestBalance(platform.database),
-    apiKey: await platform.apiKey.status()
-  });
+  return Response.json(
+    {
+      balance: latestBalance(platform.database),
+      apiKey: await platform.apiKey.status()
+    },
+    { headers: noStore }
+  );
 };
 
 export const POST: RequestHandler = async ({ request }) => {
   try {
     await readSameOriginJson<Record<string, never>>(request, { maxBytes: 1024 });
     const platform = await getPlatformServices();
-    return Response.json({ balance: await refreshBalance(platform) });
+    return Response.json({ balance: await refreshBalance(platform) }, { headers: noStore });
   } catch (error) {
-    return jobHttpError(error);
+    const response = jobHttpError(error);
+    response.headers.set('cache-control', 'no-store');
+    return response;
   }
 };

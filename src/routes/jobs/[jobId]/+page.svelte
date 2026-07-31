@@ -31,7 +31,7 @@ onMount(() => {
 });
 </script>
 
-<svelte:head><title>{data.job.displayName} · Jobs · Poyo Local Studio</title></svelte:head>
+<svelte:head><title>{data.job.displayName} · Activity · Poyo Local Studio</title></svelte:head>
 {#key data.job.id}
   <JobDetailView job={data.job} imageNavigation={data.imageNavigation} />
 {/key}

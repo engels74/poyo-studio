@@ -166,9 +166,14 @@ describe('job HTTP boundaries', () => {
     expect(route).not.toContain('Response.json');
     const download = await Bun.file('src/routes/api/media/[outputId]/download/+server.ts').text();
     expect(download).toContain('attachment: true');
+    expect(download).toContain('export const POST');
+    expect(download).toContain('export const HEAD');
+    const helper = await Bun.file('src/lib/features/library/attachment-request.ts').text();
+    expect(helper).toContain("method: 'POST'");
+    expect(helper).toContain("document.createElement('a')");
     const detail = await Bun.file('src/lib/components/library/JobDetailView.svelte').text();
     expect(detail).toContain('Open in browser');
-    expect(detail).toContain('download data-sveltekit-reload');
+    expect(detail).toContain('downloadCopy(outputId');
     expect(detail).toMatch(/outputs\/\$\{outputId\}\/delete/);
     expect(detail).toContain('const historyPageSize = 20');
     expect(detail).toContain('job.history.slice(0, visibleHistoryCount)');
