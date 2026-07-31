@@ -27,8 +27,8 @@ export async function downloadCopy(
   outputId: string,
   options: DownloadCopyOptions = {}
 ): Promise<void> {
-  const requestToken = crypto.randomUUID();
   try {
+    const requestToken = crypto.randomUUID();
     const response = await fetch(`/api/media/${encodeURIComponent(outputId)}/download`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
