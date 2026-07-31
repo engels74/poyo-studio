@@ -165,6 +165,15 @@ describe('verified media output boundary', () => {
     expect(await ranged.arrayBuffer()).toHaveLength(2);
     expect(head.status).toBe(200);
     expect(await head.arrayBuffer()).toHaveLength(0);
+    const invalidRangeHead = await serveVerifiedMediaOutput(
+      new Request(attachmentUrl, { method: 'HEAD', headers: { range: 'bytes=99-100' } }),
+      fixture.database,
+      fixture.paths.media,
+      outputId,
+      { attachment: true, head: true }
+    );
+    expect(invalidRangeHead.status).toBe(416);
+    expect(invalidRangeHead.body).toBeNull();
     expect(
       fixture.database
         .query<{ count: number }, []>('SELECT COUNT(*) count FROM attachment_requests')
@@ -201,6 +210,15 @@ describe('verified media output boundary', () => {
          VALUES (?,?,2,'image','pending',?)`
       )
       .run(unavailableOutputId, job.id, '2026-07-15T12:00:00.000Z');
+    const unavailableHead = await serveVerifiedMediaOutput(
+      new Request(`http://127.0.0.1/api/media/${unavailableOutputId}`, { method: 'HEAD' }),
+      fixture.database,
+      fixture.paths.media,
+      unavailableOutputId,
+      { head: true }
+    );
+    expect(unavailableHead.status).toBe(404);
+    expect(unavailableHead.body).toBeNull();
     await expect(
       acceptVerifiedAttachmentRequest(
         request,

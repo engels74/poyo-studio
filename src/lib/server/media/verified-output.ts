@@ -254,8 +254,8 @@ export async function serveVerifiedMediaOutput(
         'x-content-type-options': 'nosniff'
       });
       if (error.status === 416 && size !== null) headers.set('content-range', `bytes */${size}`);
-      return new Response(error.message, { status: error.status, headers });
+      return new Response(options.head ? null : error.message, { status: error.status, headers });
     }
-    return new Response('Local media is unavailable.', { status: 404 });
+    return new Response(options.head ? null : 'Local media is unavailable.', { status: 404 });
   }
 }

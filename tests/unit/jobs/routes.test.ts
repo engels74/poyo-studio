@@ -168,9 +168,12 @@ describe('job HTTP boundaries', () => {
     expect(download).toContain('attachment: true');
     expect(download).toContain('export const POST');
     expect(download).toContain('export const HEAD');
+    expect(download).toContain('if (head) return new Response(null');
+    expect(download).toContain('errorResponse(400, head)');
     const helper = await Bun.file('src/lib/features/library/attachment-request.ts').text();
     expect(helper).toContain("method: 'POST'");
     expect(helper).toContain("document.createElement('a')");
+    expect(helper).toContain("anchor.download = ''");
     const detail = await Bun.file('src/lib/components/library/JobDetailView.svelte').text();
     expect(detail).toContain('Open in browser');
     expect(detail).toContain('downloadCopy(outputId');

@@ -16,7 +16,8 @@ const privateNoStore = {
   'x-content-type-options': 'nosniff'
 };
 
-function errorResponse(status: number): Response {
+function errorResponse(status: number, head = false): Response {
+  if (head) return new Response(null, { status, headers: privateNoStore });
   return Response.json(
     { error: 'Attachment request failed.' },
     { status, headers: privateNoStore }
@@ -43,7 +44,7 @@ function requestToken(request: Request): string | null {
 
 async function serve(request: Request, outputId: string, head: boolean): Promise<Response> {
   const token = requestToken(request);
-  if (!token) return errorResponse(400);
+  if (!token) return errorResponse(400, head);
 
   try {
     const platform = await getPlatformServices();
@@ -53,7 +54,7 @@ async function serve(request: Request, outputId: string, head: boolean): Promise
       attachment: true
     });
   } catch (error) {
-    return errorResponse(statusForAttachmentError(error));
+    return errorResponse(statusForAttachmentError(error), head);
   }
 }
 

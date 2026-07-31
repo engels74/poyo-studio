@@ -42,6 +42,7 @@ export async function downloadCopy(
     anchor.href = `/api/media/${encodeURIComponent(outputId)}/download?request=${encodeURIComponent(requestToken)}`;
     anchor.dataset.sveltekitReload = 'true';
     anchor.hidden = true;
+    anchor.download = '';
     document.body.append(anchor);
     anchor.click();
     anchor.remove();
