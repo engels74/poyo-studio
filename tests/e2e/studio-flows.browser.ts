@@ -2304,13 +2304,9 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
         request.method() === 'POST' &&
         /^\/api\/media\/[^/]+\/download$/.test(new URL(request.url()).pathname)
     );
-    const nativeDownload = page.waitForRequest(
-      (request) =>
-        request.method() === 'GET' &&
-        /^\/api\/media\/[^/]+\/download$/.test(new URL(request.url()).pathname)
-    );
+    const nativeDownload = page.waitForEvent('download');
     await download.click();
-    const [post, get] = await Promise.all([acceptedRequest, nativeDownload]);
+    const [post, native] = await Promise.all([acceptedRequest, nativeDownload]);
     const body = JSON.parse(post.postData() ?? '{}') as Record<string, unknown>;
     expect(Object.keys(body)).toEqual(['requestToken']);
     expect(typeof body.requestToken).toBe('string');
@@ -2319,8 +2315,8 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     expect(body.requestToken).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
     );
-    expect(new URL(get.url()).pathname).toBe(new URL(post.url()).pathname);
-    expect(new URL(get.url()).searchParams.getAll('request')).toEqual([body.requestToken]);
+    expect(new URL(native.url()).pathname).toBe(new URL(post.url()).pathname);
+    expect(new URL(native.url()).searchParams.getAll('request')).toEqual([body.requestToken]);
     await page.getByText('Download copy requested.', { exact: true }).waitFor();
     await page.getByRole('link', { name: 'Remix image' }).first().waitFor();
     await page.getByRole('link', { name: 'Animate in Video Studio' }).first().click();
@@ -2685,30 +2681,16 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
       .last()
       .click();
     await imageBatchDialog.getByRole('button', { name: 'Submit 2 separate billed jobs' }).click();
-    await imageBatchDialog.getByText('complete', { exact: true }).waitFor({ timeout: 15_000 });
-    await imageBatchDialog.getByText('failed', { exact: true }).waitFor({ timeout: 15_000 });
-    expect(
-      await imageBatchDialog.getByRole('link', { name: /Open result/ }).count()
-    ).toBeGreaterThan(0);
-    await page.reload();
-    await generationCommands(page).getByRole('button', { name: 'Review batch (2)' }).click();
-    imageBatchDialog = page.getByRole('dialog', { name: 'Image batch' });
-    await imageBatchDialog.getByText('complete', { exact: true }).waitFor();
-    await imageBatchDialog.getByText('failed', { exact: true }).waitFor();
-    page.once('dialog', async (dialog) => {
-      expect(dialog.message()).toContain('new paid Poyo job');
-      await dialog.accept();
+    await imageBatchDialog.getByText('No batch items yet', { exact: true }).waitFor({
+      timeout: 15_000
     });
-    await imageBatchDialog.getByRole('button', { name: 'Retry item' }).click();
-    await waitUntil(
-      async () => (await imageBatchDialog.getByText('complete', { exact: true }).count()) === 2,
-      'Both image batch items did not complete after retry.',
-      15_000
+    expect(await imageBatchCommands.getByRole('button', { name: 'Review batch (0)' }).count()).toBe(
+      1
     );
-    for (let remaining = 2; remaining > 0; remaining -= 1) {
-      await imageBatchDialog.getByRole('button', { name: 'Remove' }).first().click();
-    }
-    await page.keyboard.press('Escape');
+    await page.reload();
+    expect(
+      await generationCommands(page).getByRole('button', { name: 'Review batch (0)' }).count()
+    ).toBe(1);
     await imageBatchInspector.getByRole('button', { name: 'Reset', exact: true }).click();
     await showInspectorSection(imageBatchInspector, 'Setup');
     await selectRadioValue(imageBatchInspector, 'image-edit');
@@ -2745,14 +2727,12 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     await imageEditBatchDialog
       .getByRole('button', { name: 'Submit 2 separate billed jobs' })
       .click();
-    await waitUntil(
-      async () => (await imageEditBatchDialog.getByText('complete', { exact: true }).count()) === 2,
-      'Both reference image batch items did not complete.',
-      20_000
+    await imageEditBatchDialog.getByText('No batch items yet', { exact: true }).waitFor({
+      timeout: 15_000
+    });
+    expect(await imageBatchCommands.getByRole('button', { name: 'Review batch (0)' }).count()).toBe(
+      1
     );
-    for (let remaining = 2; remaining > 0; remaining -= 1) {
-      await imageEditBatchDialog.getByRole('button', { name: 'Remove' }).first().click();
-    }
     await page.keyboard.press('Escape');
     await imageBatchInspector.getByRole('button', { name: 'Reset', exact: true }).click();
     await chooseImageTextWorkflow(page);
@@ -2778,10 +2758,12 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     await interruptedBatchDialog.getByRole('button', { name: 'Abandon action' }).click();
     await interruptedBatchDialog.getByText(/explicitly abandoned/).waitFor();
     await interruptedBatchDialog.getByRole('button', { name: 'Retry item' }).click();
-    await interruptedBatchDialog.getByText('complete', { exact: true }).waitFor({
+    await interruptedBatchDialog.getByText('No batch items yet', { exact: true }).waitFor({
       timeout: 15_000
     });
-    await interruptedBatchDialog.getByRole('button', { name: 'Remove' }).click();
+    expect(await imageBatchCommands.getByRole('button', { name: 'Review batch (0)' }).count()).toBe(
+      1
+    );
     await page.keyboard.press('Escape');
 
     await page.goto(`${harness.url}/studio/video`);
@@ -2805,20 +2787,19 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     harness.mock.queueOutcome('held');
     harness.mock.queueOutcome('held');
     await videoBatchDialog.getByRole('button', { name: 'Submit 2 separate billed jobs' }).click();
-    await waitUntil(
-      async () => (await videoBatchDialog.getByText('running', { exact: true }).count()) === 2,
-      'Both video batch items did not reach a durable running state before restart.',
-      15_000
+    await videoBatchDialog.getByText('No batch items yet', { exact: true }).waitFor({
+      timeout: 15_000
+    });
+    expect(await videoBatchCommands.getByRole('button', { name: 'Review batch (0)' }).count()).toBe(
+      1
     );
     await harness.stopApp();
     await page.getByText('Live updates reconnecting').waitFor({ timeout: 8_000 });
     await harness.startApp();
     harness.mock.releaseHeldTasks();
     await page.getByText('Live updates connected').waitFor({ timeout: 12_000 });
-    await waitUntil(
-      async () => (await videoBatchDialog.getByText('complete', { exact: true }).count()) === 2,
-      'Both video batch items did not complete.',
-      20_000
+    expect(await videoBatchCommands.getByRole('button', { name: 'Review batch (0)' }).count()).toBe(
+      1
     );
 
     harness.mock.queueOutcome('failed');

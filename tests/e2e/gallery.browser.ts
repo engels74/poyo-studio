@@ -606,9 +606,11 @@ test('Gallery viewer preserves context across mixed media, focus, actions and re
       '0s'
     );
     await page.emulateMedia({ reducedMotion: 'no-preference' });
-    await page.waitForFunction(() => !matchMedia('(prefers-reduced-motion: reduce)').matches);
-    expect(await image.evaluate((element) => getComputedStyle(element).transitionDuration)).toBe(
-      '0.12s'
+    const imageElement = await image.elementHandle();
+    if (!imageElement) throw new Error('Expected the active Gallery image element.');
+    await page.waitForFunction(
+      (element) => getComputedStyle(element).transitionDuration === '0.12s',
+      imageElement
     );
     await expectSelection(dialog, { label: labels.newest, position: '1 of 3', mediaKind: 'image' });
     const liveStatus = dialog.getByTestId('gallery-viewer-item-status');
@@ -1153,13 +1155,9 @@ test('Gallery viewer preserves context across mixed media, focus, actions and re
         response.request().method() === 'POST' &&
         new URL(response.url()).pathname === `/api/media/${seeded.video.outputId}/download`
     );
-    const nativeDownload = page.waitForRequest(
-      (request) =>
-        request.method() === 'GET' &&
-        new URL(request.url()).pathname === `/api/media/${seeded.video.outputId}/download`
-    );
+    const nativeDownload = page.waitForEvent('download');
     await download.click();
-    const [post, response, get] = await Promise.all([
+    const [post, response, native] = await Promise.all([
       acceptedRequest,
       acceptedResponse,
       nativeDownload
@@ -1173,9 +1171,35 @@ test('Gallery viewer preserves context across mixed media, focus, actions and re
     expect(body.requestToken).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
     );
-    const requestTokens = new URL(get.url()).searchParams.getAll('request');
+    const requestTokens = new URL(native.url()).searchParams.getAll('request');
     expect(requestTokens).toEqual([body.requestToken]);
     await dialog.getByText('Download copy requested.', { exact: true }).waitFor();
+    const downloadElement = await download.elementHandle();
+    if (!downloadElement) throw new Error('Expected the Gallery download button element.');
+    await page.waitForFunction((element) => document.activeElement === element, downloadElement);
+    await page.keyboard.press('ArrowRight');
+    await expectSelection(dialog, {
+      label: labels.long,
+      position: '3 of 3',
+      mediaKind: 'image',
+      stage: 'post-download arrow navigation'
+    });
+    await page.keyboard.press('ArrowLeft');
+    await expectSelection(dialog, {
+      label: labels.video,
+      position: '2 of 3',
+      mediaKind: 'video',
+      stage: 'post-download return navigation'
+    });
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'detached' });
+    await page
+      .locator('article')
+      .filter({ hasText: labels.video })
+      .getByRole('img', { name: /^Download copy requested / })
+      .waitFor();
+    await middleTrigger.click();
+    await dialog.waitFor();
     await page.reload();
     await page
       .locator('article')
@@ -1356,6 +1380,77 @@ test('Gallery viewer preserves context across mixed media, focus, actions and re
     expect(issues.consoleErrors).toEqual([]);
     expect(issues.pageErrors).toEqual([]);
     expect(failedRequests).toEqual([]);
+  } finally {
+    await context?.close();
+    await browser?.close();
+    await harness.cleanup();
+  }
+});
+test('Gallery download requests merge across tabs without losing grid or persisted marks', async () => {
+  const harness = await startBrowserAppHarness();
+  let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
+  let context:
+    | Awaited<ReturnType<Awaited<ReturnType<typeof chromium.launch>>['newContext']>>
+    | undefined;
+
+  try {
+    const seeded = await seedGallery(harness);
+    await harness.startApp();
+    browser = await chromium.launch({ headless: true });
+    context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const first = await context.newPage();
+    const second = await context.newPage();
+    await Promise.all([
+      first.goto(`${harness.url}/gallery`),
+      second.goto(`${harness.url}/gallery`)
+    ]);
+
+    const open = async (page: Page, item: SeededItem) => {
+      await page
+        .locator('article')
+        .filter({ hasText: item.label })
+        .getByRole('button', { name: `View image ${item.label}`, exact: true })
+        .first()
+        .click();
+      const dialog = page.getByRole('dialog', { name: item.label });
+      await dialog.waitFor();
+      return dialog;
+    };
+    const firstDialog = await open(first, seeded.newest);
+    const secondDialog = await open(second, seeded.long);
+    const firstDownload = firstDialog.getByRole('button', {
+      name: 'Download copy',
+      exact: true
+    });
+    const secondDownload = secondDialog.getByRole('button', {
+      name: 'Download copy',
+      exact: true
+    });
+
+    await Promise.all([firstDownload.click(), secondDownload.click()]);
+    await Promise.all([
+      firstDialog.getByText('Download copy requested.', { exact: true }).waitFor(),
+      secondDialog.getByText('Download copy requested.', { exact: true }).waitFor()
+    ]);
+    await Promise.all([first.keyboard.press('Escape'), second.keyboard.press('Escape')]);
+    await Promise.all([
+      firstDialog.waitFor({ state: 'detached' }),
+      secondDialog.waitFor({ state: 'detached' })
+    ]);
+
+    const expectGridMarks = async (page: Page) => {
+      for (const item of [seeded.newest, seeded.long]) {
+        await page
+          .locator('article')
+          .filter({ hasText: item.label })
+          .getByRole('img', { name: /^Download copy requested / })
+          .waitFor();
+      }
+    };
+    await Promise.all([expectGridMarks(first), expectGridMarks(second)]);
+
+    await Promise.all([first.reload(), second.reload()]);
+    await Promise.all([expectGridMarks(first), expectGridMarks(second)]);
   } finally {
     await context?.close();
     await browser?.close();
