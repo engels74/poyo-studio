@@ -28,6 +28,7 @@ import {
 import type { GalleryViewerItemDto } from '$lib/features/library/contracts';
 import {
   createDownloadRequestSync,
+  latestDownloadRequestAt,
   type DownloadRequestSync,
   type DownloadRequestUpdate
 } from '$lib/features/library/download-request-sync';
@@ -106,7 +107,7 @@ function downloadRequestedAt(
   outputId: string,
   persisted: string | null | undefined
 ): string | null {
-  return downloadRequests.get(outputId) ?? persisted ?? null;
+  return latestDownloadRequestAt(downloadRequests.get(outputId), persisted);
 }
 function updateSelectedOutputId(outputId: string | null): void {
   selectedOutputId = outputId;

@@ -28,7 +28,10 @@ import type {
 } from '$lib/features/library/contracts';
 import { dateTimeLabel } from '$lib/features/library/presentation';
 import { downloadCopy } from '$lib/features/library/attachment-request';
-import type { DownloadRequestUpdate } from '$lib/features/library/download-request-sync';
+import {
+  latestDownloadRequestAt,
+  type DownloadRequestUpdate
+} from '$lib/features/library/download-request-sync';
 
 type ViewableGroup = LibraryGroupDto & {
   representative: SafeMediaSummary & { mediaUrl: string };
@@ -142,10 +145,11 @@ let readyImage = $derived(session.status === 'ready-image' ? session : null);
 let readyVideo = $derived(session.status === 'ready-video' ? session : null);
 let activeDownloadRequestedAt = $derived(
   activeGroup
-    ? (downloadRequests.get(activeGroup.representative.outputId) ??
-        synchronizedDownloadRequests.get(activeGroup.representative.outputId) ??
-        activeGroup.representative.downloadCopyRequestedAt ??
-        null)
+    ? latestDownloadRequestAt(
+        downloadRequests.get(activeGroup.representative.outputId),
+        synchronizedDownloadRequests.get(activeGroup.representative.outputId),
+        activeGroup.representative.downloadCopyRequestedAt
+      )
     : null
 );
 let imagePannable = $derived(

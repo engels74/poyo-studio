@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   createDownloadRequestSync,
+  latestDownloadRequestAt,
   type DownloadRequestUpdate
 } from '../../../src/lib/features/library/download-request-sync';
 
@@ -99,5 +100,19 @@ describe('download request cross-tab sync', () => {
       'output-a': '2026-08-01T10:00:00.000Z'
     });
     expect(() => sync.dispose()).not.toThrow();
+  });
+
+  test('DOWNLOAD-SYNC-04 selects the newest local, synchronized, or persisted request', () => {
+    expect(
+      latestDownloadRequestAt(
+        '2026-08-01T10:00:00Z',
+        '2026-08-01T10:00:00.003Z',
+        '2026-08-01T10:00:00.002Z'
+      )
+    ).toBe('2026-08-01T10:00:00.003Z');
+    expect(
+      latestDownloadRequestAt('2026-08-01T10:00:00Z', '2026-08-01T10:00:00.001Z')
+    ).toBe('2026-08-01T10:00:00.001Z');
+    expect(latestDownloadRequestAt(undefined, null)).toBeNull();
   });
 });

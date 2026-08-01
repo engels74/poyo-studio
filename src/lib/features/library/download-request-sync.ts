@@ -28,6 +28,22 @@ export interface DownloadRequestSync {
   dispose(): void;
 }
 
+export function latestDownloadRequestAt(
+  ...candidates: Array<string | null | undefined>
+): string | null {
+  let latest: string | null = null;
+  let latestTimestamp = Number.NEGATIVE_INFINITY;
+  for (const candidate of candidates) {
+    if (!isExactIsoUtcInstant(candidate)) continue;
+    const timestamp = Date.parse(candidate);
+    if (timestamp > latestTimestamp) {
+      latest = candidate;
+      latestTimestamp = timestamp;
+    }
+  }
+  return latest;
+}
+
 function validUpdate(value: unknown): value is DownloadRequestMessage {
   if (!value || typeof value !== 'object') return false;
   const message = value as Record<string, unknown>;
