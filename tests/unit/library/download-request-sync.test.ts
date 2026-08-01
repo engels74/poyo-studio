@@ -9,8 +9,10 @@ class FakeChannel {
   listeners = new Set<(event: MessageEvent<unknown>) => void>();
   peer: FakeChannel | null = null;
   closed = false;
+  postError: Error | null = null;
 
   postMessage(message: unknown): void {
+    if (this.postError) throw this.postError;
     this.peer?.dispatch(message);
   }
 
@@ -115,5 +117,23 @@ describe('download request cross-tab sync', () => {
       '2026-08-01T10:00:00.001Z'
     );
     expect(latestDownloadRequestAt(undefined, null)).toBeNull();
+  });
+
+  test('DOWNLOAD-SYNC-05 preserves local state when cross-tab delivery fails', () => {
+    const channel = new FakeChannel();
+    channel.postError = new Error('BroadcastChannel delivery failed');
+    const state = new Map<string, string>();
+    const sync = createDownloadRequestSync({
+      onupdate: (update) => merge(state, update),
+      createChannel: () => channel
+    });
+
+    expect(() =>
+      sync.publish({ outputId: 'output-a', requestedAt: '2026-08-01T10:00:00.000Z' })
+    ).not.toThrow();
+    expect(Object.fromEntries(state)).toEqual({
+      'output-a': '2026-08-01T10:00:00.000Z'
+    });
+    sync.dispose();
   });
 });

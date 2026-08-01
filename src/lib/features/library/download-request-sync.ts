@@ -79,7 +79,11 @@ export function createDownloadRequestSync({
       const message: DownloadRequestMessage = { version: 1, ...update };
       if (!validUpdate(message)) return;
       onupdate(update);
-      channel?.postMessage(message);
+      try {
+        channel?.postMessage(message);
+      } catch {
+        // Cross-tab delivery failure must not undo the accepted local request.
+      }
     },
     dispose() {
       channel?.removeEventListener('message', receive);
