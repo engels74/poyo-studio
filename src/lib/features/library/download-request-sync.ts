@@ -20,7 +20,7 @@ interface DownloadRequestChannel {
 
 interface DownloadRequestSyncOptions {
   onupdate: (update: DownloadRequestUpdate) => void;
-  createChannel?: (name: string) => DownloadRequestChannel;
+  createChannel?: (name: string) => DownloadRequestChannel | null;
 }
 
 export interface DownloadRequestSync {
@@ -42,26 +42,32 @@ function validUpdate(value: unknown): value is DownloadRequestMessage {
 
 export function createDownloadRequestSync({
   onupdate,
-  createChannel = (name) => new BroadcastChannel(name)
+  createChannel = (name) =>
+    typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(name)
 }: DownloadRequestSyncOptions): DownloadRequestSync {
-  const channel = createChannel(CHANNEL_NAME);
+  let channel: DownloadRequestChannel | null = null;
+  try {
+    channel = createChannel(CHANNEL_NAME);
+  } catch {
+    // Cross-tab synchronization is optional; local request state must remain usable.
+  }
   const receive = (event: MessageEvent<unknown>) => {
     if (validUpdate(event.data)) {
       onupdate({ outputId: event.data.outputId, requestedAt: event.data.requestedAt });
     }
   };
-  channel.addEventListener('message', receive);
+  channel?.addEventListener('message', receive);
 
   return {
     publish(update) {
       const message: DownloadRequestMessage = { version: 1, ...update };
       if (!validUpdate(message)) return;
       onupdate(update);
-      channel.postMessage(message);
+      channel?.postMessage(message);
     },
     dispose() {
-      channel.removeEventListener('message', receive);
-      channel.close();
+      channel?.removeEventListener('message', receive);
+      channel?.close();
     }
   };
 }

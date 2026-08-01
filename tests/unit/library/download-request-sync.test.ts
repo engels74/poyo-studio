@@ -83,4 +83,21 @@ describe('download request cross-tab sync', () => {
     });
     sync.dispose();
   });
+
+  test('DOWNLOAD-SYNC-03 remains usable when cross-tab channels are unavailable', () => {
+    const state = new Map<string, string>();
+    const sync = createDownloadRequestSync({
+      onupdate: (update) => merge(state, update),
+      createChannel: () => {
+        throw new Error('BroadcastChannel is unavailable');
+      }
+    });
+
+    sync.publish({ outputId: 'output-a', requestedAt: '2026-08-01T10:00:00.000Z' });
+
+    expect(Object.fromEntries(state)).toEqual({
+      'output-a': '2026-08-01T10:00:00.000Z'
+    });
+    expect(() => sync.dispose()).not.toThrow();
+  });
 });
