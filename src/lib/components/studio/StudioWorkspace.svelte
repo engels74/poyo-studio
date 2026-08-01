@@ -1238,10 +1238,14 @@ function duplicateBatch(item: StudioBatchItem): void {
   ];
 }
 
+function removeConfirmedBatchItem(itemId: string): void {
+  batch.items = batch.items.filter((candidate) => candidate.id !== itemId);
+  if (editingBatchItemId === itemId) editingBatchItemId = null;
+}
+
 function removeBatchItem(item: StudioBatchItem): void {
   if (item.state === 'unknown' || item.state === 'submitting') return;
-  batch.items = batch.items.filter((candidate) => candidate.id !== item.id);
-  if (editingBatchItemId === item.id) editingBatchItemId = null;
+  removeConfirmedBatchItem(item.id);
 }
 
 async function loadBatchOutputs(itemId: string, jobId: string): Promise<void> {
@@ -1282,6 +1286,7 @@ async function reconcileBatchItem(item: StudioBatchItem): Promise<boolean> {
     const result = (await response.json()) as { job?: StudioJobDto };
     if (!response.ok || !result.job) return false;
     applyJobToBatchItem(item, result.job);
+    removeConfirmedBatchItem(item.id);
     return true;
   } catch {
     if (item.state === 'unknown') {
@@ -1329,6 +1334,7 @@ async function submitBatchItem(itemId: string): Promise<void> {
       return;
     }
     applyJobToBatchItem(latest, result.job);
+    removeConfirmedBatchItem(itemId);
   } catch {
     const latest = batch.items.find((candidate) => candidate.id === itemId) ?? item;
     const unknown = {
