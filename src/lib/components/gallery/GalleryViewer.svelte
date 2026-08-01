@@ -28,6 +28,7 @@ import type {
 } from '$lib/features/library/contracts';
 import { dateTimeLabel } from '$lib/features/library/presentation';
 import { downloadCopy } from '$lib/features/library/attachment-request';
+import type { DownloadRequestUpdate } from '$lib/features/library/download-request-sync';
 
 type ViewableGroup = LibraryGroupDto & {
   representative: SafeMediaSummary & { mediaUrl: string };
@@ -45,6 +46,8 @@ interface Props {
   selectedOutputId?: string | null;
   triggerElement?: HTMLElement | null;
   onactivityinvalidate?: () => Promise<void>;
+  downloadRequests?: ReadonlyMap<string, string>;
+  ondownloadaccepted?: (update: DownloadRequestUpdate) => void;
   fallbackFocusElement?: HTMLElement | null;
 }
 
@@ -67,6 +70,8 @@ let {
   selectedOutputId = $bindable<string | null>(null),
   triggerElement = $bindable<HTMLElement | null>(null),
   onactivityinvalidate,
+  downloadRequests: synchronizedDownloadRequests = new Map(),
+  ondownloadaccepted,
   fallbackFocusElement = null
 }: Props = $props();
 let lifecycle = $state(initialViewerLifecycleState());
@@ -138,6 +143,7 @@ let readyVideo = $derived(session.status === 'ready-video' ? session : null);
 let activeDownloadRequestedAt = $derived(
   activeGroup
     ? (downloadRequests.get(activeGroup.representative.outputId) ??
+        synchronizedDownloadRequests.get(activeGroup.representative.outputId) ??
         activeGroup.representative.downloadCopyRequestedAt ??
         null)
     : null
@@ -162,16 +168,26 @@ function isViewable(group: LibraryGroupDto): group is ViewableGroup {
   return Boolean(group.representative?.mediaUrl);
 }
 
-function requestActiveDownload(): void {
+function requestActiveDownload(event: MouseEvent & { currentTarget: HTMLButtonElement }): void {
   if (!activeGroup || downloadPending) return;
   const outputId = activeGroup.representative.outputId;
+  const focusTarget = event.currentTarget;
   downloadPending = outputId;
   downloadFeedback = '';
   void downloadCopy(outputId, {
     onaccepted: ({ requestedAt }) => {
+      const update = { outputId, requestedAt };
       downloadRequests = new Map(downloadRequests).set(outputId, requestedAt);
+      ondownloadaccepted?.(update);
       downloadFeedback = 'Download copy requested.';
       downloadPending = null;
+      requestAnimationFrame(() => {
+        const active = document.activeElement;
+        const dialog = viewport?.closest('[role="dialog"]');
+        if (focusTarget.isConnected && !dialog?.contains(active)) {
+          focusTarget.focus({ preventScroll: true });
+        }
+      });
     },
     ...(onactivityinvalidate ? { oninvalidate: onactivityinvalidate } : {}),
     onerror: () => {

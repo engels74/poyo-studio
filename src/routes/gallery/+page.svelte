@@ -27,6 +27,11 @@ import {
 } from '$lib/features/gallery/viewer-sequence';
 import type { GalleryViewerItemDto } from '$lib/features/library/contracts';
 import {
+  createDownloadRequestSync,
+  type DownloadRequestSync,
+  type DownloadRequestUpdate
+} from '$lib/features/library/download-request-sync';
+import {
   byteSizeLabel,
   dateTimeLabel,
   mediaFrameAspectRatio
@@ -56,6 +61,8 @@ let sequenceState = $state<ViewerSequenceState>({
 let coordinator: GalleryRefreshCoordinator | null = null;
 let liveLifecycle: GalleryLiveLifecycle | null = null;
 let outputChronology = new Map<string, { eventId: number; removed: boolean; verified: boolean }>();
+let downloadRequestSync: DownloadRequestSync | null = null;
+let downloadRequests = $state(new Map<string, string>());
 let selectedSeed: GalleryViewerItemDto | null = null;
 let headController: AbortController | null = null;
 let sequenceLoadKey = '';
@@ -87,6 +94,19 @@ function selectedGridItem(outputId: string): GalleryViewerItemDto | null {
     }
   }
   return null;
+}
+
+function recordDownloadRequest(update: DownloadRequestUpdate): void {
+  const current = downloadRequests.get(update.outputId);
+  if (current && current >= update.requestedAt) return;
+  downloadRequests = new Map(downloadRequests).set(update.outputId, update.requestedAt);
+}
+
+function downloadRequestedAt(
+  outputId: string,
+  persisted: string | null | undefined
+): string | null {
+  return downloadRequests.get(outputId) ?? persisted ?? null;
 }
 function updateSelectedOutputId(outputId: string | null): void {
   selectedOutputId = outputId;
@@ -214,6 +234,7 @@ onMount(() => {
   const markScrollIntervention = () => (scrollInterventionGeneration += 1);
   window.addEventListener('scroll', markScrollIntervention, { passive: true });
   coordinator = createGalleryRefreshCoordinator(refreshGallery);
+  downloadRequestSync = createDownloadRequestSync({ onupdate: recordDownloadRequest });
   liveLifecycle = createGalleryLiveLifecycle({
     createEventSource: (lastEventId) =>
       new EventSource(
@@ -246,6 +267,8 @@ onMount(() => {
     window.removeEventListener('scroll', markScrollIntervention);
     abortSequence();
     liveLifecycle?.dispose();
+    downloadRequestSync?.dispose();
+    downloadRequestSync = null;
     liveLifecycle = null;
     coordinator = null;
     outputChronology.clear();
@@ -347,18 +370,22 @@ async function setFavorite(jobId: string, favorite: boolean): Promise<void> {
           {@const viewerLabel = `View ${mediaKind} ${group.displayName}`}
           <article data-gallery-job-id={group.jobId} class={data.filters.view === 'grid' ? 'group overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-xs)]' : 'grid gap-3 py-4 sm:grid-cols-[9rem_minmax(0,1fr)_auto] sm:items-center'}>
             {#if representative?.mediaUrl}
+              {@const requestedAt = downloadRequestedAt(
+                representative.outputId,
+                representative.downloadCopyRequestedAt
+              )}
               <button type="button" onclick={openViewer} class="focus-ring block w-full overflow-hidden rounded text-left" aria-label={viewerLabel} data-output-id={representative.outputId}>
                 <div
                   class="relative"
                   style={`aspect-ratio: ${data.filters.view === 'grid' ? mediaFrameAspectRatio(representative.pixelWidth, representative.pixelHeight, group.aspectRatio) : '16 / 9'};`}
                 >
                   <MediaPreview mediaKind={representative.mediaKind} src={representative.mediaUrl} alt={`Preview for ${group.displayName}`} fit="contain" preload="none" class="size-full" />
-                  {#if representative.downloadCopyRequestedAt}
+                  {#if requestedAt}
                     <span
                       class="absolute right-2 bottom-2 inline-flex size-7 items-center justify-center rounded-full border border-success/40 bg-background/90 text-success shadow-[var(--shadow-sm)]"
                       role="img"
-                      aria-label={`Download copy requested ${dateTimeLabel(representative.downloadCopyRequestedAt)}`}
-                      title={`Download copy requested ${dateTimeLabel(representative.downloadCopyRequestedAt)}`}
+                      aria-label={`Download copy requested ${dateTimeLabel(requestedAt)}`}
+                      title={`Download copy requested ${dateTimeLabel(requestedAt)}`}
                     >✓<span class="sr-only">Download</span></span>
                   {/if}
                 </div>
@@ -405,6 +432,8 @@ async function setFavorite(jobId: string, favorite: boolean): Promise<void> {
     void loadViewerSequence();
   }}
   onactivityinvalidate={() => invalidate('app:jobs-activity')}
+  downloadRequests={downloadRequests}
+  ondownloadaccepted={(update) => downloadRequestSync?.publish(update)}
   bind:open={viewerOpen}
   bind:selectedOutputId={() => selectedOutputId, updateSelectedOutputId}
   bind:triggerElement={viewerTrigger}
