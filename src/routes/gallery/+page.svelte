@@ -99,8 +99,9 @@ function selectedGridItem(outputId: string): GalleryViewerItemDto | null {
 
 function recordDownloadRequest(update: DownloadRequestUpdate): void {
   const current = downloadRequests.get(update.outputId);
-  if (current && current >= update.requestedAt) return;
-  downloadRequests = new Map(downloadRequests).set(update.outputId, update.requestedAt);
+  const latest = latestDownloadRequestAt(current, update.requestedAt);
+  if (!latest || latest === current) return;
+  downloadRequests = new Map(downloadRequests).set(update.outputId, latest);
 }
 
 function downloadRequestedAt(

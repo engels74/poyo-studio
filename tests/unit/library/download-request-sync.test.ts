@@ -33,7 +33,8 @@ class FakeChannel {
 
 function merge(target: Map<string, string>, update: DownloadRequestUpdate): void {
   const current = target.get(update.outputId);
-  if (!current || update.requestedAt > current) target.set(update.outputId, update.requestedAt);
+  const latest = latestDownloadRequestAt(current, update.requestedAt);
+  if (latest && latest !== current) target.set(update.outputId, latest);
 }
 
 describe('download request cross-tab sync', () => {
@@ -75,12 +76,12 @@ describe('download request cross-tab sync', () => {
       createChannel: () => channel
     });
 
-    sync.publish({ outputId: 'output-a', requestedAt: '2026-08-01T10:00:01.000Z' });
-    channel.dispatch({ version: 1, outputId: 'output-a', requestedAt: '2026-08-01T10:00:00.000Z' });
+    sync.publish({ outputId: 'output-a', requestedAt: '2026-08-01T10:00:01.001Z' });
+    channel.dispatch({ version: 1, outputId: 'output-a', requestedAt: '2026-08-01T10:00:01Z' });
     channel.dispatch({ version: 1, outputId: 'output-b', requestedAt: 'not-a-date' });
 
     expect(Object.fromEntries(state)).toEqual({
-      'output-a': '2026-08-01T10:00:01.000Z'
+      'output-a': '2026-08-01T10:00:01.001Z'
     });
     sync.dispose();
   });
@@ -110,9 +111,9 @@ describe('download request cross-tab sync', () => {
         '2026-08-01T10:00:00.002Z'
       )
     ).toBe('2026-08-01T10:00:00.003Z');
-    expect(
-      latestDownloadRequestAt('2026-08-01T10:00:00Z', '2026-08-01T10:00:00.001Z')
-    ).toBe('2026-08-01T10:00:00.001Z');
+    expect(latestDownloadRequestAt('2026-08-01T10:00:00Z', '2026-08-01T10:00:00.001Z')).toBe(
+      '2026-08-01T10:00:00.001Z'
+    );
     expect(latestDownloadRequestAt(undefined, null)).toBeNull();
   });
 });
