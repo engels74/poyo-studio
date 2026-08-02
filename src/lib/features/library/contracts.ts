@@ -29,6 +29,12 @@ export type JobFilterStatus =
 
 export type LibraryStatus = 'all' | 'available' | 'attention' | 'remote-only' | 'deleted';
 
+/**
+ * Load dependency for authoritative Gallery library data, including accepted download-copy
+ * requests. Invalidate it to reconcile a Gallery view with persisted state.
+ */
+export const GALLERY_LIBRARY_DEPENDENCY = 'app:gallery-library';
+
 export interface ModelFilterOption {
   publicModelId: string;
   displayName: string;

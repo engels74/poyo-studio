@@ -1400,9 +1400,11 @@ test('Gallery download requests merge across tabs without losing grid or persist
     context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     const first = await context.newPage();
     const second = await context.newPage();
+    const overview = await context.newPage();
     await Promise.all([
       first.goto(`${harness.url}/gallery`),
-      second.goto(`${harness.url}/gallery`)
+      second.goto(`${harness.url}/gallery`),
+      overview.goto(`${harness.url}/gallery`)
     ]);
 
     const open = async (page: Page, item: SeededItem) => {
@@ -1438,8 +1440,8 @@ test('Gallery download requests merge across tabs without losing grid or persist
       secondDialog.waitFor({ state: 'detached' })
     ]);
 
-    const expectGridMarks = async (page: Page) => {
-      for (const item of [seeded.newest, seeded.long]) {
+    const expectGridMarks = async (page: Page, items: SeededItem[]) => {
+      for (const item of items) {
         await page
           .locator('article')
           .filter({ hasText: item.label })
@@ -1447,10 +1449,224 @@ test('Gallery download requests merge across tabs without losing grid or persist
           .waitFor();
       }
     };
-    await Promise.all([expectGridMarks(first), expectGridMarks(second)]);
+    const requested = [seeded.newest, seeded.long];
+    await Promise.all([
+      expectGridMarks(first, requested),
+      expectGridMarks(second, requested),
+      expectGridMarks(overview, requested)
+    ]);
 
-    await Promise.all([first.reload(), second.reload()]);
-    await Promise.all([expectGridMarks(first), expectGridMarks(second)]);
+    // A repeated request for one output keeps its mark in every tab.
+    const repeatDialog = await open(overview, seeded.newest);
+    await Promise.all([
+      overview.waitForEvent('download'),
+      repeatDialog.getByRole('button', { name: 'Download copy', exact: true }).click()
+    ]);
+    await repeatDialog.getByText('Download copy requested.', { exact: true }).waitFor();
+    await repeatDialog.getByRole('img', { name: /^Download copy requested / }).waitFor();
+    await overview.keyboard.press('Escape');
+    await repeatDialog.waitFor({ state: 'detached' });
+    await Promise.all([
+      expectGridMarks(first, requested),
+      expectGridMarks(second, requested),
+      expectGridMarks(overview, requested)
+    ]);
+
+    await Promise.all([first.reload(), second.reload(), overview.reload()]);
+    await Promise.all([
+      expectGridMarks(first, requested),
+      expectGridMarks(second, requested),
+      expectGridMarks(overview, requested)
+    ]);
+  } finally {
+    await context?.close();
+    await browser?.close();
+    await harness.cleanup();
+  }
+});
+test('Gallery download marks reconcile from persisted state without cross-tab broadcast delivery', async () => {
+  const harness = await startBrowserAppHarness();
+  let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
+  let context:
+    | Awaited<ReturnType<Awaited<ReturnType<typeof chromium.launch>>['newContext']>>
+    | undefined;
+
+  try {
+    const seeded = await seedGallery(harness);
+    await harness.startApp();
+    browser = await chromium.launch({ headless: true });
+    context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+
+    // Tabs that can receive neither a broadcast nor a live Jobs event must still reconcile.
+    const isolatedTab = async () => {
+      const page = await context?.newPage();
+      if (!page) throw new Error('Expected an isolated Gallery page.');
+      await page.addInitScript(() => {
+        Reflect.deleteProperty(window, 'BroadcastChannel');
+      });
+      await page.route('**/api/events/jobs*', (route) => route.abort());
+      await page.goto(`${harness.url}/gallery`);
+      await page.getByRole('heading', { name: 'Generation gallery' }).waitFor();
+      return page;
+    };
+    const overview = await isolatedTab();
+    const isolatedViewer = await isolatedTab();
+    const requester = await context.newPage();
+    await requester.goto(`${harness.url}/gallery`);
+
+    const open = async (page: Page, item: SeededItem) => {
+      await page
+        .locator('article')
+        .filter({ hasText: item.label })
+        .getByRole('button', { name: `View image ${item.label}`, exact: true })
+        .first()
+        .click();
+      const dialog = page.getByRole('dialog', { name: item.label });
+      await dialog.waitFor();
+      return dialog;
+    };
+    const gridMark = (page: Page, item: SeededItem) =>
+      page
+        .locator('article')
+        .filter({ hasText: item.label })
+        .getByRole('img', { name: /^Download copy requested / });
+    const viewerMark = (dialog: Locator) =>
+      dialog.getByRole('img', { name: /^Download copy requested / });
+    /** Simulates a background/foreground round trip without reloading the document. */
+    const present = (page: Page) =>
+      page.evaluate(() => {
+        let hidden = true;
+        Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+        Object.defineProperty(document, 'visibilityState', {
+          configurable: true,
+          get: () => (hidden ? 'hidden' : 'visible')
+        });
+        document.dispatchEvent(new Event('visibilitychange'));
+        hidden = false;
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+
+    const isolatedDialog = await open(isolatedViewer, seeded.newest);
+    const requesterDialog = await open(requester, seeded.newest);
+    await Promise.all([
+      requester.waitForEvent('download'),
+      requesterDialog.getByRole('button', { name: 'Download copy', exact: true }).click()
+    ]);
+    await requesterDialog.getByText('Download copy requested.', { exact: true }).waitFor();
+    await viewerMark(requesterDialog).waitFor();
+
+    expect(await gridMark(overview, seeded.newest).count()).toBe(0);
+    expect(await viewerMark(isolatedDialog).count()).toBe(0);
+
+    // Closing the requesting viewer promptly must reveal the mark in its own grid.
+    await requester.keyboard.press('Escape');
+    await requesterDialog.waitFor({ state: 'detached' });
+    await gridMark(requester, seeded.newest).waitFor();
+
+    await present(overview);
+    await gridMark(overview, seeded.newest).waitFor();
+    await present(isolatedViewer);
+    await viewerMark(isolatedDialog).waitFor();
+
+    // Closing the viewer and switching Gallery view state must not discard the reconciled mark.
+    await isolatedViewer.keyboard.press('Escape');
+    await isolatedDialog.waitFor({ state: 'detached' });
+    await gridMark(isolatedViewer, seeded.newest).waitFor();
+    await overview.getByRole('link', { name: 'List view' }).click();
+    await overview.waitForURL((url) => url.searchParams.get('view') === 'list');
+    await gridMark(overview, seeded.newest).waitFor();
+  } finally {
+    await context?.close();
+    await browser?.close();
+    await harness.cleanup();
+  }
+});
+test('Gallery rejects download copies without creating an accepted mark', async () => {
+  const harness = await startBrowserAppHarness();
+  let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
+  let context:
+    | Awaited<ReturnType<Awaited<ReturnType<typeof chromium.launch>>['newContext']>>
+    | undefined;
+
+  try {
+    const seeded = await seedGallery(harness);
+    await harness.startApp();
+    browser = await chromium.launch({ headless: true });
+    context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const page = await context.newPage();
+    const observer = await context.newPage();
+    await page.route(`**/api/media/${seeded.long.outputId}/download`, async (route) => {
+      if (route.request().method() !== 'POST') return route.continue();
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'attachment_requests_busy' })
+      });
+    });
+    await Promise.all([
+      page.goto(`${harness.url}/gallery`),
+      observer.goto(`${harness.url}/gallery`)
+    ]);
+
+    const mark = /^Download copy requested /;
+    const rejectedArticle = page.locator('article').filter({ hasText: labels.long });
+    await rejectedArticle
+      .getByRole('button', { name: `View image ${labels.long}`, exact: true })
+      .first()
+      .click();
+    const dialog = page.getByRole('dialog', { name: labels.long });
+    await dialog.waitFor();
+    await dialog.getByRole('button', { name: 'Download copy', exact: true }).click();
+    await dialog.getByText('Download copy request failed.', { exact: true }).waitFor();
+    expect(await dialog.getByRole('img', { name: mark }).count()).toBe(0);
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'detached' });
+    expect(await rejectedArticle.getByRole('img', { name: mark }).count()).toBe(0);
+
+    // An accepted request for another output still marks only that output, in every tab.
+    const acceptedArticle = page.locator('article').filter({ hasText: labels.newest });
+    await acceptedArticle
+      .getByRole('button', { name: `View image ${labels.newest}`, exact: true })
+      .first()
+      .click();
+    const acceptedDialog = page.getByRole('dialog', { name: labels.newest });
+    await acceptedDialog.waitFor();
+    await Promise.all([
+      page.waitForEvent('download'),
+      acceptedDialog.getByRole('button', { name: 'Download copy', exact: true }).click()
+    ]);
+    await acceptedDialog.getByText('Download copy requested.', { exact: true }).waitFor();
+    await page.keyboard.press('Escape');
+    await acceptedDialog.waitFor({ state: 'detached' });
+    await acceptedArticle.getByRole('img', { name: mark }).waitFor();
+    await observer
+      .locator('article')
+      .filter({ hasText: labels.newest })
+      .getByRole('img', { name: mark })
+      .waitFor();
+    expect(await rejectedArticle.getByRole('img', { name: mark }).count()).toBe(0);
+    expect(
+      await observer
+        .locator('article')
+        .filter({ hasText: labels.long })
+        .getByRole('img', { name: mark })
+        .count()
+    ).toBe(0);
+
+    await page.reload();
+    await page.getByRole('heading', { name: 'Generation gallery' }).waitFor();
+    expect(
+      await page
+        .locator('article')
+        .filter({ hasText: labels.long })
+        .getByRole('img', { name: mark })
+        .count()
+    ).toBe(0);
+    await page
+      .locator('article')
+      .filter({ hasText: labels.newest })
+      .getByRole('img', { name: mark })
+      .waitFor();
   } finally {
     await context?.close();
     await browser?.close();

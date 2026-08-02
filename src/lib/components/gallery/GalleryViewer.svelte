@@ -30,6 +30,7 @@ import { dateTimeLabel } from '$lib/features/library/presentation';
 import { downloadCopy } from '$lib/features/library/attachment-request';
 import {
   latestDownloadRequestAt,
+  mergeDownloadRequest,
   type DownloadRequestUpdate
 } from '$lib/features/library/download-request-sync';
 
@@ -48,7 +49,6 @@ interface Props {
   open?: boolean;
   selectedOutputId?: string | null;
   triggerElement?: HTMLElement | null;
-  onactivityinvalidate?: () => Promise<void>;
   downloadRequests?: ReadonlyMap<string, string>;
   ondownloadaccepted?: (update: DownloadRequestUpdate) => void;
   fallbackFocusElement?: HTMLElement | null;
@@ -72,7 +72,6 @@ let {
   open = $bindable(false),
   selectedOutputId = $bindable<string | null>(null),
   triggerElement = $bindable<HTMLElement | null>(null),
-  onactivityinvalidate,
   downloadRequests: synchronizedDownloadRequests = new Map(),
   ondownloadaccepted,
   fallbackFocusElement = null
@@ -181,7 +180,8 @@ function requestActiveDownload(event: MouseEvent & { currentTarget: HTMLButtonEl
   void downloadCopy(outputId, {
     onaccepted: ({ requestedAt }) => {
       const update = { outputId, requestedAt };
-      downloadRequests = new Map(downloadRequests).set(outputId, requestedAt);
+      const merged = mergeDownloadRequest(downloadRequests, update);
+      if (merged) downloadRequests = merged;
       ondownloadaccepted?.(update);
       downloadFeedback = 'Download copy requested.';
       downloadPending = null;
@@ -193,7 +193,6 @@ function requestActiveDownload(event: MouseEvent & { currentTarget: HTMLButtonEl
         }
       });
     },
-    ...(onactivityinvalidate ? { oninvalidate: onactivityinvalidate } : {}),
     onerror: () => {
       downloadFeedback = 'Download copy request failed.';
       downloadPending = null;
