@@ -25,10 +25,16 @@ import {
   viewerSequenceFilters,
   viewerSequenceItems
 } from '$lib/features/gallery/viewer-sequence';
-import type { GalleryViewerItemDto } from '$lib/features/library/contracts';
 import {
+  GALLERY_LIBRARY_DEPENDENCY,
+  type GalleryViewerItemDto
+} from '$lib/features/library/contracts';
+import {
+  createDownloadRequestReconciler,
   createDownloadRequestSync,
   latestDownloadRequestAt,
+  mergeDownloadRequest,
+  type DownloadRequestReconciler,
   type DownloadRequestSync,
   type DownloadRequestUpdate
 } from '$lib/features/library/download-request-sync';
@@ -70,6 +76,7 @@ let sequenceLoadKey = '';
 let wasViewerOpen = false;
 let scrollInterventionGeneration = 0;
 let refreshGeneration = 0;
+let downloadReconciler: DownloadRequestReconciler | null = null;
 
 const sequenceController = createViewerSequenceController({
   onState: (state) => (sequenceState = state)
@@ -97,18 +104,43 @@ function selectedGridItem(outputId: string): GalleryViewerItemDto | null {
   return null;
 }
 
-function recordDownloadRequest(update: DownloadRequestUpdate): void {
-  const current = downloadRequests.get(update.outputId);
-  const latest = latestDownloadRequestAt(current, update.requestedAt);
-  if (!latest || latest === current) return;
-  downloadRequests = new Map(downloadRequests).set(update.outputId, latest);
+/** Persisted marks stay authoritative; locally accepted and broadcast marks keep them immediate. */
+let downloadRequestMarks = $derived.by(() => {
+  let marks = downloadRequests;
+  for (const group of data.page.items) {
+    const representative = group.representative;
+    if (!representative?.downloadCopyRequestedAt) continue;
+    const merged = mergeDownloadRequest(marks, {
+      outputId: representative.outputId,
+      requestedAt: representative.downloadCopyRequestedAt
+    });
+    if (merged) marks = merged;
+  }
+  return marks;
+});
+
+function recordDownloadRequest(update: DownloadRequestUpdate): boolean {
+  const merged = mergeDownloadRequest(downloadRequests, update);
+  if (!merged) return false;
+  downloadRequests = merged;
+  return true;
+}
+
+/** Records a local or cross-tab request, then reconciles the Gallery with persisted state. */
+function receiveDownloadRequest(update: DownloadRequestUpdate): void {
+  if (recordDownloadRequest(update)) void downloadReconciler?.request();
+}
+
+function acceptDownloadRequest(update: DownloadRequestUpdate): void {
+  receiveDownloadRequest(update);
+  downloadRequestSync?.publish(update);
 }
 
 function downloadRequestedAt(
   outputId: string,
   persisted: string | null | undefined
 ): string | null {
-  return latestDownloadRequestAt(downloadRequests.get(outputId), persisted);
+  return latestDownloadRequestAt(downloadRequestMarks.get(outputId), persisted);
 }
 function updateSelectedOutputId(outputId: string | null): void {
   selectedOutputId = outputId;
@@ -236,7 +268,19 @@ onMount(() => {
   const markScrollIntervention = () => (scrollInterventionGeneration += 1);
   window.addEventListener('scroll', markScrollIntervention, { passive: true });
   coordinator = createGalleryRefreshCoordinator(refreshGallery);
-  downloadRequestSync = createDownloadRequestSync({ onupdate: recordDownloadRequest });
+  downloadReconciler = createDownloadRequestReconciler(() =>
+    invalidate(GALLERY_LIBRARY_DEPENDENCY)
+  );
+  downloadRequestSync = createDownloadRequestSync({ onupdate: receiveDownloadRequest });
+  // Broadcasts are transient: reconcile with persisted marks whenever this tab is presented again.
+  const reconcileVisible = () => {
+    if (!document.hidden) void downloadReconciler?.request();
+  };
+  const reconcileRestored = (event: PageTransitionEvent) => {
+    if (event.persisted) void downloadReconciler?.request();
+  };
+  document.addEventListener('visibilitychange', reconcileVisible);
+  window.addEventListener('pageshow', reconcileRestored);
   liveLifecycle = createGalleryLiveLifecycle({
     createEventSource: (lastEventId) =>
       new EventSource(
@@ -267,10 +311,13 @@ onMount(() => {
   });
   return () => {
     window.removeEventListener('scroll', markScrollIntervention);
+    document.removeEventListener('visibilitychange', reconcileVisible);
+    window.removeEventListener('pageshow', reconcileRestored);
     abortSequence();
     liveLifecycle?.dispose();
     downloadRequestSync?.dispose();
     downloadRequestSync = null;
+    downloadReconciler = null;
     liveLifecycle = null;
     coordinator = null;
     outputChronology.clear();
@@ -433,9 +480,8 @@ async function setFavorite(jobId: string, favorite: boolean): Promise<void> {
     sequenceLoadKey = '';
     void loadViewerSequence();
   }}
-  onactivityinvalidate={() => invalidate('app:jobs-activity')}
-  downloadRequests={downloadRequests}
-  ondownloadaccepted={(update) => downloadRequestSync?.publish(update)}
+  downloadRequests={downloadRequestMarks}
+  ondownloadaccepted={acceptDownloadRequest}
   bind:open={viewerOpen}
   bind:selectedOutputId={() => selectedOutputId, updateSelectedOutputId}
   bind:triggerElement={viewerTrigger}
