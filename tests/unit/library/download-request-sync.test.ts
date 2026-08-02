@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  createDownloadRequestReconciler,
   createDownloadRequestSync,
   latestDownloadRequestAt,
+  mergeDownloadRequest,
   type DownloadRequestUpdate
 } from '../../../src/lib/features/library/download-request-sync';
 
@@ -34,9 +36,10 @@ class FakeChannel {
 }
 
 function merge(target: Map<string, string>, update: DownloadRequestUpdate): void {
-  const current = target.get(update.outputId);
-  const latest = latestDownloadRequestAt(current, update.requestedAt);
-  if (latest && latest !== current) target.set(update.outputId, latest);
+  const merged = mergeDownloadRequest(target, update);
+  if (!merged) return;
+  target.clear();
+  for (const [outputId, requestedAt] of merged) target.set(outputId, requestedAt);
 }
 
 describe('download request cross-tab sync', () => {
@@ -135,5 +138,116 @@ describe('download request cross-tab sync', () => {
       'output-a': '2026-08-01T10:00:00.000Z'
     });
     sync.dispose();
+  });
+
+  test('DOWNLOAD-SYNC-06 merges per output and keeps the newest instant for one output', () => {
+    const recorded = new Map<string, string>();
+
+    const first = mergeDownloadRequest(recorded, {
+      outputId: 'output-a',
+      requestedAt: '2026-08-01T10:00:00.000Z'
+    });
+    const second = mergeDownloadRequest(first ?? recorded, {
+      outputId: 'output-b',
+      requestedAt: '2026-08-01T10:00:00.001Z'
+    });
+    const newer = mergeDownloadRequest(second ?? recorded, {
+      outputId: 'output-a',
+      requestedAt: '2026-08-01T10:00:00.002Z'
+    });
+
+    expect(Object.fromEntries(newer ?? new Map())).toEqual({
+      'output-a': '2026-08-01T10:00:00.002Z',
+      'output-b': '2026-08-01T10:00:00.001Z'
+    });
+    expect(
+      mergeDownloadRequest(newer ?? recorded, {
+        outputId: 'output-a',
+        requestedAt: '2026-08-01T10:00:00.001Z'
+      })
+    ).toBeNull();
+    expect(
+      mergeDownloadRequest(newer ?? recorded, {
+        outputId: 'output-a',
+        requestedAt: '2026-08-01T10:00:00.002Z'
+      })
+    ).toBeNull();
+    expect(
+      mergeDownloadRequest(newer ?? recorded, { outputId: 'output-c', requestedAt: 'not-a-date' })
+    ).toBeNull();
+    expect(Object.fromEntries(recorded)).toEqual({});
+  });
+
+  test('DOWNLOAD-SYNC-07 collapses overlapping reconciliations into one trailing refresh', async () => {
+    let running = 0;
+    let peak = 0;
+    let runs = 0;
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const reconciler = createDownloadRequestReconciler(async () => {
+      running += 1;
+      peak = Math.max(peak, running);
+      runs += 1;
+      if (runs === 1) await gate;
+      running -= 1;
+    });
+
+    const first = reconciler.request();
+    const second = reconciler.request();
+    const third = reconciler.request();
+    expect(reconciler.pending).toBe(true);
+    release?.();
+    await Promise.all([first, second, third]);
+
+    expect(runs).toBe(2);
+    expect(peak).toBe(1);
+    expect(reconciler.pending).toBe(false);
+    await reconciler.request();
+    expect(runs).toBe(3);
+  });
+
+  test('DOWNLOAD-SYNC-08 keeps reconciling after a failed refresh', async () => {
+    const attempts: number[] = [];
+    const reconciler = createDownloadRequestReconciler(async () => {
+      attempts.push(attempts.length + 1);
+      if (attempts.length === 1) throw new Error('Gallery data refresh failed.');
+      await Promise.resolve();
+    });
+
+    await reconciler.request();
+    expect(attempts).toEqual([1]);
+    await reconciler.request();
+
+    expect(attempts).toEqual([1, 2]);
+    expect(reconciler.pending).toBe(false);
+  });
+});
+
+describe('gallery download request reconciliation wiring', () => {
+  test('DOWNLOAD-SYNC-09 invalidates a dependency the Gallery load actually declares', async () => {
+    const contracts = await Bun.file('src/lib/features/library/contracts.ts').text();
+    const load = await Bun.file('src/routes/gallery/+page.server.ts').text();
+    const route = await Bun.file('src/routes/gallery/+page.svelte').text();
+
+    expect(contracts).toContain("export const GALLERY_LIBRARY_DEPENDENCY = 'app:gallery-library';");
+    expect(load).toContain('depends(GALLERY_LIBRARY_DEPENDENCY);');
+    expect(route).toContain('invalidate(GALLERY_LIBRARY_DEPENDENCY)');
+    expect(route).not.toContain('app:jobs-activity');
+  });
+
+  test('DOWNLOAD-SYNC-10 reconciles accepted, broadcast, and re-presented Gallery tabs', async () => {
+    const route = await Bun.file('src/routes/gallery/+page.svelte').text();
+
+    expect(route).toContain('createDownloadRequestSync({ onupdate: receiveDownloadRequest })');
+    expect(route).toContain(
+      'if (recordDownloadRequest(update)) void downloadReconciler?.request();'
+    );
+    expect(route).toContain('downloadRequestSync?.publish(update);');
+    expect(route).toContain("document.addEventListener('visibilitychange', reconcileVisible);");
+    expect(route).toContain("window.addEventListener('pageshow', reconcileRestored);");
+    expect(route).toContain("document.removeEventListener('visibilitychange', reconcileVisible);");
+    expect(route).toContain("window.removeEventListener('pageshow', reconcileRestored);");
   });
 });
