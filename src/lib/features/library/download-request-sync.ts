@@ -28,6 +28,12 @@ export interface DownloadRequestSync {
   dispose(): void;
 }
 
+export interface DownloadRequestReconciler {
+  /** Requests one authoritative refresh. Requests raised while one runs collapse into a single rerun. */
+  request(): Promise<void>;
+  readonly pending: boolean;
+}
+
 export function latestDownloadRequestAt(
   ...candidates: Array<string | null | undefined>
 ): string | null {
@@ -42,6 +48,57 @@ export function latestDownloadRequestAt(
     }
   }
   return latest;
+}
+
+/**
+ * Merges an accepted request into recorded marks, keeping the newest valid instant per output.
+ * Returns null when the update adds nothing, so callers can skip a needless state write.
+ */
+export function mergeDownloadRequest(
+  requests: ReadonlyMap<string, string>,
+  update: DownloadRequestUpdate
+): Map<string, string> | null {
+  const current = requests.get(update.outputId);
+  const latest = latestDownloadRequestAt(current, update.requestedAt);
+  if (!latest || latest === current) return null;
+  return new Map(requests).set(update.outputId, latest);
+}
+
+/**
+ * Serializes authoritative refreshes so persisted state, not a transient broadcast, settles the
+ * marks. A request raised during a running refresh schedules exactly one more run afterwards.
+ */
+export function createDownloadRequestReconciler(
+  refresh: () => Promise<void>
+): DownloadRequestReconciler {
+  let running: Promise<void> | null = null;
+  let rerun = false;
+
+  const drain = async (): Promise<void> => {
+    do {
+      rerun = false;
+      try {
+        await refresh();
+      } catch {
+        // A failed refresh keeps the optimistic mark; the next boundary reconciles again.
+      }
+    } while (rerun);
+    running = null;
+  };
+
+  return {
+    request() {
+      if (running) {
+        rerun = true;
+        return running;
+      }
+      running = drain();
+      return running;
+    },
+    get pending() {
+      return running !== null;
+    }
+  };
 }
 
 function validUpdate(value: unknown): value is DownloadRequestMessage {
