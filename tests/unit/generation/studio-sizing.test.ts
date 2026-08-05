@@ -308,4 +308,11 @@ describe('studio automatic sizing', () => {
       kind: 'registry-default'
     });
   });
+
+  test('SIZE-11 treats the provider adaptive token as genuine upstream automatic', () => {
+    const model = videoEntry('hailuo-03:reference-to-video');
+    const choice = automaticFieldChoice(model, 'aspectRatio', portraitImage('reference-image'));
+    expect(choice).toMatchObject({ available: true, value: 'adaptive', kind: 'upstream-auto' });
+    expect(initialAutomaticFields(model).aspectRatio).toBe(true);
+  });
 });

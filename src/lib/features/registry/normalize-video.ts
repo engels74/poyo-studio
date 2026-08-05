@@ -113,6 +113,12 @@ function validate(entry: VideoRegistryEntry, values: GuidedVideoRequest): string
     (values.duration ?? 6) !== 6
   )
     issues.push('Hailuo 2.3 1080p supports 6 seconds only.');
+  if (entry.family === 'Hailuo 03' && entry.workflow === 'reference-to-video') {
+    const images = values.referenceImageUrls?.length ?? 0;
+    const videos = values.referenceVideoUrls?.length ?? 0;
+    if (!images && !videos)
+      issues.push('Hailuo 03 reference mode requires a reference image or video.');
+  }
   if (
     entry.family === 'Sora 2 Pro Official' &&
     entry.workflow === 'text-to-video' &&
@@ -255,6 +261,14 @@ export function normalizeVideoRequest(
       throw new RegistryValidationError([
         'Expert override aspect_ratio is not supported for Wan 2.7 image-to-video.'
       ]);
+    if (
+      entry.publicModelId === 'hailuo-03' &&
+      entry.workflow === 'image-to-video' &&
+      override.key === 'aspect_ratio'
+    )
+      throw new RegistryValidationError([
+        'Expert override aspect_ratio is not supported for Hailuo 03 image-to-video.'
+      ]);
     if (!isStrictJsonValue(override.value))
       throw new RegistryValidationError([`Expert override ${override.key} must be strict JSON.`]);
     input[override.key] = override.value;
@@ -309,6 +323,8 @@ export function minimumValidVideoRequest(entry: VideoRegistryEntry): GuidedVideo
   if (entry.workflow === 'reference-to-video' && entry.family.startsWith('Seedance 2'))
     values.referenceImageUrls = ['https://assets.example/reference.png'];
   if (entry.workflow === 'reference-to-video' && entry.family === 'Wan 2.7 Video')
+    values.referenceImageUrls = ['https://assets.example/reference.png'];
+  if (entry.workflow === 'reference-to-video' && entry.family === 'Hailuo 03')
     values.referenceImageUrls = ['https://assets.example/reference.png'];
   if (entry.family === 'Hailuo 02' && entry.workflow === 'frame-to-video')
     values.resolution = '768P';

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "registryVersion": "video-2026-07-20.1",
-  "reviewedAt": "2026-07-20T03:35:52Z",
+  "reviewedAt": "2026-08-05T19:51:27Z",
   "workflows": [
     {
       "entryKey": "omni-flash:text-to-video",

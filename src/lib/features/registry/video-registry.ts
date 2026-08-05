@@ -106,6 +106,24 @@ const pages: Page[] = [
     limitations: ['1080p supports 6 seconds only; end frames are not supported.']
   },
   {
+    slug: 'hailuo-03',
+    provider: 'MiniMax',
+    family: 'Hailuo 03',
+    models: [
+      { id: 'hailuo-03', workflows: ['text-to-video', 'image-to-video', 'reference-to-video'] }
+    ],
+    prompt: [1, 2000],
+    durations: { min: 5, max: 15 },
+    durationDefault: 5,
+    ratios: ['21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
+    ratioDefault: '16:9',
+    resolutions: ['2K'],
+    resolutionDefault: '2K',
+    limitations: [
+      'Image-to-video follows the first image and accepts no aspect ratio; reference audio requires a reference image or video.'
+    ]
+  },
+  {
     slug: 'happy-horse-1-1',
     provider: 'Alibaba',
     family: 'Happy Horse 1.1',
@@ -608,6 +626,9 @@ function rolesFor(page: Page, modelId: string, workflow: VideoWorkflow): InputRo
         mediaRole('source-video', 'videoUrl', 'video_url', 'video', false, 0, 1),
         mediaRole('audio', 'audioUrl', 'audio_url', 'audio', false, 0, 1)
       ];
+    if (page.family === 'Hailuo 03')
+      // A start frame plus an optional end frame travel in one documented image_urls list.
+      return [mediaRole('start-frame', 'imageUrls', 'image_urls', 'image', true, 1, 2)];
     if (['Hailuo 2.3', 'Kling 2.1', 'Kling 2.5 Turbo Pro'].includes(page.family))
       return [mediaRole('start-frame', 'startImageUrl', 'start_image_url', 'image', true, 1, 1)];
     return [mediaRole('image', 'imageUrls', 'image_urls', 'image', true, 1, 1)];
@@ -634,6 +655,36 @@ function rolesFor(page: Page, modelId: string, workflow: VideoWorkflow): InputRo
     return [mediaRole('start-frame', 'imageUrls', 'image_urls', 'image', true, 1, max)];
   }
   if (workflow === 'reference-to-video') {
+    if (page.family === 'Hailuo 03')
+      return [
+        mediaRole(
+          'reference-image',
+          'referenceImageUrls',
+          'reference_image_urls',
+          'image',
+          false,
+          0,
+          9
+        ),
+        mediaRole(
+          'reference-video',
+          'referenceVideoUrls',
+          'reference_video_urls',
+          'video',
+          false,
+          0,
+          3
+        ),
+        mediaRole(
+          'reference-audio',
+          'referenceAudioUrls',
+          'reference_audio_urls',
+          'audio',
+          false,
+          0,
+          3
+        )
+      ];
     if (page.family.includes('VEO 3.1'))
       return [mediaRole('reference-image', 'imageUrls', 'image_urls', 'image', true, 3, 3)];
     if (page.family.startsWith('Happy Horse'))
@@ -797,7 +848,17 @@ function effectiveRatios(page: Page, modelId: string, workflow: VideoWorkflow) {
     workflow === 'image-to-video'
   )
     return null;
+  if (page.family === 'Hailuo 03') {
+    // Image-to-video follows the first image, and only reference generation offers adaptive.
+    if (workflow === 'image-to-video') return null;
+    if (workflow === 'reference-to-video') return ['adaptive', ...(page.ratios ?? [])] as const;
+  }
   return page.ratios ?? null;
+}
+
+function effectiveRatioDefault(page: Page, workflow: VideoWorkflow): string | undefined {
+  if (page.family === 'Hailuo 03' && workflow === 'reference-to-video') return 'adaptive';
+  return page.ratioDefault;
 }
 
 function fieldsFor(page: Page, modelId: string, workflow: VideoWorkflow): FieldDefinition[] {
@@ -862,7 +923,7 @@ function fieldsFor(page: Page, modelId: string, workflow: VideoWorkflow): FieldD
     fields.push(
       field('aspectRatio', 'aspect_ratio', 'enum', 'common', {
         required: page.family === 'Kling 2.6' || page.family === 'Seedance 1.5 Pro',
-        default: page.ratioDefault,
+        default: effectiveRatioDefault(page, workflow),
         enum: ratios
       })
     );
@@ -961,6 +1022,9 @@ function provenance(page: Page): RegistryProvenance {
 function rulesFor(page: Page, modelId: string, workflow: VideoWorkflow): string[] {
   return [
     ...(page.family.startsWith('Happy Horse') ? ['happy-horse-input-modes-exclusive'] : []),
+    ...(page.family === 'Hailuo 03' && workflow === 'reference-to-video'
+      ? ['hailuo-03-reference-requires-image-or-video']
+      : []),
     ...(page.family === 'Kling 1.6' ? ['kling-1.6-frames-elements-cfg-conflicts'] : []),
     ...(page.family === 'Kling 2.6' ? ['end-frame-requires-sound-false'] : []),
     ...(page.family.startsWith('Kling 3.0') || page.family.startsWith('Kling O3')

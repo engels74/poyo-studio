@@ -1,7 +1,7 @@
 {
   "version": 1,
   "registryVersion": "video-2026-07-20.1",
-  "reviewedAt": "2026-07-20T03:35:52Z",
+  "reviewedAt": "2026-08-05T19:51:27Z",
   "workflows": [
     {
       "entryKey": "grok-imagine:text-to-video",
@@ -1299,6 +1299,426 @@
       "manualDecisions": [
         "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "1080p supports 6 seconds only; end frames are not supported."
+      ]
+    },
+    {
+      "entryKey": "hailuo-03:text-to-video",
+      "status": "current",
+      "source": {
+        "pageSlug": "hailuo-03",
+        "markdownId": "model:video:hailuo-03:markdown",
+        "jsonId": "model:video:hailuo-03:json"
+      },
+      "schema": {
+        "publicModelId": "hailuo-03",
+        "workflow": "text-to-video",
+        "fields": [
+          {
+            "key": "prompt",
+            "apiKey": "prompt",
+            "kind": "text",
+            "level": "essential",
+            "required": true,
+            "min": 1,
+            "max": 2000
+          },
+          {
+            "key": "duration",
+            "apiKey": "duration",
+            "kind": "integer",
+            "level": "common",
+            "required": true,
+            "default": 5,
+            "min": 5,
+            "max": 15
+          },
+          {
+            "key": "aspectRatio",
+            "apiKey": "aspect_ratio",
+            "kind": "enum",
+            "level": "common",
+            "required": false,
+            "default": "16:9",
+            "enum": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"]
+          },
+          {
+            "key": "resolution",
+            "apiKey": "resolution",
+            "kind": "enum",
+            "level": "common",
+            "required": false,
+            "default": "2K",
+            "enum": ["2K"]
+          }
+        ],
+        "inputRoles": [],
+        "output": {
+          "mediaKind": "video",
+          "formats": ["video/mp4", "video/webm", "video/quicktime"],
+          "durations": {
+            "min": 5,
+            "max": 15
+          },
+          "resolutions": ["2K"],
+          "aspectRatios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"],
+          "seed": false,
+          "safetyChecker": false,
+          "audio": "none"
+        },
+        "validation": {
+          "conditionalRules": []
+        },
+        "payload": {
+          "adapter": "video-input-v1"
+        },
+        "limitations": [
+          "Image-to-video follows the first image and accepts no aspect ratio; reference audio requires a reference image or video."
+        ]
+      },
+      "vectors": {
+        "minimum": {
+          "values": {
+            "prompt": "studio video",
+            "duration": 5,
+            "aspectRatio": "16:9",
+            "resolution": "2K"
+          },
+          "request": {
+            "model": "hailuo-03",
+            "input": {
+              "prompt": "studio video",
+              "duration": 5,
+              "aspect_ratio": "16:9",
+              "resolution": "2K",
+              "enable_safety_checker": false
+            }
+          }
+        },
+        "advanced": {
+          "values": {
+            "prompt": "studio video",
+            "duration": 15,
+            "aspectRatio": "9:16",
+            "resolution": "2K"
+          },
+          "request": {
+            "model": "hailuo-03",
+            "input": {
+              "prompt": "studio video",
+              "duration": 15,
+              "aspect_ratio": "9:16",
+              "resolution": "2K",
+              "enable_safety_checker": false
+            }
+          },
+          "coveredFields": ["duration", "aspectRatio", "resolution"]
+        },
+        "invalid": {
+          "label": "required prompt",
+          "values": {
+            "duration": 5,
+            "aspectRatio": "16:9",
+            "resolution": "2K"
+          },
+          "issueIncludes": "prompt is required"
+        }
+      },
+      "manualDecisions": [
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
+        "Image-to-video follows the first image and accepts no aspect ratio; reference audio requires a reference image or video."
+      ]
+    },
+    {
+      "entryKey": "hailuo-03:image-to-video",
+      "status": "current",
+      "source": {
+        "pageSlug": "hailuo-03",
+        "markdownId": "model:video:hailuo-03:markdown",
+        "jsonId": "model:video:hailuo-03:json"
+      },
+      "schema": {
+        "publicModelId": "hailuo-03",
+        "workflow": "image-to-video",
+        "fields": [
+          {
+            "key": "prompt",
+            "apiKey": "prompt",
+            "kind": "text",
+            "level": "essential",
+            "required": true,
+            "min": 1,
+            "max": 2000
+          },
+          {
+            "key": "duration",
+            "apiKey": "duration",
+            "kind": "integer",
+            "level": "common",
+            "required": true,
+            "default": 5,
+            "min": 5,
+            "max": 15
+          },
+          {
+            "key": "resolution",
+            "apiKey": "resolution",
+            "kind": "enum",
+            "level": "common",
+            "required": false,
+            "default": "2K",
+            "enum": ["2K"]
+          }
+        ],
+        "inputRoles": [
+          {
+            "role": "start-frame",
+            "requestKey": "imageUrls",
+            "apiKey": "image_urls",
+            "mediaKind": "image",
+            "required": true,
+            "min": 1,
+            "max": 2,
+            "formats": ["image/jpeg", "image/png", "image/webp"]
+          }
+        ],
+        "output": {
+          "mediaKind": "video",
+          "formats": ["video/mp4", "video/webm", "video/quicktime"],
+          "durations": {
+            "min": 5,
+            "max": 15
+          },
+          "resolutions": ["2K"],
+          "aspectRatios": null,
+          "seed": false,
+          "safetyChecker": false,
+          "audio": "none"
+        },
+        "validation": {
+          "conditionalRules": []
+        },
+        "payload": {
+          "adapter": "video-input-v1"
+        },
+        "limitations": [
+          "Image-to-video follows the first image and accepts no aspect ratio; reference audio requires a reference image or video."
+        ]
+      },
+      "vectors": {
+        "minimum": {
+          "values": {
+            "prompt": "studio video",
+            "duration": 5,
+            "resolution": "2K",
+            "imageUrls": ["https://assets.example/start-frame-0.png"]
+          },
+          "request": {
+            "model": "hailuo-03",
+            "input": {
+              "prompt": "studio video",
+              "duration": 5,
+              "resolution": "2K",
+              "image_urls": ["https://assets.example/start-frame-0.png"],
+              "enable_safety_checker": false
+            }
+          }
+        },
+        "advanced": {
+          "values": {
+            "prompt": "studio video",
+            "duration": 15,
+            "resolution": "2K",
+            "imageUrls": ["https://assets.example/start-frame-0.png"]
+          },
+          "request": {
+            "model": "hailuo-03",
+            "input": {
+              "prompt": "studio video",
+              "duration": 15,
+              "resolution": "2K",
+              "image_urls": ["https://assets.example/start-frame-0.png"],
+              "enable_safety_checker": false
+            }
+          },
+          "coveredFields": ["duration", "resolution"]
+        },
+        "invalid": {
+          "label": "required prompt",
+          "values": {
+            "duration": 5,
+            "resolution": "2K",
+            "imageUrls": ["https://assets.example/start-frame-0.png"]
+          },
+          "issueIncludes": "prompt is required"
+        }
+      },
+      "manualDecisions": [
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
+        "Image-to-video follows the first image and accepts no aspect ratio; reference audio requires a reference image or video."
+      ]
+    },
+    {
+      "entryKey": "hailuo-03:reference-to-video",
+      "status": "current",
+      "source": {
+        "pageSlug": "hailuo-03",
+        "markdownId": "model:video:hailuo-03:markdown",
+        "jsonId": "model:video:hailuo-03:json"
+      },
+      "schema": {
+        "publicModelId": "hailuo-03",
+        "workflow": "reference-to-video",
+        "fields": [
+          {
+            "key": "prompt",
+            "apiKey": "prompt",
+            "kind": "text",
+            "level": "essential",
+            "required": true,
+            "min": 1,
+            "max": 2000
+          },
+          {
+            "key": "duration",
+            "apiKey": "duration",
+            "kind": "integer",
+            "level": "common",
+            "required": true,
+            "default": 5,
+            "min": 5,
+            "max": 15
+          },
+          {
+            "key": "aspectRatio",
+            "apiKey": "aspect_ratio",
+            "kind": "enum",
+            "level": "common",
+            "required": false,
+            "default": "adaptive",
+            "enum": ["adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"]
+          },
+          {
+            "key": "resolution",
+            "apiKey": "resolution",
+            "kind": "enum",
+            "level": "common",
+            "required": false,
+            "default": "2K",
+            "enum": ["2K"]
+          }
+        ],
+        "inputRoles": [
+          {
+            "role": "reference-image",
+            "requestKey": "referenceImageUrls",
+            "apiKey": "reference_image_urls",
+            "mediaKind": "image",
+            "required": false,
+            "min": 0,
+            "max": 9,
+            "formats": ["image/jpeg", "image/png", "image/webp"]
+          },
+          {
+            "role": "reference-video",
+            "requestKey": "referenceVideoUrls",
+            "apiKey": "reference_video_urls",
+            "mediaKind": "video",
+            "required": false,
+            "min": 0,
+            "max": 3,
+            "formats": ["video/mp4", "video/webm", "video/quicktime"]
+          },
+          {
+            "role": "reference-audio",
+            "requestKey": "referenceAudioUrls",
+            "apiKey": "reference_audio_urls",
+            "mediaKind": "audio",
+            "required": false,
+            "min": 0,
+            "max": 3,
+            "formats": ["audio/mpeg", "audio/wav", "audio/mp4"]
+          }
+        ],
+        "output": {
+          "mediaKind": "video",
+          "formats": ["video/mp4", "video/webm", "video/quicktime"],
+          "durations": {
+            "min": 5,
+            "max": 15
+          },
+          "resolutions": ["2K"],
+          "aspectRatios": ["adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"],
+          "seed": false,
+          "safetyChecker": false,
+          "audio": "none"
+        },
+        "validation": {
+          "conditionalRules": ["hailuo-03-reference-requires-image-or-video"]
+        },
+        "payload": {
+          "adapter": "video-input-v1"
+        },
+        "limitations": [
+          "Image-to-video follows the first image and accepts no aspect ratio; reference audio requires a reference image or video."
+        ]
+      },
+      "vectors": {
+        "minimum": {
+          "values": {
+            "prompt": "studio video",
+            "duration": 5,
+            "aspectRatio": "adaptive",
+            "resolution": "2K",
+            "referenceImageUrls": ["https://assets.example/reference.png"]
+          },
+          "request": {
+            "model": "hailuo-03",
+            "input": {
+              "prompt": "studio video",
+              "duration": 5,
+              "aspect_ratio": "adaptive",
+              "resolution": "2K",
+              "reference_image_urls": ["https://assets.example/reference.png"],
+              "enable_safety_checker": false
+            }
+          }
+        },
+        "advanced": {
+          "values": {
+            "prompt": "studio video",
+            "duration": 15,
+            "aspectRatio": "9:16",
+            "resolution": "2K",
+            "referenceImageUrls": ["https://assets.example/reference.png"]
+          },
+          "request": {
+            "model": "hailuo-03",
+            "input": {
+              "prompt": "studio video",
+              "duration": 15,
+              "aspect_ratio": "9:16",
+              "resolution": "2K",
+              "reference_image_urls": ["https://assets.example/reference.png"],
+              "enable_safety_checker": false
+            }
+          },
+          "coveredFields": ["duration", "aspectRatio", "resolution"]
+        },
+        "invalid": {
+          "label": "required prompt",
+          "values": {
+            "duration": 5,
+            "aspectRatio": "adaptive",
+            "resolution": "2K",
+            "referenceImageUrls": ["https://assets.example/reference.png"]
+          },
+          "issueIncludes": "prompt is required"
+        }
+      },
+      "manualDecisions": [
+        "Reviewed adapter condition: hailuo-03-reference-requires-image-or-video.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
+        "Image-to-video follows the first image and accepts no aspect ratio; reference audio requires a reference image or video."
       ]
     },
     {
