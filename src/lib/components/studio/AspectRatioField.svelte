@@ -3,6 +3,7 @@ import AppIcon from '$lib/components/ui/AppIcon.svelte';
 import { parseAspectRatioPresentation } from '$lib/features/generation/aspect-ratio-presentation';
 import { coerceFieldValue } from '$lib/features/generation/studio-controller';
 import type { AutomaticFieldChoice } from '$lib/features/generation/studio-sizing';
+import { explicitRatioTokens } from '$lib/features/registry/ratio-resolver';
 import type { FieldDefinition } from '$lib/features/registry/types';
 
 interface Props {
@@ -18,7 +19,7 @@ let id = $props.id();
 let label = $derived(
   field.key.replace(/([A-Z])/g, ' $1').replace(/^./, (character) => character.toUpperCase())
 );
-let options = $derived((field.enum ?? []).filter((option) => option !== 'auto'));
+let options = $derived(explicitRatioTokens(field.enum ?? []));
 </script>
 
 <fieldset class="grid gap-2" aria-describedby={`${id}-description`}>
