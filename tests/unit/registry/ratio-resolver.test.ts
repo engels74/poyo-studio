@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  explicitRatioTokens,
   parseRatioToken,
   ratioFromDimensions,
   resolveClosestRatio,
   resolveClosestRatioForDimensions,
-  supportedRatioTokens
+  supportedRatioTokens,
+  upstreamAutomaticRatioToken
 } from '../../../src/lib/features/registry/ratio-resolver';
 
 describe('parseRatioToken', () => {
@@ -117,5 +119,17 @@ describe('supportedRatioTokens', () => {
       '1:1',
       '512x512'
     ]);
+  });
+});
+
+describe('upstream automatic ratio tokens', () => {
+  test('recognizes both provider spellings of an automatic ratio', () => {
+    expect(upstreamAutomaticRatioToken(['auto', '16:9'])).toBe('auto');
+    expect(upstreamAutomaticRatioToken(['adaptive', '16:9'])).toBe('adaptive');
+    expect(upstreamAutomaticRatioToken(['16:9', '9:16'])).toBeNull();
+    expect(upstreamAutomaticRatioToken([])).toBeNull();
+  });
+  test('keeps only explicitly choosable tokens for the ratio tiles', () => {
+    expect(explicitRatioTokens(['auto', '16:9', 'adaptive', '1:1 HD'])).toEqual(['16:9', '1:1 HD']);
   });
 });

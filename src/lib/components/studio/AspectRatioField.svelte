@@ -3,6 +3,7 @@ import AppIcon from '$lib/components/ui/AppIcon.svelte';
 import { parseAspectRatioPresentation } from '$lib/features/generation/aspect-ratio-presentation';
 import { coerceFieldValue } from '$lib/features/generation/studio-controller';
 import type { AutomaticFieldChoice } from '$lib/features/generation/studio-sizing';
+import { explicitRatioTokens } from '$lib/features/registry/ratio-resolver';
 import type { FieldDefinition } from '$lib/features/registry/types';
 
 interface Props {
@@ -18,7 +19,7 @@ let id = $props.id();
 let label = $derived(
   field.key.replace(/([A-Z])/g, ' $1').replace(/^./, (character) => character.toUpperCase())
 );
-let options = $derived((field.enum ?? []).filter((option) => option !== 'auto'));
+let options = $derived(explicitRatioTokens(field.enum ?? []));
 </script>
 
 <fieldset class="grid gap-2" aria-describedby={`${id}-description`}>
@@ -42,7 +43,10 @@ let options = $derived((field.enum ?? []).filter((option) => option !== 'auto'))
           onchange={() => onchange(field.key, undefined, true)}
         />
         <span>{automaticChoice.label}</span>
-        {#if automatic}<AppIcon name="success" size={14} />{/if}
+        <!-- The check slot is always laid out so selecting a tile never reflows the wrapped rows. -->
+        <span class="flex size-3.5 shrink-0 items-center justify-center" class:invisible={!automatic}>
+          <AppIcon name="success" size={14} />
+        </span>
       </label>
     {/if}
     {#each options as option (option)}
@@ -73,7 +77,9 @@ let options = $derived((field.enum ?? []).filter((option) => option !== 'auto'))
           </span>
         {/if}
         <span>{option}</span>
-        {#if selected}<AppIcon name="success" size={14} />{/if}
+        <span class="flex size-3.5 shrink-0 items-center justify-center" class:invisible={!selected}>
+          <AppIcon name="success" size={14} />
+        </span>
       </label>
     {/each}
   </div>

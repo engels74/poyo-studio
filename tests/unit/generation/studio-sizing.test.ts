@@ -4,10 +4,12 @@ import {
   automaticFieldChoice,
   automaticSizingIssues,
   initialAutomaticFields,
+  preselectedResolutionToken,
   resolvedGuidedValues,
   restoreAutomaticFields
 } from '../../../src/lib/features/generation/studio-sizing';
 import { IMAGE_REGISTRY_ENTRIES } from '../../../src/lib/features/registry/image-registry';
+import { VIDEO_REGISTRY_ENTRIES } from '../../../src/lib/features/registry/video-registry';
 
 function entry(key: string) {
   const result = IMAGE_REGISTRY_ENTRIES.find((candidate) => candidate.key === key);
@@ -15,12 +17,18 @@ function entry(key: string) {
   return result;
 }
 
-function portraitReference(): Record<string, StudioRoleInput[]> {
+function videoEntry(key: string) {
+  const result = VIDEO_REGISTRY_ENTRIES.find((candidate) => candidate.key === key);
+  if (!result) throw new Error(`Missing video entry ${key}`);
+  return result;
+}
+
+function portraitImage(role: string): Record<string, StudioRoleInput[]> {
   return {
-    reference: [
+    [role]: [
       {
         id: 'portrait',
-        role: 'reference',
+        role,
         source: 'uploaded',
         url: 'https://assets.test/portrait.png',
         localSourceId: 'source-portrait',
@@ -32,6 +40,10 @@ function portraitReference(): Record<string, StudioRoleInput[]> {
       }
     ]
   };
+}
+
+function portraitReference(): Record<string, StudioRoleInput[]> {
+  return portraitImage('reference');
 }
 
 describe('studio automatic sizing', () => {
@@ -177,5 +189,130 @@ describe('studio automatic sizing', () => {
       aspectRatio: false,
       resolution: true
     });
+  });
+
+  test('SIZE-07 preselects the largest documented resolution tier instead of a lower default', () => {
+    const seedream = entry('seedream-5.0-pro-edit:image-edit');
+    expect(preselectedResolutionToken(seedream)).toBe('2K');
+    expect(initialAutomaticFields(seedream).resolution).toBe(false);
+    // The reviewed default stays truthful behind the automatic tile.
+    expect(automaticFieldChoice(seedream, 'resolution', {})).toMatchObject({
+      value: '1K',
+      kind: 'registry-default'
+    });
+
+    // Flux.2 requires an explicit resolution, so the preselection also removes a blocked start.
+    const flux = entry('flux-2-pro:text-to-image');
+    expect(preselectedResolutionToken(flux)).toBe('2K');
+    expect(initialAutomaticFields(flux)).toEqual({ aspectRatio: true, resolution: false });
+
+    // Union-size families own a single size field, so a defaulted ratio keeps it.
+    const unionSize = entry('seedream-4.5:text-to-image');
+    expect(unionSize.validation.conditionalRules).toContain(
+      'size-is-one-of-resolution-ratio-or-custom'
+    );
+    expect(preselectedResolutionToken(unionSize)).toBe('4K');
+    expect(
+      preselectedResolutionToken({
+        ...unionSize,
+        fields: unionSize.fields.map((field) =>
+          field.key === 'aspectRatio' ? { ...field, default: '1:1' } : field
+        )
+      })
+    ).toBeUndefined();
+
+    // Models without a resolution choice keep their existing automatic behaviour.
+    expect(preselectedResolutionToken(entry('flux-dev:text-to-image'))).toBeUndefined();
+    expect(preselectedResolutionToken(videoEntry('hailuo-02-pro:text-to-video'))).toBeUndefined();
+  });
+
+  test('SIZE-08 keeps reviewed defaults when a documented rule couples resolution to duration', () => {
+    const veo = videoEntry('veo3.1-lite-official:text-to-video');
+    expect(veo.validation.conditionalRules).toContain('generation-type-model-duration-matrix');
+    expect(preselectedResolutionToken(veo)).toBeUndefined();
+    expect(initialAutomaticFields(veo).resolution).toBe(true);
+  });
+
+  test('SIZE-09 derives a video output ratio from a lone measured input image', () => {
+    const model = videoEntry('runway-gen-4.5:image-to-video');
+    expect(initialAutomaticFields(model).aspectRatio).toBe(true);
+    expect(automaticFieldChoice(model, 'aspectRatio', {})).toMatchObject({
+      available: true,
+      value: '16:9',
+      kind: 'registry-default'
+    });
+    const choice = automaticFieldChoice(model, 'aspectRatio', portraitImage('image'));
+    expect(choice).toMatchObject({ available: true, value: '9:16', kind: 'source' });
+    expect(choice.label).toContain('9:16');
+    expect(
+      resolvedGuidedValues(
+        model,
+        { prompt: 'Animate it', aspectRatio: '16:9' },
+        portraitImage('image'),
+        {
+          aspectRatio: true,
+          resolution: false
+        }
+      )
+    ).toMatchObject({ aspectRatio: '9:16' });
+    expect(automaticSizingIssues(model, {}, { aspectRatio: true, resolution: false })).toHaveLength(
+      0
+    );
+  });
+
+  test('SIZE-10 leaves video-sourced workflows on their documented ratio', () => {
+    const videoDriven = videoEntry('happy-horse:video-edit');
+    expect(videoDriven.inputRoles.some((role) => role.mediaKind === 'video' && role.required)).toBe(
+      true
+    );
+    expect(
+      automaticFieldChoice(videoDriven, 'aspectRatio', portraitImage('reference-image'))
+    ).toMatchObject({ value: '16:9', kind: 'registry-default' });
+
+    const model = videoEntry('runway-gen-4.5:image-to-video');
+    const withOptionalVideo = {
+      ...model,
+      inputRoles: [
+        ...model.inputRoles,
+        {
+          role: 'source-video' as const,
+          requestKey: 'videoUrl' as const,
+          apiKey: 'video_url',
+          mediaKind: 'video' as const,
+          required: false,
+          min: 0,
+          max: 1,
+          formats: ['video/mp4']
+        }
+      ]
+    };
+    const inputs = portraitImage('image');
+    expect(automaticFieldChoice(withOptionalVideo, 'aspectRatio', inputs)).toMatchObject({
+      value: '9:16',
+      kind: 'source'
+    });
+    inputs['source-video'] = [
+      {
+        id: 'clip',
+        role: 'source-video',
+        source: 'uploaded',
+        url: 'https://assets.test/clip.mp4',
+        name: 'clip.mp4',
+        mediaKind: 'video',
+        durationSeconds: 4,
+        metadataProbe: 'measured'
+      }
+    ];
+    expect(automaticFieldChoice(withOptionalVideo, 'aspectRatio', inputs)).toMatchObject({
+      value: '16:9',
+      kind: 'registry-default'
+    });
+  });
+
+  test('SIZE-11 treats the provider adaptive token as genuine upstream automatic', () => {
+    const model = videoEntry('hailuo-03:reference-to-video');
+    const choice = automaticFieldChoice(model, 'aspectRatio', portraitImage('reference-image'));
+    expect(choice).toMatchObject({ available: true, value: 'adaptive', kind: 'upstream-auto' });
+    expect(initialAutomaticFields(model).aspectRatio).toBe(true);
   });
 });

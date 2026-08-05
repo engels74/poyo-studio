@@ -1,7 +1,7 @@
 {
   "version": 1,
   "registryVersion": "video-2026-07-20.1",
-  "reviewedAt": "2026-07-20T03:35:52Z",
+  "reviewedAt": "2026-08-05T19:51:27Z",
   "workflows": [
     {
       "entryKey": "grok-imagine:text-to-video",
@@ -82,7 +82,8 @@
               "prompt": "studio video",
               "duration": 6,
               "aspect_ratio": "1:1",
-              "mode": "fun"
+              "mode": "fun",
+              "enable_safety_checker": false
             }
           }
         },
@@ -99,7 +100,8 @@
               "prompt": "studio video",
               "duration": 10,
               "aspect_ratio": "9:16",
-              "mode": "spicy"
+              "mode": "spicy",
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "aspectRatio", "mode"]
@@ -114,7 +116,9 @@
           "issueIncludes": "prompt is required"
         }
       },
-      "manualDecisions": []
+      "manualDecisions": [
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live."
+      ]
     },
     {
       "entryKey": "grok-imagine:image-to-video",
@@ -208,7 +212,8 @@
               "duration": 6,
               "aspect_ratio": "1:1",
               "mode": "fun",
-              "image_urls": ["https://assets.example/image-0.png"]
+              "image_urls": ["https://assets.example/image-0.png"],
+              "enable_safety_checker": false
             }
           }
         },
@@ -227,7 +232,8 @@
               "duration": 10,
               "aspect_ratio": "9:16",
               "mode": "spicy",
-              "image_urls": ["https://assets.example/image-0.png"]
+              "image_urls": ["https://assets.example/image-0.png"],
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "aspectRatio", "mode"]
@@ -243,7 +249,9 @@
           "issueIncludes": "prompt is required"
         }
       },
-      "manualDecisions": []
+      "manualDecisions": [
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live."
+      ]
     },
     {
       "entryKey": "grok-imagine-video-1.5:image-to-video",
@@ -333,7 +341,8 @@
               "prompt": "studio video",
               "duration": 6,
               "resolution": "720p",
-              "image_urls": ["https://assets.example/image-0.png"]
+              "image_urls": ["https://assets.example/image-0.png"],
+              "enable_safety_checker": false
             }
           }
         },
@@ -350,7 +359,8 @@
               "prompt": "studio video",
               "duration": 15,
               "resolution": "720p",
-              "image_urls": ["https://assets.example/image-0.png"]
+              "image_urls": ["https://assets.example/image-0.png"],
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "resolution"]
@@ -365,7 +375,9 @@
           "issueIncludes": "prompt is required"
         }
       },
-      "manualDecisions": []
+      "manualDecisions": [
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live."
+      ]
     },
     {
       "entryKey": "hailuo-02:text-to-video",
@@ -449,7 +461,8 @@
               "prompt": "studio video",
               "duration": 6,
               "resolution": "512P",
-              "prompt_optimizer": true
+              "prompt_optimizer": true,
+              "enable_safety_checker": false
             }
           }
         },
@@ -466,7 +479,8 @@
               "prompt": "studio video",
               "duration": 10,
               "resolution": "768P",
-              "prompt_optimizer": false
+              "prompt_optimizer": false,
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "resolution", "promptOptimizer"]
@@ -482,6 +496,7 @@
         }
       },
       "manualDecisions": [
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "The standard end-frame workflow requires 768P; Pro is fixed to 1080P and 6 seconds."
       ]
     },
@@ -580,7 +595,8 @@
               "duration": 6,
               "resolution": "512P",
               "prompt_optimizer": true,
-              "image_urls": ["https://assets.example/image-0.png"]
+              "image_urls": ["https://assets.example/image-0.png"],
+              "enable_safety_checker": false
             }
           }
         },
@@ -599,7 +615,8 @@
               "duration": 10,
               "resolution": "768P",
               "prompt_optimizer": false,
-              "image_urls": ["https://assets.example/image-0.png"]
+              "image_urls": ["https://assets.example/image-0.png"],
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "resolution", "promptOptimizer"]
@@ -616,6 +633,7 @@
         }
       },
       "manualDecisions": [
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "The standard end-frame workflow requires 768P; Pro is fixed to 1080P and 6 seconds."
       ]
     },
@@ -726,7 +744,8 @@
               "resolution": "768P",
               "prompt_optimizer": true,
               "image_urls": ["https://assets.example/start-frame-0.png"],
-              "end_image_url": "https://assets.example/end-frame-0.png"
+              "end_image_url": "https://assets.example/end-frame-0.png",
+              "enable_safety_checker": false
             }
           }
         },
@@ -747,7 +766,8 @@
               "resolution": "768P",
               "prompt_optimizer": false,
               "image_urls": ["https://assets.example/start-frame-0.png"],
-              "end_image_url": "https://assets.example/end-frame-0.png"
+              "end_image_url": "https://assets.example/end-frame-0.png",
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "resolution", "promptOptimizer"]
@@ -765,6 +785,7 @@
         }
       },
       "manualDecisions": [
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "The standard end-frame workflow requires 768P; Pro is fixed to 1080P and 6 seconds."
       ]
     },
@@ -850,7 +871,8 @@
               "prompt": "studio video",
               "duration": 6,
               "resolution": "1080P",
-              "prompt_optimizer": true
+              "prompt_optimizer": true,
+              "enable_safety_checker": false
             }
           }
         },
@@ -867,7 +889,8 @@
               "prompt": "studio video",
               "duration": 6,
               "resolution": "1080P",
-              "prompt_optimizer": false
+              "prompt_optimizer": false,
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "resolution", "promptOptimizer"]
@@ -883,6 +906,7 @@
         }
       },
       "manualDecisions": [
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "The standard end-frame workflow requires 768P; Pro is fixed to 1080P and 6 seconds."
       ]
     },
@@ -981,7 +1005,8 @@
               "duration": 6,
               "resolution": "1080P",
               "prompt_optimizer": true,
-              "image_urls": ["https://assets.example/image-0.png"]
+              "image_urls": ["https://assets.example/image-0.png"],
+              "enable_safety_checker": false
             }
           }
         },
@@ -1000,7 +1025,8 @@
               "duration": 6,
               "resolution": "1080P",
               "prompt_optimizer": false,
-              "image_urls": ["https://assets.example/image-0.png"]
+              "image_urls": ["https://assets.example/image-0.png"],
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "resolution", "promptOptimizer"]
@@ -1017,6 +1043,7 @@
         }
       },
       "manualDecisions": [
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "The standard end-frame workflow requires 768P; Pro is fixed to 1080P and 6 seconds."
       ]
     },
@@ -1100,7 +1127,8 @@
               "prompt": "studio video",
               "duration": 6,
               "resolution": "768p",
-              "prompt_optimizer": true
+              "prompt_optimizer": true,
+              "enable_safety_checker": false
             }
           }
         },
@@ -1117,7 +1145,8 @@
               "prompt": "studio video",
               "duration": 10,
               "resolution": "768p",
-              "prompt_optimizer": false
+              "prompt_optimizer": false,
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "promptOptimizer"]
@@ -1132,7 +1161,10 @@
           "issueIncludes": "prompt is required"
         }
       },
-      "manualDecisions": ["1080p supports 6 seconds only; end frames are not supported."]
+      "manualDecisions": [
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
+        "1080p supports 6 seconds only; end frames are not supported."
+      ]
     },
     {
       "entryKey": "hailuo-2.3:image-to-video",
@@ -1227,7 +1259,8 @@
               "duration": 6,
               "resolution": "768p",
               "prompt_optimizer": true,
-              "start_image_url": "https://assets.example/start-frame-0.png"
+              "start_image_url": "https://assets.example/start-frame-0.png",
+              "enable_safety_checker": false
             }
           }
         },
@@ -1246,7 +1279,8 @@
               "duration": 10,
               "resolution": "768p",
               "prompt_optimizer": false,
-              "start_image_url": "https://assets.example/start-frame-0.png"
+              "start_image_url": "https://assets.example/start-frame-0.png",
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "promptOptimizer"]
@@ -1262,7 +1296,430 @@
           "issueIncludes": "prompt is required"
         }
       },
-      "manualDecisions": ["1080p supports 6 seconds only; end frames are not supported."]
+      "manualDecisions": [
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
+        "1080p supports 6 seconds only; end frames are not supported."
+      ]
+    },
+    {
+      "entryKey": "hailuo-03:text-to-video",
+      "status": "current",
+      "source": {
+        "pageSlug": "hailuo-03",
+        "markdownId": "model:video:hailuo-03:markdown",
+        "jsonId": "model:video:hailuo-03:json"
+      },
+      "schema": {
+        "publicModelId": "hailuo-03",
+        "workflow": "text-to-video",
+        "fields": [
+          {
+            "key": "prompt",
+            "apiKey": "prompt",
+            "kind": "text",
+            "level": "essential",
+            "required": true,
+            "min": 1,
+            "max": 2000
+          },
+          {
+            "key": "duration",
+            "apiKey": "duration",
+            "kind": "integer",
+            "level": "common",
+            "required": true,
+            "default": 5,
+            "min": 5,
+            "max": 15
+          },
+          {
+            "key": "aspectRatio",
+            "apiKey": "aspect_ratio",
+            "kind": "enum",
+            "level": "common",
+            "required": false,
+            "default": "16:9",
+            "enum": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"]
+          },
+          {
+            "key": "resolution",
+            "apiKey": "resolution",
+            "kind": "enum",
+            "level": "common",
+            "required": false,
+            "default": "2K",
+            "enum": ["2K"]
+          }
+        ],
+        "inputRoles": [],
+        "output": {
+          "mediaKind": "video",
+          "formats": ["video/mp4", "video/webm", "video/quicktime"],
+          "durations": {
+            "min": 5,
+            "max": 15
+          },
+          "resolutions": ["2K"],
+          "aspectRatios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"],
+          "seed": false,
+          "safetyChecker": false,
+          "audio": "none"
+        },
+        "validation": {
+          "conditionalRules": []
+        },
+        "payload": {
+          "adapter": "video-input-v1"
+        },
+        "limitations": [
+          "Image-to-video follows the first image and accepts no aspect ratio; reference audio requires a reference image or video."
+        ]
+      },
+      "vectors": {
+        "minimum": {
+          "values": {
+            "prompt": "studio video",
+            "duration": 5,
+            "aspectRatio": "16:9",
+            "resolution": "2K"
+          },
+          "request": {
+            "model": "hailuo-03",
+            "input": {
+              "prompt": "studio video",
+              "duration": 5,
+              "aspect_ratio": "16:9",
+              "resolution": "2K",
+              "enable_safety_checker": false
+            }
+          }
+        },
+        "advanced": {
+          "values": {
+            "prompt": "studio video",
+            "duration": 15,
+            "aspectRatio": "9:16",
+            "resolution": "2K"
+          },
+          "request": {
+            "model": "hailuo-03",
+            "input": {
+              "prompt": "studio video",
+              "duration": 15,
+              "aspect_ratio": "9:16",
+              "resolution": "2K",
+              "enable_safety_checker": false
+            }
+          },
+          "coveredFields": ["duration", "aspectRatio", "resolution"]
+        },
+        "invalid": {
+          "label": "required prompt",
+          "values": {
+            "duration": 5,
+            "aspectRatio": "16:9",
+            "resolution": "2K"
+          },
+          "issueIncludes": "prompt is required"
+        }
+      },
+      "manualDecisions": [
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
+        "Image-to-video follows the first image and accepts no aspect ratio; reference audio requires a reference image or video."
+      ]
+    },
+    {
+      "entryKey": "hailuo-03:image-to-video",
+      "status": "current",
+      "source": {
+        "pageSlug": "hailuo-03",
+        "markdownId": "model:video:hailuo-03:markdown",
+        "jsonId": "model:video:hailuo-03:json"
+      },
+      "schema": {
+        "publicModelId": "hailuo-03",
+        "workflow": "image-to-video",
+        "fields": [
+          {
+            "key": "prompt",
+            "apiKey": "prompt",
+            "kind": "text",
+            "level": "essential",
+            "required": true,
+            "min": 1,
+            "max": 2000
+          },
+          {
+            "key": "duration",
+            "apiKey": "duration",
+            "kind": "integer",
+            "level": "common",
+            "required": true,
+            "default": 5,
+            "min": 5,
+            "max": 15
+          },
+          {
+            "key": "resolution",
+            "apiKey": "resolution",
+            "kind": "enum",
+            "level": "common",
+            "required": false,
+            "default": "2K",
+            "enum": ["2K"]
+          }
+        ],
+        "inputRoles": [
+          {
+            "role": "start-frame",
+            "requestKey": "imageUrls",
+            "apiKey": "image_urls",
+            "mediaKind": "image",
+            "required": true,
+            "min": 1,
+            "max": 2,
+            "formats": ["image/jpeg", "image/png", "image/webp"]
+          }
+        ],
+        "output": {
+          "mediaKind": "video",
+          "formats": ["video/mp4", "video/webm", "video/quicktime"],
+          "durations": {
+            "min": 5,
+            "max": 15
+          },
+          "resolutions": ["2K"],
+          "aspectRatios": null,
+          "seed": false,
+          "safetyChecker": false,
+          "audio": "none"
+        },
+        "validation": {
+          "conditionalRules": []
+        },
+        "payload": {
+          "adapter": "video-input-v1"
+        },
+        "limitations": [
+          "Image-to-video follows the first image and accepts no aspect ratio; reference audio requires a reference image or video."
+        ]
+      },
+      "vectors": {
+        "minimum": {
+          "values": {
+            "prompt": "studio video",
+            "duration": 5,
+            "resolution": "2K",
+            "imageUrls": ["https://assets.example/start-frame-0.png"]
+          },
+          "request": {
+            "model": "hailuo-03",
+            "input": {
+              "prompt": "studio video",
+              "duration": 5,
+              "resolution": "2K",
+              "image_urls": ["https://assets.example/start-frame-0.png"],
+              "enable_safety_checker": false
+            }
+          }
+        },
+        "advanced": {
+          "values": {
+            "prompt": "studio video",
+            "duration": 15,
+            "resolution": "2K",
+            "imageUrls": ["https://assets.example/start-frame-0.png"]
+          },
+          "request": {
+            "model": "hailuo-03",
+            "input": {
+              "prompt": "studio video",
+              "duration": 15,
+              "resolution": "2K",
+              "image_urls": ["https://assets.example/start-frame-0.png"],
+              "enable_safety_checker": false
+            }
+          },
+          "coveredFields": ["duration", "resolution"]
+        },
+        "invalid": {
+          "label": "required prompt",
+          "values": {
+            "duration": 5,
+            "resolution": "2K",
+            "imageUrls": ["https://assets.example/start-frame-0.png"]
+          },
+          "issueIncludes": "prompt is required"
+        }
+      },
+      "manualDecisions": [
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
+        "Image-to-video follows the first image and accepts no aspect ratio; reference audio requires a reference image or video."
+      ]
+    },
+    {
+      "entryKey": "hailuo-03:reference-to-video",
+      "status": "current",
+      "source": {
+        "pageSlug": "hailuo-03",
+        "markdownId": "model:video:hailuo-03:markdown",
+        "jsonId": "model:video:hailuo-03:json"
+      },
+      "schema": {
+        "publicModelId": "hailuo-03",
+        "workflow": "reference-to-video",
+        "fields": [
+          {
+            "key": "prompt",
+            "apiKey": "prompt",
+            "kind": "text",
+            "level": "essential",
+            "required": true,
+            "min": 1,
+            "max": 2000
+          },
+          {
+            "key": "duration",
+            "apiKey": "duration",
+            "kind": "integer",
+            "level": "common",
+            "required": true,
+            "default": 5,
+            "min": 5,
+            "max": 15
+          },
+          {
+            "key": "aspectRatio",
+            "apiKey": "aspect_ratio",
+            "kind": "enum",
+            "level": "common",
+            "required": false,
+            "default": "adaptive",
+            "enum": ["adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"]
+          },
+          {
+            "key": "resolution",
+            "apiKey": "resolution",
+            "kind": "enum",
+            "level": "common",
+            "required": false,
+            "default": "2K",
+            "enum": ["2K"]
+          }
+        ],
+        "inputRoles": [
+          {
+            "role": "reference-image",
+            "requestKey": "referenceImageUrls",
+            "apiKey": "reference_image_urls",
+            "mediaKind": "image",
+            "required": false,
+            "min": 0,
+            "max": 9,
+            "formats": ["image/jpeg", "image/png", "image/webp"]
+          },
+          {
+            "role": "reference-video",
+            "requestKey": "referenceVideoUrls",
+            "apiKey": "reference_video_urls",
+            "mediaKind": "video",
+            "required": false,
+            "min": 0,
+            "max": 3,
+            "formats": ["video/mp4", "video/webm", "video/quicktime"]
+          },
+          {
+            "role": "reference-audio",
+            "requestKey": "referenceAudioUrls",
+            "apiKey": "reference_audio_urls",
+            "mediaKind": "audio",
+            "required": false,
+            "min": 0,
+            "max": 3,
+            "formats": ["audio/mpeg", "audio/wav", "audio/mp4"]
+          }
+        ],
+        "output": {
+          "mediaKind": "video",
+          "formats": ["video/mp4", "video/webm", "video/quicktime"],
+          "durations": {
+            "min": 5,
+            "max": 15
+          },
+          "resolutions": ["2K"],
+          "aspectRatios": ["adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"],
+          "seed": false,
+          "safetyChecker": false,
+          "audio": "none"
+        },
+        "validation": {
+          "conditionalRules": ["hailuo-03-reference-requires-image-or-video"]
+        },
+        "payload": {
+          "adapter": "video-input-v1"
+        },
+        "limitations": [
+          "Image-to-video follows the first image and accepts no aspect ratio; reference audio requires a reference image or video."
+        ]
+      },
+      "vectors": {
+        "minimum": {
+          "values": {
+            "prompt": "studio video",
+            "duration": 5,
+            "aspectRatio": "adaptive",
+            "resolution": "2K",
+            "referenceImageUrls": ["https://assets.example/reference.png"]
+          },
+          "request": {
+            "model": "hailuo-03",
+            "input": {
+              "prompt": "studio video",
+              "duration": 5,
+              "aspect_ratio": "adaptive",
+              "resolution": "2K",
+              "reference_image_urls": ["https://assets.example/reference.png"],
+              "enable_safety_checker": false
+            }
+          }
+        },
+        "advanced": {
+          "values": {
+            "prompt": "studio video",
+            "duration": 15,
+            "aspectRatio": "9:16",
+            "resolution": "2K",
+            "referenceImageUrls": ["https://assets.example/reference.png"]
+          },
+          "request": {
+            "model": "hailuo-03",
+            "input": {
+              "prompt": "studio video",
+              "duration": 15,
+              "aspect_ratio": "9:16",
+              "resolution": "2K",
+              "reference_image_urls": ["https://assets.example/reference.png"],
+              "enable_safety_checker": false
+            }
+          },
+          "coveredFields": ["duration", "aspectRatio", "resolution"]
+        },
+        "invalid": {
+          "label": "required prompt",
+          "values": {
+            "duration": 5,
+            "aspectRatio": "adaptive",
+            "resolution": "2K",
+            "referenceImageUrls": ["https://assets.example/reference.png"]
+          },
+          "issueIncludes": "prompt is required"
+        }
+      },
+      "manualDecisions": [
+        "Reviewed adapter condition: hailuo-03-reference-requires-image-or-video.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
+        "Image-to-video follows the first image and accepts no aspect ratio; reference audio requires a reference image or video."
+      ]
     },
     {
       "entryKey": "happy-horse-1.1:text-to-video",
@@ -2505,7 +2962,8 @@
             "input": {
               "prompt": "studio video",
               "duration": 5,
-              "aspect_ratio": "1:1"
+              "aspect_ratio": "1:1",
+              "enable_safety_checker": false
             }
           }
         },
@@ -2524,7 +2982,8 @@
               "duration": 10,
               "aspect_ratio": "9:16",
               "negative_prompt": "reviewed advanced value",
-              "cfg_scale": 1
+              "cfg_scale": 1,
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "aspectRatio", "negativePrompt", "cfgScale"]
@@ -2540,6 +2999,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: kling-1.6-frames-elements-cfg-conflicts.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Elements, start/end frames, and cfg controls have documented conflicts; end frame is Pro-only."
       ]
     },
@@ -2632,7 +3092,8 @@
             "input": {
               "prompt": "studio video",
               "duration": 5,
-              "image_urls": ["https://assets.example/image-0.png"]
+              "image_urls": ["https://assets.example/image-0.png"],
+              "enable_safety_checker": false
             }
           }
         },
@@ -2651,7 +3112,8 @@
               "duration": 10,
               "negative_prompt": "reviewed advanced value",
               "cfg_scale": 1,
-              "image_urls": ["https://assets.example/image-0.png"]
+              "image_urls": ["https://assets.example/image-0.png"],
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "negativePrompt", "cfgScale"]
@@ -2667,6 +3129,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: kling-1.6-frames-elements-cfg-conflicts.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Elements, start/end frames, and cfg controls have documented conflicts; end frame is Pro-only."
       ]
     },
@@ -2758,7 +3221,8 @@
             "input": {
               "prompt": "studio video",
               "duration": 5,
-              "image_urls": ["https://assets.example/reference-image-0.png"]
+              "image_urls": ["https://assets.example/reference-image-0.png"],
+              "enable_safety_checker": false
             }
           }
         },
@@ -2775,7 +3239,8 @@
               "prompt": "studio video",
               "duration": 10,
               "negative_prompt": "reviewed advanced value",
-              "image_urls": ["https://assets.example/reference-image-0.png"]
+              "image_urls": ["https://assets.example/reference-image-0.png"],
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "negativePrompt"]
@@ -2791,6 +3256,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: kling-1.6-frames-elements-cfg-conflicts.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Elements, start/end frames, and cfg controls have documented conflicts; end frame is Pro-only."
       ]
     },
@@ -2880,7 +3346,8 @@
             "input": {
               "prompt": "studio video",
               "duration": 5,
-              "aspect_ratio": "1:1"
+              "aspect_ratio": "1:1",
+              "enable_safety_checker": false
             }
           }
         },
@@ -2899,7 +3366,8 @@
               "duration": 10,
               "aspect_ratio": "9:16",
               "negative_prompt": "reviewed advanced value",
-              "cfg_scale": 1
+              "cfg_scale": 1,
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "aspectRatio", "negativePrompt", "cfgScale"]
@@ -2915,6 +3383,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: kling-1.6-frames-elements-cfg-conflicts.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Elements, start/end frames, and cfg controls have documented conflicts; end frame is Pro-only."
       ]
     },
@@ -3017,7 +3486,8 @@
               "prompt": "studio video",
               "duration": 5,
               "aspect_ratio": "1:1",
-              "image_urls": ["https://assets.example/image-0.png"]
+              "image_urls": ["https://assets.example/image-0.png"],
+              "enable_safety_checker": false
             }
           }
         },
@@ -3038,7 +3508,8 @@
               "aspect_ratio": "9:16",
               "negative_prompt": "reviewed advanced value",
               "cfg_scale": 1,
-              "image_urls": ["https://assets.example/image-0.png"]
+              "image_urls": ["https://assets.example/image-0.png"],
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "aspectRatio", "negativePrompt", "cfgScale"]
@@ -3055,6 +3526,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: kling-1.6-frames-elements-cfg-conflicts.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Elements, start/end frames, and cfg controls have documented conflicts; end frame is Pro-only."
       ]
     },
@@ -3169,7 +3641,8 @@
               "duration": 5,
               "aspect_ratio": "1:1",
               "start_image_url": "https://assets.example/start-frame-0.png",
-              "end_image_url": "https://assets.example/end-frame-0.png"
+              "end_image_url": "https://assets.example/end-frame-0.png",
+              "enable_safety_checker": false
             }
           }
         },
@@ -3192,7 +3665,8 @@
               "negative_prompt": "reviewed advanced value",
               "cfg_scale": 1,
               "start_image_url": "https://assets.example/start-frame-0.png",
-              "end_image_url": "https://assets.example/end-frame-0.png"
+              "end_image_url": "https://assets.example/end-frame-0.png",
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "aspectRatio", "negativePrompt", "cfgScale"]
@@ -3210,6 +3684,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: kling-1.6-frames-elements-cfg-conflicts.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Elements, start/end frames, and cfg controls have documented conflicts; end frame is Pro-only."
       ]
     },
@@ -3311,7 +3786,8 @@
               "prompt": "studio video",
               "duration": 5,
               "aspect_ratio": "1:1",
-              "image_urls": ["https://assets.example/reference-image-0.png"]
+              "image_urls": ["https://assets.example/reference-image-0.png"],
+              "enable_safety_checker": false
             }
           }
         },
@@ -3330,7 +3806,8 @@
               "duration": 10,
               "aspect_ratio": "9:16",
               "negative_prompt": "reviewed advanced value",
-              "image_urls": ["https://assets.example/reference-image-0.png"]
+              "image_urls": ["https://assets.example/reference-image-0.png"],
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "aspectRatio", "negativePrompt"]
@@ -3347,6 +3824,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: kling-1.6-frames-elements-cfg-conflicts.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Elements, start/end frames, and cfg controls have documented conflicts; end frame is Pro-only."
       ]
     },
@@ -3429,7 +3907,8 @@
             "input": {
               "prompt": "studio video",
               "duration": 5,
-              "start_image_url": "https://assets.example/start-frame-0.png"
+              "start_image_url": "https://assets.example/start-frame-0.png",
+              "enable_safety_checker": false
             }
           }
         },
@@ -3446,7 +3925,8 @@
               "prompt": "studio video",
               "duration": 10,
               "negative_prompt": "reviewed advanced value",
-              "start_image_url": "https://assets.example/start-frame-0.png"
+              "start_image_url": "https://assets.example/start-frame-0.png",
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "negativePrompt"]
@@ -3460,7 +3940,10 @@
           "issueIncludes": "prompt is required"
         }
       },
-      "manualDecisions": ["A start frame is required; end frame is Pro-only."]
+      "manualDecisions": [
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
+        "A start frame is required; end frame is Pro-only."
+      ]
     },
     {
       "entryKey": "kling-2.1/pro:image-to-video",
@@ -3541,7 +4024,8 @@
             "input": {
               "prompt": "studio video",
               "duration": 5,
-              "start_image_url": "https://assets.example/start-frame-0.png"
+              "start_image_url": "https://assets.example/start-frame-0.png",
+              "enable_safety_checker": false
             }
           }
         },
@@ -3558,7 +4042,8 @@
               "prompt": "studio video",
               "duration": 10,
               "negative_prompt": "reviewed advanced value",
-              "start_image_url": "https://assets.example/start-frame-0.png"
+              "start_image_url": "https://assets.example/start-frame-0.png",
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "negativePrompt"]
@@ -3572,7 +4057,10 @@
           "issueIncludes": "prompt is required"
         }
       },
-      "manualDecisions": ["A start frame is required; end frame is Pro-only."]
+      "manualDecisions": [
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
+        "A start frame is required; end frame is Pro-only."
+      ]
     },
     {
       "entryKey": "kling-2.1/pro:frame-to-video",
@@ -3665,7 +4153,8 @@
               "prompt": "studio video",
               "duration": 5,
               "start_image_url": "https://assets.example/start-frame-0.png",
-              "end_image_url": "https://assets.example/end-frame-0.png"
+              "end_image_url": "https://assets.example/end-frame-0.png",
+              "enable_safety_checker": false
             }
           }
         },
@@ -3684,7 +4173,8 @@
               "duration": 10,
               "negative_prompt": "reviewed advanced value",
               "start_image_url": "https://assets.example/start-frame-0.png",
-              "end_image_url": "https://assets.example/end-frame-0.png"
+              "end_image_url": "https://assets.example/end-frame-0.png",
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "negativePrompt"]
@@ -3699,7 +4189,10 @@
           "issueIncludes": "prompt is required"
         }
       },
-      "manualDecisions": ["A start frame is required; end frame is Pro-only."]
+      "manualDecisions": [
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
+        "A start frame is required; end frame is Pro-only."
+      ]
     },
     {
       "entryKey": "kling-2.5-turbo-pro:text-to-video",
@@ -3777,7 +4270,8 @@
             "input": {
               "prompt": "studio video",
               "duration": 5,
-              "aspect_ratio": "1:1"
+              "aspect_ratio": "1:1",
+              "enable_safety_checker": false
             }
           }
         },
@@ -3794,7 +4288,8 @@
               "prompt": "studio video",
               "duration": 10,
               "aspect_ratio": "9:16",
-              "negative_prompt": "reviewed advanced value"
+              "negative_prompt": "reviewed advanced value",
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "aspectRatio", "negativePrompt"]
@@ -3808,7 +4303,9 @@
           "issueIncludes": "prompt is required"
         }
       },
-      "manualDecisions": []
+      "manualDecisions": [
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live."
+      ]
     },
     {
       "entryKey": "kling-2.5-turbo-pro:image-to-video",
@@ -3899,7 +4396,8 @@
               "prompt": "studio video",
               "duration": 5,
               "aspect_ratio": "1:1",
-              "start_image_url": "https://assets.example/start-frame-0.png"
+              "start_image_url": "https://assets.example/start-frame-0.png",
+              "enable_safety_checker": false
             }
           }
         },
@@ -3918,7 +4416,8 @@
               "duration": 10,
               "aspect_ratio": "9:16",
               "negative_prompt": "reviewed advanced value",
-              "start_image_url": "https://assets.example/start-frame-0.png"
+              "start_image_url": "https://assets.example/start-frame-0.png",
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "aspectRatio", "negativePrompt"]
@@ -3933,7 +4432,9 @@
           "issueIncludes": "prompt is required"
         }
       },
-      "manualDecisions": []
+      "manualDecisions": [
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live."
+      ]
     },
     {
       "entryKey": "kling-2.5-turbo-pro:frame-to-video",
@@ -4036,7 +4537,8 @@
               "duration": 5,
               "aspect_ratio": "1:1",
               "start_image_url": "https://assets.example/start-frame-0.png",
-              "end_image_url": "https://assets.example/end-frame-0.png"
+              "end_image_url": "https://assets.example/end-frame-0.png",
+              "enable_safety_checker": false
             }
           }
         },
@@ -4057,7 +4559,8 @@
               "aspect_ratio": "9:16",
               "negative_prompt": "reviewed advanced value",
               "start_image_url": "https://assets.example/start-frame-0.png",
-              "end_image_url": "https://assets.example/end-frame-0.png"
+              "end_image_url": "https://assets.example/end-frame-0.png",
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "aspectRatio", "negativePrompt"]
@@ -4073,7 +4576,9 @@
           "issueIncludes": "prompt is required"
         }
       },
-      "manualDecisions": []
+      "manualDecisions": [
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live."
+      ]
     },
     {
       "entryKey": "kling-2.6:text-to-video",
@@ -4155,7 +4660,8 @@
               "prompt": "studio video",
               "duration": 5,
               "aspect_ratio": "1:1",
-              "sound": true
+              "sound": true,
+              "enable_safety_checker": false
             }
           }
         },
@@ -4172,7 +4678,8 @@
               "prompt": "studio video",
               "duration": 10,
               "aspect_ratio": "9:16",
-              "sound": false
+              "sound": false,
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "aspectRatio", "sound"]
@@ -4189,6 +4696,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: end-frame-requires-sound-false.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Sound is required and must be false when an end frame is supplied."
       ]
     },
@@ -4285,7 +4793,8 @@
               "duration": 5,
               "aspect_ratio": "1:1",
               "sound": true,
-              "image_urls": ["https://assets.example/image-0.png"]
+              "image_urls": ["https://assets.example/image-0.png"],
+              "enable_safety_checker": false
             }
           }
         },
@@ -4304,7 +4813,8 @@
               "duration": 10,
               "aspect_ratio": "9:16",
               "sound": false,
-              "image_urls": ["https://assets.example/image-0.png"]
+              "image_urls": ["https://assets.example/image-0.png"],
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "aspectRatio", "sound"]
@@ -4322,6 +4832,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: end-frame-requires-sound-false.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Sound is required and must be false when an end frame is supplied."
       ]
     },
@@ -4424,7 +4935,8 @@
               "duration": 5,
               "aspect_ratio": "1:1",
               "image_urls": ["https://assets.example/start-frame-0.png"],
-              "end_image_url": "https://assets.example/end-frame-0.png"
+              "end_image_url": "https://assets.example/end-frame-0.png",
+              "enable_safety_checker": false
             }
           }
         },
@@ -4444,7 +4956,8 @@
               "duration": 10,
               "aspect_ratio": "9:16",
               "image_urls": ["https://assets.example/start-frame-0.png"],
-              "end_image_url": "https://assets.example/end-frame-0.png"
+              "end_image_url": "https://assets.example/end-frame-0.png",
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "aspectRatio"]
@@ -4462,6 +4975,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: end-frame-requires-sound-false.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Sound is required and must be false when an end frame is supplied."
       ]
     },
@@ -4561,7 +5075,8 @@
               "resolution": "720p",
               "character_orientation": "image",
               "image_urls": ["https://assets.example/image-0.png"],
-              "video_urls": ["https://assets.example/reference-video-0.mp4"]
+              "video_urls": ["https://assets.example/reference-video-0.mp4"],
+              "enable_safety_checker": false
             }
           }
         },
@@ -4579,7 +5094,8 @@
               "resolution": "1080p",
               "character_orientation": "image",
               "image_urls": ["https://assets.example/image-0.png"],
-              "video_urls": ["https://assets.example/reference-video-0.mp4"]
+              "video_urls": ["https://assets.example/reference-video-0.mp4"],
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["resolution"]
@@ -4597,6 +5113,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: orientation-controls-reference-video-duration.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Image orientation supports reference videos through 10s; video orientation supports 3–30s."
       ]
     },
@@ -4688,7 +5205,8 @@
               "prompt": "studio video",
               "duration": 3,
               "aspect_ratio": "1:1",
-              "sound": true
+              "sound": true,
+              "enable_safety_checker": false
             }
           }
         },
@@ -4706,7 +5224,8 @@
               "prompt": "studio video",
               "duration": 15,
               "aspect_ratio": "9:16",
-              "sound": false
+              "sound": false,
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "aspectRatio", "sound"]
@@ -4723,6 +5242,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: prompt-vs-multi-prompt-and-sound.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Prompt and multi_prompt are exclusive; multi-shot requires sound=true."
       ]
     },
@@ -4827,7 +5347,8 @@
               "duration": 3,
               "aspect_ratio": "1:1",
               "sound": true,
-              "image_urls": ["https://assets.example/start-frame-0.png"]
+              "image_urls": ["https://assets.example/start-frame-0.png"],
+              "enable_safety_checker": false
             }
           }
         },
@@ -4847,7 +5368,8 @@
               "duration": 15,
               "aspect_ratio": "9:16",
               "sound": false,
-              "image_urls": ["https://assets.example/start-frame-0.png"]
+              "image_urls": ["https://assets.example/start-frame-0.png"],
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "aspectRatio", "sound"]
@@ -4865,6 +5387,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: prompt-vs-multi-prompt-and-sound.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Prompt and multi_prompt are exclusive; multi-shot requires sound=true."
       ]
     },
@@ -4975,7 +5498,8 @@
                   "name": "subject",
                   "element_input_urls": ["https://assets.example/element.png"]
                 }
-              ]
+              ],
+              "enable_safety_checker": false
             }
           }
         },
@@ -5005,7 +5529,8 @@
                   "name": "subject",
                   "element_input_urls": ["https://assets.example/element.png"]
                 }
-              ]
+              ],
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "aspectRatio", "sound"]
@@ -5028,6 +5553,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: prompt-vs-multi-prompt-and-sound.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Prompt and multi_prompt are exclusive; multi-shot requires sound=true."
       ]
     },
@@ -5129,7 +5655,8 @@
               ],
               "duration": 3,
               "aspect_ratio": "1:1",
-              "sound": true
+              "sound": true,
+              "enable_safety_checker": false
             }
           }
         },
@@ -5157,7 +5684,8 @@
               ],
               "duration": 3,
               "aspect_ratio": "9:16",
-              "sound": true
+              "sound": true,
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["aspectRatio"]
@@ -5174,6 +5702,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: prompt-vs-multi-prompt-and-sound.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Prompt and multi_prompt are exclusive; multi-shot requires sound=true."
       ]
     },
@@ -5265,7 +5794,8 @@
               "prompt": "studio video",
               "duration": 3,
               "aspect_ratio": "1:1",
-              "sound": true
+              "sound": true,
+              "enable_safety_checker": false
             }
           }
         },
@@ -5283,7 +5813,8 @@
               "prompt": "studio video",
               "duration": 15,
               "aspect_ratio": "9:16",
-              "sound": false
+              "sound": false,
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "aspectRatio", "sound"]
@@ -5300,6 +5831,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: prompt-vs-multi-prompt-and-sound.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Prompt and multi_prompt are exclusive; multi-shot requires sound=true."
       ]
     },
@@ -5404,7 +5936,8 @@
               "duration": 3,
               "aspect_ratio": "1:1",
               "sound": true,
-              "image_urls": ["https://assets.example/start-frame-0.png"]
+              "image_urls": ["https://assets.example/start-frame-0.png"],
+              "enable_safety_checker": false
             }
           }
         },
@@ -5424,7 +5957,8 @@
               "duration": 15,
               "aspect_ratio": "9:16",
               "sound": false,
-              "image_urls": ["https://assets.example/start-frame-0.png"]
+              "image_urls": ["https://assets.example/start-frame-0.png"],
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "aspectRatio", "sound"]
@@ -5442,6 +5976,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: prompt-vs-multi-prompt-and-sound.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Prompt and multi_prompt are exclusive; multi-shot requires sound=true."
       ]
     },
@@ -5552,7 +6087,8 @@
                   "name": "subject",
                   "element_input_urls": ["https://assets.example/element.png"]
                 }
-              ]
+              ],
+              "enable_safety_checker": false
             }
           }
         },
@@ -5582,7 +6118,8 @@
                   "name": "subject",
                   "element_input_urls": ["https://assets.example/element.png"]
                 }
-              ]
+              ],
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "aspectRatio", "sound"]
@@ -5605,6 +6142,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: prompt-vs-multi-prompt-and-sound.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Prompt and multi_prompt are exclusive; multi-shot requires sound=true."
       ]
     },
@@ -5706,7 +6244,8 @@
               ],
               "duration": 3,
               "aspect_ratio": "1:1",
-              "sound": true
+              "sound": true,
+              "enable_safety_checker": false
             }
           }
         },
@@ -5734,7 +6273,8 @@
               ],
               "duration": 3,
               "aspect_ratio": "9:16",
-              "sound": true
+              "sound": true,
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["aspectRatio"]
@@ -5751,6 +6291,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: prompt-vs-multi-prompt-and-sound.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Prompt and multi_prompt are exclusive; multi-shot requires sound=true."
       ]
     },
@@ -5842,7 +6383,8 @@
               "prompt": "studio video",
               "duration": 3,
               "aspect_ratio": "1:1",
-              "sound": true
+              "sound": true,
+              "enable_safety_checker": false
             }
           }
         },
@@ -5860,7 +6402,8 @@
               "prompt": "studio video",
               "duration": 15,
               "aspect_ratio": "9:16",
-              "sound": false
+              "sound": false,
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "aspectRatio", "sound"]
@@ -5877,6 +6420,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: prompt-vs-multi-prompt-and-sound.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Prompt and multi_prompt are exclusive; multi-shot requires sound=true."
       ]
     },
@@ -5981,7 +6525,8 @@
               "duration": 3,
               "aspect_ratio": "1:1",
               "sound": true,
-              "image_urls": ["https://assets.example/start-frame-0.png"]
+              "image_urls": ["https://assets.example/start-frame-0.png"],
+              "enable_safety_checker": false
             }
           }
         },
@@ -6001,7 +6546,8 @@
               "duration": 15,
               "aspect_ratio": "9:16",
               "sound": false,
-              "image_urls": ["https://assets.example/start-frame-0.png"]
+              "image_urls": ["https://assets.example/start-frame-0.png"],
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "aspectRatio", "sound"]
@@ -6019,6 +6565,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: prompt-vs-multi-prompt-and-sound.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Prompt and multi_prompt are exclusive; multi-shot requires sound=true."
       ]
     },
@@ -6129,7 +6676,8 @@
                   "name": "subject",
                   "element_input_urls": ["https://assets.example/element.png"]
                 }
-              ]
+              ],
+              "enable_safety_checker": false
             }
           }
         },
@@ -6159,7 +6707,8 @@
                   "name": "subject",
                   "element_input_urls": ["https://assets.example/element.png"]
                 }
-              ]
+              ],
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "aspectRatio", "sound"]
@@ -6182,6 +6731,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: prompt-vs-multi-prompt-and-sound.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Prompt and multi_prompt are exclusive; multi-shot requires sound=true."
       ]
     },
@@ -6283,7 +6833,8 @@
               ],
               "duration": 3,
               "aspect_ratio": "1:1",
-              "sound": true
+              "sound": true,
+              "enable_safety_checker": false
             }
           }
         },
@@ -6311,7 +6862,8 @@
               ],
               "duration": 3,
               "aspect_ratio": "9:16",
-              "sound": true
+              "sound": true,
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["aspectRatio"]
@@ -6328,6 +6880,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: prompt-vs-multi-prompt-and-sound.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Prompt and multi_prompt are exclusive; multi-shot requires sound=true."
       ]
     },
@@ -6412,7 +6965,8 @@
               "multi_shots": false,
               "prompt": "studio video",
               "duration": 5,
-              "aspect_ratio": "16:9"
+              "aspect_ratio": "16:9",
+              "enable_safety_checker": false
             }
           }
         },
@@ -6428,7 +6982,8 @@
               "multi_shots": false,
               "prompt": "studio video",
               "duration": 15,
-              "aspect_ratio": "1:1"
+              "aspect_ratio": "1:1",
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "aspectRatio"]
@@ -6444,6 +6999,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: prompt-vs-multi-prompt-and-sound.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "multi_prompt contains 1–6 shots and total shot duration must equal duration."
       ]
     },
@@ -6530,7 +7086,8 @@
               "multi_shots": false,
               "prompt": "studio video",
               "duration": 5,
-              "image_urls": ["https://assets.example/image-0.png"]
+              "image_urls": ["https://assets.example/image-0.png"],
+              "enable_safety_checker": false
             }
           }
         },
@@ -6546,7 +7103,8 @@
               "multi_shots": false,
               "prompt": "studio video",
               "duration": 15,
-              "image_urls": ["https://assets.example/image-0.png"]
+              "image_urls": ["https://assets.example/image-0.png"],
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration"]
@@ -6562,6 +7120,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: prompt-vs-multi-prompt-and-sound.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "multi_prompt contains 1–6 shots and total shot duration must equal duration."
       ]
     },
@@ -6656,7 +7215,8 @@
                 }
               ],
               "duration": 5,
-              "aspect_ratio": "16:9"
+              "aspect_ratio": "16:9",
+              "enable_safety_checker": false
             }
           }
         },
@@ -6682,7 +7242,8 @@
                 }
               ],
               "duration": 5,
-              "aspect_ratio": "1:1"
+              "aspect_ratio": "1:1",
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["aspectRatio"]
@@ -6698,6 +7259,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: prompt-vs-multi-prompt-and-sound.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "multi_prompt contains 1–6 shots and total shot duration must equal duration."
       ]
     },
@@ -6782,7 +7344,8 @@
               "multi_shots": false,
               "prompt": "studio video",
               "duration": 5,
-              "aspect_ratio": "16:9"
+              "aspect_ratio": "16:9",
+              "enable_safety_checker": false
             }
           }
         },
@@ -6798,7 +7361,8 @@
               "multi_shots": false,
               "prompt": "studio video",
               "duration": 15,
-              "aspect_ratio": "1:1"
+              "aspect_ratio": "1:1",
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "aspectRatio"]
@@ -6814,6 +7378,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: prompt-vs-multi-prompt-and-sound.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "multi_prompt contains 1–6 shots and total shot duration must equal duration."
       ]
     },
@@ -6900,7 +7465,8 @@
               "multi_shots": false,
               "prompt": "studio video",
               "duration": 5,
-              "image_urls": ["https://assets.example/image-0.png"]
+              "image_urls": ["https://assets.example/image-0.png"],
+              "enable_safety_checker": false
             }
           }
         },
@@ -6916,7 +7482,8 @@
               "multi_shots": false,
               "prompt": "studio video",
               "duration": 15,
-              "image_urls": ["https://assets.example/image-0.png"]
+              "image_urls": ["https://assets.example/image-0.png"],
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration"]
@@ -6932,6 +7499,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: prompt-vs-multi-prompt-and-sound.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "multi_prompt contains 1–6 shots and total shot duration must equal duration."
       ]
     },
@@ -7026,7 +7594,8 @@
                 }
               ],
               "duration": 5,
-              "aspect_ratio": "16:9"
+              "aspect_ratio": "16:9",
+              "enable_safety_checker": false
             }
           }
         },
@@ -7052,7 +7621,8 @@
                 }
               ],
               "duration": 5,
-              "aspect_ratio": "1:1"
+              "aspect_ratio": "1:1",
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["aspectRatio"]
@@ -7068,6 +7638,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: prompt-vs-multi-prompt-and-sound.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "multi_prompt contains 1–6 shots and total shot duration must equal duration."
       ]
     },
@@ -7178,7 +7749,8 @@
               "resolution": "720p",
               "character_orientation": "image",
               "image_urls": ["https://assets.example/image-0.png"],
-              "video_urls": ["https://assets.example/reference-video-0.mp4"]
+              "video_urls": ["https://assets.example/reference-video-0.mp4"],
+              "enable_safety_checker": false
             }
           }
         },
@@ -7197,7 +7769,8 @@
               "resolution": "1080p",
               "character_orientation": "image",
               "image_urls": ["https://assets.example/image-0.png"],
-              "video_urls": ["https://assets.example/reference-video-0.mp4"]
+              "video_urls": ["https://assets.example/reference-video-0.mp4"],
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["resolution"]
@@ -7216,6 +7789,7 @@
       "manualDecisions": [
         "Reviewed adapter condition: prompt-vs-multi-prompt-and-sound.",
         "Reviewed adapter condition: orientation-controls-reference-video-duration.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "A single facial element is allowed only with video orientation."
       ]
     },
@@ -7254,6 +7828,7 @@
       },
       "vectors": null,
       "manualDecisions": [
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Excluded from initial scope because it is an audio-driven avatar workflow."
       ]
     },
@@ -7292,6 +7867,7 @@
       },
       "vectors": null,
       "manualDecisions": [
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Excluded from initial scope because it is an audio-driven avatar workflow."
       ]
     },
@@ -7385,7 +7961,8 @@
               "prompt": "studio video",
               "duration": 3,
               "aspect_ratio": "1:1",
-              "sound": true
+              "sound": true,
+              "enable_safety_checker": false
             }
           }
         },
@@ -7403,7 +7980,8 @@
               "prompt": "studio video",
               "duration": 15,
               "aspect_ratio": "9:16",
-              "sound": false
+              "sound": false,
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "aspectRatio", "sound"]
@@ -7420,6 +7998,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: prompt-vs-multi-prompt-and-sound.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Up to two image anchors and four references; multi-shot requires multi_prompt and sound=true."
       ]
     },
@@ -7516,7 +8095,8 @@
               "prompt": "studio video",
               "duration": 3,
               "sound": true,
-              "image_urls": ["https://assets.example/start-frame-0.png"]
+              "image_urls": ["https://assets.example/start-frame-0.png"],
+              "enable_safety_checker": false
             }
           }
         },
@@ -7534,7 +8114,8 @@
               "prompt": "studio video",
               "duration": 15,
               "sound": false,
-              "image_urls": ["https://assets.example/start-frame-0.png"]
+              "image_urls": ["https://assets.example/start-frame-0.png"],
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "sound"]
@@ -7551,6 +8132,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: prompt-vs-multi-prompt-and-sound.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Up to two image anchors and four references; multi-shot requires multi_prompt and sound=true."
       ]
     },
@@ -7674,7 +8256,8 @@
               "duration": 3,
               "aspect_ratio": "1:1",
               "sound": true,
-              "reference_image_urls": ["https://assets.example/reference-image-0.png"]
+              "reference_image_urls": ["https://assets.example/reference-image-0.png"],
+              "enable_safety_checker": false
             }
           }
         },
@@ -7694,7 +8277,8 @@
               "duration": 15,
               "aspect_ratio": "9:16",
               "sound": false,
-              "reference_image_urls": ["https://assets.example/reference-image-0.png"]
+              "reference_image_urls": ["https://assets.example/reference-image-0.png"],
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "aspectRatio", "sound"]
@@ -7712,6 +8296,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: prompt-vs-multi-prompt-and-sound.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Up to two image anchors and four references; multi-shot requires multi_prompt and sound=true."
       ]
     },
@@ -7815,7 +8400,8 @@
               ],
               "duration": 3,
               "aspect_ratio": "1:1",
-              "sound": true
+              "sound": true,
+              "enable_safety_checker": false
             }
           }
         },
@@ -7843,7 +8429,8 @@
               ],
               "duration": 3,
               "aspect_ratio": "9:16",
-              "sound": true
+              "sound": true,
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["aspectRatio"]
@@ -7860,6 +8447,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: prompt-vs-multi-prompt-and-sound.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Up to two image anchors and four references; multi-shot requires multi_prompt and sound=true."
       ]
     },
@@ -7953,7 +8541,8 @@
               "prompt": "studio video",
               "duration": 3,
               "aspect_ratio": "1:1",
-              "sound": true
+              "sound": true,
+              "enable_safety_checker": false
             }
           }
         },
@@ -7971,7 +8560,8 @@
               "prompt": "studio video",
               "duration": 15,
               "aspect_ratio": "9:16",
-              "sound": false
+              "sound": false,
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "aspectRatio", "sound"]
@@ -7988,6 +8578,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: prompt-vs-multi-prompt-and-sound.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Up to two image anchors and four references; multi-shot requires multi_prompt and sound=true."
       ]
     },
@@ -8084,7 +8675,8 @@
               "prompt": "studio video",
               "duration": 3,
               "sound": true,
-              "image_urls": ["https://assets.example/start-frame-0.png"]
+              "image_urls": ["https://assets.example/start-frame-0.png"],
+              "enable_safety_checker": false
             }
           }
         },
@@ -8102,7 +8694,8 @@
               "prompt": "studio video",
               "duration": 15,
               "sound": false,
-              "image_urls": ["https://assets.example/start-frame-0.png"]
+              "image_urls": ["https://assets.example/start-frame-0.png"],
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "sound"]
@@ -8119,6 +8712,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: prompt-vs-multi-prompt-and-sound.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Up to two image anchors and four references; multi-shot requires multi_prompt and sound=true."
       ]
     },
@@ -8242,7 +8836,8 @@
               "duration": 3,
               "aspect_ratio": "1:1",
               "sound": true,
-              "reference_image_urls": ["https://assets.example/reference-image-0.png"]
+              "reference_image_urls": ["https://assets.example/reference-image-0.png"],
+              "enable_safety_checker": false
             }
           }
         },
@@ -8262,7 +8857,8 @@
               "duration": 15,
               "aspect_ratio": "9:16",
               "sound": false,
-              "reference_image_urls": ["https://assets.example/reference-image-0.png"]
+              "reference_image_urls": ["https://assets.example/reference-image-0.png"],
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "aspectRatio", "sound"]
@@ -8280,6 +8876,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: prompt-vs-multi-prompt-and-sound.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Up to two image anchors and four references; multi-shot requires multi_prompt and sound=true."
       ]
     },
@@ -8383,7 +8980,8 @@
               ],
               "duration": 3,
               "aspect_ratio": "1:1",
-              "sound": true
+              "sound": true,
+              "enable_safety_checker": false
             }
           }
         },
@@ -8411,7 +9009,8 @@
               ],
               "duration": 3,
               "aspect_ratio": "9:16",
-              "sound": true
+              "sound": true,
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["aspectRatio"]
@@ -8428,6 +9027,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: prompt-vs-multi-prompt-and-sound.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Up to two image anchors and four references; multi-shot requires multi_prompt and sound=true."
       ]
     },
@@ -8519,7 +9119,8 @@
               "prompt": "studio video",
               "duration": 3,
               "aspect_ratio": "1:1",
-              "sound": true
+              "sound": true,
+              "enable_safety_checker": false
             }
           }
         },
@@ -8537,7 +9138,8 @@
               "prompt": "studio video",
               "duration": 15,
               "aspect_ratio": "9:16",
-              "sound": false
+              "sound": false,
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "aspectRatio", "sound"]
@@ -8554,6 +9156,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: prompt-vs-multi-prompt-and-sound.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Native 4K O3 follows the same anchor/reference/multi-shot rules."
       ]
     },
@@ -8648,7 +9251,8 @@
               "prompt": "studio video",
               "duration": 3,
               "sound": true,
-              "image_urls": ["https://assets.example/start-frame-0.png"]
+              "image_urls": ["https://assets.example/start-frame-0.png"],
+              "enable_safety_checker": false
             }
           }
         },
@@ -8666,7 +9270,8 @@
               "prompt": "studio video",
               "duration": 15,
               "sound": false,
-              "image_urls": ["https://assets.example/start-frame-0.png"]
+              "image_urls": ["https://assets.example/start-frame-0.png"],
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "sound"]
@@ -8683,6 +9288,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: prompt-vs-multi-prompt-and-sound.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Native 4K O3 follows the same anchor/reference/multi-shot rules."
       ]
     },
@@ -8804,7 +9410,8 @@
               "duration": 3,
               "aspect_ratio": "1:1",
               "sound": true,
-              "reference_image_urls": ["https://assets.example/reference-image-0.png"]
+              "reference_image_urls": ["https://assets.example/reference-image-0.png"],
+              "enable_safety_checker": false
             }
           }
         },
@@ -8824,7 +9431,8 @@
               "duration": 15,
               "aspect_ratio": "9:16",
               "sound": false,
-              "reference_image_urls": ["https://assets.example/reference-image-0.png"]
+              "reference_image_urls": ["https://assets.example/reference-image-0.png"],
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["duration", "aspectRatio", "sound"]
@@ -8842,6 +9450,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: prompt-vs-multi-prompt-and-sound.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Native 4K O3 follows the same anchor/reference/multi-shot rules."
       ]
     },
@@ -8943,7 +9552,8 @@
               ],
               "duration": 3,
               "aspect_ratio": "1:1",
-              "sound": true
+              "sound": true,
+              "enable_safety_checker": false
             }
           }
         },
@@ -8971,7 +9581,8 @@
               ],
               "duration": 3,
               "aspect_ratio": "9:16",
-              "sound": true
+              "sound": true,
+              "enable_safety_checker": false
             }
           },
           "coveredFields": ["aspectRatio"]
@@ -8988,6 +9599,7 @@
       },
       "manualDecisions": [
         "Reviewed adapter condition: prompt-vs-multi-prompt-and-sound.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Native 4K O3 follows the same anchor/reference/multi-shot rules."
       ]
     }

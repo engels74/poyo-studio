@@ -49,7 +49,8 @@ describe('video registry selection', () => {
         duration: 5,
         aspect_ratio: '1:1',
         image_urls: ['https://assets.example/start-frame.png'],
-        end_image_url: 'https://assets.example/end-frame.png'
+        end_image_url: 'https://assets.example/end-frame.png',
+        enable_safety_checker: false
       }
     });
   });

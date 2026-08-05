@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { parseAspectRatioPresentation } from '../../../src/lib/features/generation/aspect-ratio-presentation';
 import { IMAGE_REGISTRY_ENTRIES } from '../../../src/lib/features/registry/image-registry';
+import { UPSTREAM_AUTOMATIC_RATIO_TOKENS } from '../../../src/lib/features/registry/ratio-resolver';
 import { VIDEO_REGISTRY_ENTRIES } from '../../../src/lib/features/registry/video-registry';
 
 function aspectRatioTokens(): string[] {
@@ -34,6 +35,7 @@ describe('aspect-ratio presentation', () => {
   test('rejects automatic, nonpositive, nonfinite, multiple, and partial tokens', () => {
     for (const token of [
       'auto',
+      'adaptive',
       '0:1',
       '1:0',
       '1:-1',
@@ -53,7 +55,8 @@ describe('aspect-ratio presentation', () => {
     expect(tokens.length).toBeGreaterThan(0);
     for (const token of tokens) {
       const presentation = parseAspectRatioPresentation(token);
-      if (token === 'auto') expect(presentation).toBeNull();
+      if (UPSTREAM_AUTOMATIC_RATIO_TOKENS.some((automatic) => automatic === token))
+        expect(presentation).toBeNull();
       else expect(presentation).not.toBeNull();
     }
   });

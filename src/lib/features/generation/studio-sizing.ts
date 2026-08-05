@@ -1,4 +1,9 @@
-import { resolveClosestRatioForDimensions, supportedRatioTokens } from '../registry/ratio-resolver';
+import {
+  resolveClosestRatioForDimensions,
+  supportedRatioTokens,
+  upstreamAutomaticRatioToken
+} from '../registry/ratio-resolver';
+import { highestResolutionToken } from '../registry/resolution-resolver';
 import type { FieldDefinition } from '../registry/types';
 import type { StudioEntry, StudioRoleInput } from './contracts';
 
@@ -44,8 +49,54 @@ function firstMeasuredImage(
   return undefined;
 }
 
-function isImageEdit(entry: StudioEntry): boolean {
-  return entry.output.mediaKind === 'image' && entry.workflow !== 'text-to-image';
+/**
+ * How a workflow may derive its output ratio from the media a person supplied.
+ * Image edits always follow their reference; video workflows accept both image and video
+ * sources, so only a lone image can decide the output ratio.
+ */
+type SourceRatioDerivation = 'image-edit' | 'image-driven-video';
+
+function sourceRatioDerivation(
+  entry: StudioEntry,
+  roleInputs: Record<string, StudioRoleInput[]>
+): SourceRatioDerivation | null {
+  if (entry.output.mediaKind === 'image')
+    return entry.workflow === 'text-to-image' ? null : 'image-edit';
+  if (!entry.inputRoles.some((role) => role.mediaKind === 'image')) return null;
+  // A workflow that requires a video is sized by that video, not by an accompanying reference.
+  if (entry.inputRoles.some((role) => role.mediaKind === 'video' && role.required)) return null;
+  const supplied = entry.inputRoles.flatMap((role) => roleInputs[role.role] ?? []);
+  return supplied.some((input) => input.mediaKind === 'video') ? null : 'image-driven-video';
+}
+
+/**
+ * Documented conditional rules that tie the largest resolution tier to another field, so their
+ * models keep the reviewed default instead of starting from a combination the provider rejects.
+ * VEO 3.1 couples 1080p and 4k to an eight-second duration.
+ */
+const RESOLUTION_COUPLED_RULES = ['generation-type-model-duration-matrix'];
+
+/**
+ * The output resolution a fresh draft starts from: the largest tier the model exposes, so a
+ * documented lower default never silently caps quality. Single-tier enums keep the automatic
+ * choice because there is nothing to pick.
+ */
+export function preselectedResolutionToken(entry: StudioEntry): string | undefined {
+  const field = fieldFor(entry, 'resolution');
+  const supported = field?.enum ?? [];
+  if (supported.length < 2) return undefined;
+  // Union-size families accept a resolution or an aspect ratio, never both, so a defaulted
+  // ratio keeps ownership of the shared size field.
+  if (
+    entry.validation.conditionalRules.includes('size-is-one-of-resolution-ratio-or-custom') &&
+    entry.fields.some(
+      (candidate) => candidate.key === 'aspectRatio' && candidate.default !== undefined
+    )
+  )
+    return undefined;
+  if (entry.validation.conditionalRules.some((rule) => RESOLUTION_COUPLED_RULES.includes(rule)))
+    return undefined;
+  return highestResolutionToken(supported) ?? undefined;
 }
 
 export function automaticFieldChoice(
@@ -56,17 +107,20 @@ export function automaticFieldChoice(
   const field = fieldFor(entry, key);
   if (!field) return { available: false, label: 'Automatic unavailable', kind: 'unavailable' };
 
-  if (field.enum?.includes('auto')) {
+  const upstreamAutomatic =
+    key === 'aspectRatio' ? upstreamAutomaticRatioToken(field.enum ?? []) : null;
+  if (upstreamAutomatic) {
     return {
       available: true,
       label: 'Automatic (model decides)',
-      value: 'auto',
+      value: upstreamAutomatic,
       kind: 'upstream-auto',
       description: 'The model accepts a genuine automatic value.'
     };
   }
 
-  if (key === 'aspectRatio' && isImageEdit(entry)) {
+  const derivation = key === 'aspectRatio' ? sourceRatioDerivation(entry, roleInputs) : null;
+  if (derivation) {
     const source = firstMeasuredImage(entry, roleInputs);
     if (source) {
       const supported = supportedRatioTokens(field.enum ?? []);
@@ -84,13 +138,16 @@ export function automaticFieldChoice(
         };
       }
     }
-    return {
-      available: field.default !== undefined || !field.required,
-      label: 'Automatic (choose a measured source or ratio)',
-      kind: 'source-unavailable',
-      description:
-        'This model has no genuine auto value, so a source image must be measured before its closest supported ratio can be selected.'
-    };
+    // An image edit cannot be sized without its reference, while a video workflow still has the
+    // documented model behaviour to fall back on until an image is measured.
+    if (derivation === 'image-edit')
+      return {
+        available: field.default !== undefined || !field.required,
+        label: 'Automatic (choose a measured source or ratio)',
+        kind: 'source-unavailable',
+        description:
+          'This model has no genuine auto value, so a source image must be measured before its closest supported ratio can be selected.'
+      };
   }
 
   if (field.default !== undefined) {
@@ -135,7 +192,10 @@ export function initialAutomaticFields(
 ): AutomaticFieldState {
   return {
     aspectRatio: !explicitValues && automaticFieldChoice(entry, 'aspectRatio', {}).available,
-    resolution: !explicitValues && automaticFieldChoice(entry, 'resolution', {}).available
+    resolution:
+      !explicitValues &&
+      preselectedResolutionToken(entry) === undefined &&
+      automaticFieldChoice(entry, 'resolution', {}).available
   };
 }
 

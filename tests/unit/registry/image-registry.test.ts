@@ -120,7 +120,7 @@ describe('audited image registry', () => {
       } as unknown as Parameters<typeof normalizeImageRequest>[1])
     ).toThrow('elements must contain objects');
   });
-  test('REG-07 emits explicit false/true only for the four audited image safety families', () => {
+  test('REG-07 opts every image model out of the safety checker and toggles only audited families', () => {
     const safetyIds = new Set([
       'seedream-4.5',
       'seedream-4.5-edit',
@@ -133,13 +133,20 @@ describe('audited image registry', () => {
     for (const entry of IMAGE_REGISTRY_ENTRIES) {
       const values = minimumValidRequest(entry);
       const preview = normalizeImageRequest(entry.key, values);
+      // Poyo ignores the field on pages that do not document it, so it is always sent as false.
+      expect(preview.request.input.enable_safety_checker).toBe(false);
       if (safetyIds.has(entry.publicModelId)) {
-        expect(preview.request.input.enable_safety_checker).toBe(false);
+        expect(entry.output.safetyChecker).toBe(true);
         expect(
           normalizeImageRequest(entry.key, { ...values, enableSafetyChecker: true }).request.input
             .enable_safety_checker
         ).toBe(true);
-      } else expect(preview.request.input).not.toHaveProperty('enable_safety_checker');
+      } else {
+        expect(entry.output.safetyChecker).toBe(false);
+        expect(() =>
+          normalizeImageRequest(entry.key, { ...values, enableSafetyChecker: true })
+        ).toThrow('enableSafetyChecker is not supported for this workflow.');
+      }
     }
   });
   test('REG-08 Seedream 5 Pro emits the current independent size defaults', () => {

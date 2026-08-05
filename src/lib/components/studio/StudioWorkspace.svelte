@@ -44,9 +44,9 @@ import {
   type StudioSubmissionSnapshot,
   sizeModes,
   valuesWithRoleInputs,
-  visibleFields,
-  workflowLabel
+  visibleFields
 } from '$lib/features/generation/studio-controller';
+import { studioModeGroups, studioModeLabel } from '$lib/features/generation/studio-modes';
 import {
   applyStudioJobEvent,
   compareStudioJobRecency,
@@ -299,7 +299,7 @@ function clearPendingAction(actionId?: string): void {
 }
 
 let selectedEntry = $derived(data.entries.find((entry) => entry.key === entryKey) ?? initialEntry);
-let workflows = $derived([...new Set(data.entries.map((entry) => entry.workflow))]);
+let modeGroups = $derived(studioModeGroups(data.entries.map((entry) => entry.workflow)));
 let modelEntries = $derived(
   data.entries
     .filter((entry) => entry.workflow === selectedEntry.workflow)
@@ -1983,27 +1983,40 @@ onMount(() => {
                 </div>
               </fieldset>
             {:else}
-              <fieldset class="grid gap-2">
+              <fieldset class="grid gap-3">
                 <legend class="text-xs font-semibold">Creative intent</legend>
-                <div class="grid max-h-40 grid-cols-2 gap-1 overflow-y-auto rounded-[var(--radius)] bg-muted p-1">
-                  {#each workflows as workflow (workflow)}
-                    <label
-                      class="focus-within:ring-2 focus-within:ring-ring flex min-h-10 cursor-pointer items-center rounded px-2 text-xs font-semibold"
-                      class:bg-background={selectedEntry.workflow === workflow}
-                      class:shadow-[var(--shadow-xs)]={selectedEntry.workflow === workflow}
-                    >
-                      <input
-                        class="sr-only"
-                        type="radio"
-                        name={`${data.modality}-${surface}-creative-intent`}
-                        value={workflow}
-                        checked={selectedEntry.workflow === workflow}
-                        onchange={() => switchWorkflow(workflow)}
-                      />
-                      {workflowLabel(workflow)}
-                    </label>
-                  {/each}
-                </div>
+                {#each modeGroups as group (group.key)}
+                  <div class="grid gap-1.5" role="group" aria-label={group.label}>
+                    <div class="flex flex-wrap items-baseline gap-x-2">
+                      <p class="eyebrow-label">{group.label}</p>
+                      <p class="text-[0.6875rem] text-muted-foreground">{group.description}</p>
+                    </div>
+                    <div class="grid gap-1 rounded-[var(--radius)] bg-muted p-1">
+                      {#each group.modes as mode (mode.workflow)}
+                        {@const active = selectedEntry.workflow === mode.workflow}
+                        <label
+                          class="focus-within:ring-2 focus-within:ring-ring flex min-h-10 cursor-pointer items-center justify-between gap-2 rounded px-2 text-xs font-semibold"
+                          class:bg-background={active}
+                          class:shadow-[var(--shadow-xs)]={active}
+                        >
+                          <input
+                            class="sr-only"
+                            type="radio"
+                            name={`${data.modality}-${surface}-creative-intent`}
+                            value={mode.workflow}
+                            checked={active}
+                            onchange={() => switchWorkflow(mode.workflow)}
+                          />
+                          <span class="min-w-0 truncate">{mode.label}</span>
+                          <span
+                            class="shrink-0 font-mono text-[0.625rem] font-normal text-muted-foreground"
+                            >{mode.tag}</span
+                          >
+                        </label>
+                      {/each}
+                    </div>
+                  </div>
+                {/each}
               </fieldset>
             {/if}
             <ModelPicker
@@ -2374,7 +2387,7 @@ onMount(() => {
           {submissionUnknown ? 'Outcome unknown' : activeJob ? activeJob.localPhase.replaceAll('_', ' ') : preview ? 'Ready' : 'Compose'}
         </Badge>
         <span class="truncate text-muted-foreground">
-          {activeJob ? `${activeJob.remoteStatus.replaceAll('_', ' ')} · ${activeJob.publicModelId}` : workflowLabel(selectedEntry.workflow)}
+          {activeJob ? `${activeJob.remoteStatus.replaceAll('_', ' ')} · ${activeJob.publicModelId}` : studioModeLabel(selectedEntry.workflow)}
         </span>
       </div>
       <div class="flex items-center gap-2">
@@ -2506,7 +2519,7 @@ onMount(() => {
           <p class="mx-auto mt-2 max-w-md font-serif text-base leading-7 text-stage-muted">
             {preview
               ? 'The guided request is valid. Review the exact normalized payload or generate when ready.'
-              : `${workflowLabel(selectedEntry.workflow)} with ${selectedEntry.inputRoles.length ? `${selectedEntry.inputRoles.length} named media role${selectedEntry.inputRoles.length === 1 ? '' : 's'}` : 'no required source media'}.`}
+              : `${studioModeLabel(selectedEntry.workflow)} with ${selectedEntry.inputRoles.length ? `${selectedEntry.inputRoles.length} named media role${selectedEntry.inputRoles.length === 1 ? '' : 's'}` : 'no required source media'}.`}
           </p>
           <div class="mt-5 flex flex-wrap justify-center gap-2">
             <Badge tone="stage">{selectedEntry.status}</Badge>
@@ -2664,7 +2677,7 @@ onMount(() => {
     <div class="studio-mobile-setup mt-3 items-center justify-between gap-4 rounded-[var(--radius)] bg-muted px-4 py-3">
       <div class="min-w-0">
         <p class="text-sm font-semibold">{selectedEntry.displayName}</p>
-        <p class="truncate text-xs text-muted-foreground">{workflowLabel(selectedEntry.workflow)} · {preview ? 'valid' : 'needs review'}</p>
+        <p class="truncate text-xs text-muted-foreground">{studioModeLabel(selectedEntry.workflow)} · {preview ? 'valid' : 'needs review'}</p>
       </div>
       <Sheet bind:open={setupOpen} title={`${data.modality === 'image' ? 'Image' : 'Video'} setup`} description="Setup, prompt, inputs, output and review." side="right" triggerClass="focus-ring inline-flex min-h-9 shrink-0 items-center gap-2 rounded-[var(--radius)] border border-border bg-background px-3 text-sm font-semibold shadow-[var(--shadow-xs)] hover:bg-muted" contentClass="p-0" studioSheet>
         {#snippet trigger()}<AppIcon name="filters" size={16} /> Edit setup{/snippet}

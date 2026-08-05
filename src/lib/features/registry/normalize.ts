@@ -174,8 +174,9 @@ export function normalizeImageRequest(
   const refs = imageUrls(values.imageUrls);
   if (refs) input.image_urls = refs;
   if (values.maskUrl) input.mask_url = imageUrls([values.maskUrl])?.[0];
-  if (entry.output.safetyChecker) input.enable_safety_checker = values.enableSafetyChecker ?? false;
-  else delete input.enable_safety_checker;
+  // Poyo drops enable_safety_checker on models whose page does not document it, verified live
+  // across every provider family, so the studio always opts out of provider-side filtering.
+  input.enable_safety_checker = values.enableSafetyChecker ?? false;
   const verifiedKeys = new Set(
     entry.fields.map((field) => field.apiKey).concat(['prompt', 'image_urls', 'mask_url', 'size'])
   );

@@ -4,7 +4,7 @@ import Badge from '$lib/components/ui/Badge.svelte';
 import Button from '$lib/components/ui/Button.svelte';
 import LinkButton from '$lib/components/ui/LinkButton.svelte';
 import type { PresetRecord } from '$lib/features/presets/types';
-import { workflowLabel } from '$lib/features/generation/studio-controller';
+import { studioModeLabel } from '$lib/features/generation/studio-modes';
 import { untrack } from 'svelte';
 import type { PageData } from './$types';
 
@@ -81,10 +81,10 @@ async function removePreset(preset: PresetRecord): Promise<void> {
             <h3 class="mt-4 text-base font-semibold tracking-tight">{preset.name}</h3>
             <p class="mt-1 text-xs font-semibold text-muted-foreground">{modelLabel(preset.entryKey)}</p>
             <p class="mt-2 line-clamp-2 text-sm leading-6 text-muted-foreground">
-              {preset.description ?? promptFor(preset) ?? workflowLabel(preset.workflow)}
+              {preset.description ?? promptFor(preset) ?? studioModeLabel(preset.workflow)}
             </p>
             <div class="mt-3 flex flex-wrap gap-1.5">
-              <Badge tone="neutral">{workflowLabel(preset.workflow)}</Badge>
+              <Badge tone="neutral">{studioModeLabel(preset.workflow)}</Badge>
               {#if preset.values.guided.enableSafetyChecker !== undefined}
                 <Badge tone="neutral">Safety {preset.values.guided.enableSafetyChecker ? 'on' : 'off'}</Badge>
               {/if}

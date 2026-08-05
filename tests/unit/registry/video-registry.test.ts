@@ -32,11 +32,11 @@ function minimum(key: string): GuidedVideoRequest {
 }
 
 describe('audited video registry coverage', () => {
-  test('REG-01/02 accounts for 35 pages, 53 IDs, 121 current workflows and explicit exclusions', () => {
-    expect(VIDEO_PAGE_SLUGS).toHaveLength(35);
-    expect(new Set(VIDEO_PAGE_SLUGS).size).toBe(35);
-    expect(VIDEO_PUBLIC_IDS).toHaveLength(53);
-    expect(VIDEO_CURRENT_ENTRIES).toHaveLength(121);
+  test('REG-01/02 accounts for 36 pages, 54 IDs, 124 current workflows and explicit exclusions', () => {
+    expect(VIDEO_PAGE_SLUGS).toHaveLength(36);
+    expect(new Set(VIDEO_PAGE_SLUGS).size).toBe(36);
+    expect(VIDEO_PUBLIC_IDS).toHaveLength(54);
+    expect(VIDEO_CURRENT_ENTRIES).toHaveLength(124);
     expect(VIDEO_EXCLUDED_ENTRIES).toHaveLength(2);
     expect(VIDEO_EXCLUDED_ENTRIES.every((entry) => entry.status === 'excluded-initial-scope')).toBe(
       true
@@ -89,7 +89,7 @@ describe('audited video registry coverage', () => {
           "SELECT COUNT(*) count FROM registry_entries WHERE modality='video'"
         )
         .get()?.count
-    ).toBe(131);
+    ).toBe(134);
     expect(
       database
         .query<{ count: number }, []>(
@@ -100,7 +100,7 @@ describe('audited video registry coverage', () => {
     expect(
       database.query<{ count: number }, []>('SELECT COUNT(*) count FROM registry_entries').get()
         ?.count
-    ).toBe(183);
+    ).toBe(186);
     database.close();
   });
 });
@@ -145,7 +145,7 @@ describe('reviewed video conditional adapters', () => {
     ).toThrow('multiPrompt must contain objects');
   });
 
-  test('REG-07 emits safety false only for Happy Horse and Wan 2.7 Video families', () => {
+  test('REG-07 opts every video model out of the safety checker and toggles only audited families', () => {
     const safetyIds = new Set([
       'happy-horse-1.1',
       'happy-horse',
@@ -157,6 +157,8 @@ describe('reviewed video conditional adapters', () => {
     for (const entry of VIDEO_CURRENT_ENTRIES) {
       const values = minimumValidVideoRequest(entry);
       const input = normalizeVideoRequest(entry.key, values).request.input;
+      // Poyo ignores the field on pages that do not document it, so it is always sent as false.
+      expect(input.enable_safety_checker).toBe(false);
       if (safetyIds.has(entry.publicModelId)) {
         expect(entry.output.safetyChecker).toBe(true);
         expect(entry.fields.find((field) => field.key === 'enableSafetyChecker')).toMatchObject({
@@ -164,12 +166,16 @@ describe('reviewed video conditional adapters', () => {
           kind: 'boolean',
           default: false
         });
-        expect(input.enable_safety_checker).toBe(false);
         expect(
           normalizeVideoRequest(entry.key, { ...values, enableSafetyChecker: true }).request.input
             .enable_safety_checker
         ).toBe(true);
-      } else expect(input).not.toHaveProperty('enable_safety_checker');
+      } else {
+        expect(entry.output.safetyChecker).toBe(false);
+        expect(() =>
+          normalizeVideoRequest(entry.key, { ...values, enableSafetyChecker: true })
+        ).toThrow('enableSafetyChecker is not supported for this workflow.');
+      }
     }
   });
 
@@ -277,6 +283,87 @@ describe('reviewed video conditional adapters', () => {
         duration: 10
       })
     ).toThrow('6 seconds only');
+  });
+
+  test('REG-05 Hailuo 03 pins its 2K tier, per-mode ratios, and reference dependencies', () => {
+    const text = videoEntry('hailuo-03:text-to-video');
+    expect(text.provider).toBe('MiniMax');
+    expect(text.fields.find((field) => field.key === 'prompt')).toMatchObject({
+      required: true,
+      min: 1,
+      max: 2000
+    });
+    expect(text.fields.find((field) => field.key === 'duration')).toMatchObject({
+      kind: 'integer',
+      default: 5,
+      min: 5,
+      max: 15
+    });
+    expect(text.fields.find((field) => field.key === 'resolution')).toMatchObject({
+      enum: ['2K'],
+      default: '2K'
+    });
+    // Text generation never offers adaptive: the provider fails such a task at render time.
+    expect(text.fields.find((field) => field.key === 'aspectRatio')).toMatchObject({
+      enum: ['21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
+      default: '16:9'
+    });
+    expect(normalizeVideoRequest(text.key, minimum(text.key)).request).toEqual({
+      model: 'hailuo-03',
+      input: {
+        prompt: 'studio video',
+        duration: 5,
+        aspect_ratio: '16:9',
+        resolution: '2K',
+        enable_safety_checker: false
+      }
+    });
+
+    const image = videoEntry('hailuo-03:image-to-video');
+    expect(image.fields.some((field) => field.key === 'aspectRatio')).toBe(false);
+    expect(image.inputRoles).toEqual([
+      expect.objectContaining({
+        role: 'start-frame',
+        apiKey: 'image_urls',
+        required: true,
+        min: 1,
+        max: 2
+      })
+    ]);
+    expect(() =>
+      normalizeVideoRequest(image.key, { ...minimum(image.key), aspectRatio: '16:9' })
+    ).toThrow('aspectRatio is not supported for this workflow');
+    expect(() =>
+      normalizeVideoRequest(image.key, minimum(image.key), [{ key: 'aspect_ratio', value: '16:9' }])
+    ).toThrow('not supported for Hailuo 03 image-to-video');
+
+    const reference = videoEntry('hailuo-03:reference-to-video');
+    expect(reference.fields.find((field) => field.key === 'aspectRatio')).toMatchObject({
+      enum: ['adaptive', '21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
+      default: 'adaptive'
+    });
+    expect(reference.inputRoles.map((role) => [role.apiKey, role.max])).toEqual([
+      ['reference_image_urls', 9],
+      ['reference_video_urls', 3],
+      ['reference_audio_urls', 3]
+    ]);
+    expect(() =>
+      normalizeVideoRequest(reference.key, {
+        ...minimum(reference.key),
+        referenceImageUrls: [],
+        referenceAudioUrls: ['https://assets.example/audio.mp3']
+      })
+    ).toThrow('requires a reference image or video');
+    expect(
+      normalizeVideoRequest(reference.key, {
+        ...minimum(reference.key),
+        referenceVideoUrls: ['https://assets.example/motion.mp4']
+      }).request.input
+    ).toMatchObject({
+      aspect_ratio: 'adaptive',
+      reference_image_urls: ['https://assets.example/reference.png'],
+      reference_video_urls: ['https://assets.example/motion.mp4']
+    });
   });
 
   test('REG-05 Seedance separates frames and references and validates audio dependencies/totals', () => {

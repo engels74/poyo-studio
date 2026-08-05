@@ -129,17 +129,17 @@ if (sourceManifest.registryVersion !== `${IMAGE_REGISTRY_VERSION}+${VIDEO_REGIST
   errors.push('official source manifest registry version is stale');
 if (sourceCorpusSha256(sourceManifest.sources) !== sourceManifest.corpusSha256)
   errors.push('official source corpus hash does not match committed source records');
-if (sourceManifest.sources.length !== 144)
-  errors.push(`expected 144 official source records, found ${sourceManifest.sources.length}`);
+if (sourceManifest.sources.length !== 146)
+  errors.push(`expected 146 official source records, found ${sourceManifest.sources.length}`);
 const modelMarkdown = sourceManifest.sources.filter(
   (source) => source.category === 'model' && source.representation === 'markdown'
 );
 const modelJson = sourceManifest.sources.filter(
   (source) => source.category === 'model' && source.representation === 'json'
 );
-if (modelMarkdown.length !== 57 || modelJson.length !== 57)
+if (modelMarkdown.length !== 58 || modelJson.length !== 58)
   errors.push(
-    `expected 57 Markdown and 57 JSON model sources, found ${modelMarkdown.length}/${modelJson.length}`
+    `expected 58 Markdown and 58 JSON model sources, found ${modelMarkdown.length}/${modelJson.length}`
   );
 for (const source of sourceManifest.sources) {
   if (source.sha256.length !== 64 || source.canonicalSha256.length !== 64)
@@ -240,9 +240,9 @@ if (
 )
   errors.push('image registry inventory changed without reviewed evidence');
 if (
-  VIDEO_PAGE_SLUGS.length !== 35 ||
-  VIDEO_PUBLIC_IDS.length !== 53 ||
-  VIDEO_CURRENT_ENTRIES.length !== 121
+  VIDEO_PAGE_SLUGS.length !== 36 ||
+  VIDEO_PUBLIC_IDS.length !== 54 ||
+  VIDEO_CURRENT_ENTRIES.length !== 124
 )
   errors.push('video registry inventory changed without reviewed evidence');
 if (

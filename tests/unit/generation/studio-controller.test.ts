@@ -12,9 +12,9 @@ import {
   readPaidSubmissionResponse,
   sizeModes,
   valuesWithRoleInputs,
-  visibleFields,
-  workflowLabel
+  visibleFields
 } from '../../../src/lib/features/generation/studio-controller';
+import { studioModeLabel } from '../../../src/lib/features/generation/studio-modes';
 import { IMAGE_REGISTRY_ENTRIES } from '../../../src/lib/features/registry/image-registry';
 import { VIDEO_REGISTRY_ENTRIES } from '../../../src/lib/features/registry/video-registry';
 
@@ -44,7 +44,7 @@ describe('registry-driven studio controller', () => {
       const fresh = initialGuidedValues(seedream);
       expect(fresh).toMatchObject({
         aspectRatio: '1:1',
-        resolution: '1K'
+        resolution: '2K'
       });
       expect(fresh).not.toHaveProperty('n');
       expect(seedream.fields.map((field) => field.key)).not.toContain('n');
@@ -156,7 +156,7 @@ describe('registry-driven studio controller', () => {
 
   test('STUDIO-05 includes remote audio roles in the paid request envelope', () => {
     const entry = videoEntry('wan2.7-image-to-video:image-to-video');
-    expect(workflowLabel(entry.workflow)).toBe('Animate an image');
+    expect(studioModeLabel(entry.workflow)).toBe('Image to video');
     const request = createJobRequest(
       '019b0000-0000-7000-8000-000000000002',
       entry,

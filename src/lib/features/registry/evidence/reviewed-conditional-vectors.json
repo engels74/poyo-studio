@@ -62,6 +62,18 @@
       "issueIncludes": "imageUrls is not supported"
     },
     {
+      "rule": "hailuo-03-reference-requires-image-or-video",
+      "entryKey": "hailuo-03:reference-to-video",
+      "values": {
+        "prompt": "studio video",
+        "duration": 5,
+        "aspectRatio": "adaptive",
+        "resolution": "2K",
+        "referenceAudioUrls": ["https://assets.example/reference-audio-0.mp3"]
+      },
+      "issueIncludes": "requires a reference image or video"
+    },
+    {
       "rule": "kling-1.6-frames-elements-cfg-conflicts",
       "entryKey": "kling-1.6/standard:reference-to-video",
       "values": {

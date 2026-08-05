@@ -4,7 +4,7 @@ import AppIcon from '$lib/components/ui/AppIcon.svelte';
 import Badge from '$lib/components/ui/Badge.svelte';
 import type { StudioEntry } from '$lib/features/generation/contracts';
 import { groupStudioEntries, studioProviderLabel } from '$lib/features/generation/model-groups';
-import { workflowLabel } from '$lib/features/generation/studio-controller';
+import { studioModeLabel } from '$lib/features/generation/studio-modes';
 
 interface Props {
   entries: StudioEntry[];
@@ -146,7 +146,7 @@ function selectEntry(entry: StudioEntry): void {
                     <Badge tone={entry.status === 'current' ? 'success' : 'neutral'}>{entry.status}</Badge>
                   </span>
                   <span class="mt-2 flex flex-wrap gap-1 text-[0.6875rem] text-muted-foreground">
-                    <span>{workflowLabel(entry.workflow)}</span>
+                    <span>{studioModeLabel(entry.workflow)}</span>
                     <span aria-hidden="true">·</span>
                     <span>{entry.inputRoles.length ? `${entry.inputRoles.length} media role${entry.inputRoles.length === 1 ? '' : 's'}` : 'Prompt only'}</span>
                   </span>

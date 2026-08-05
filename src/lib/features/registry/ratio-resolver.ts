@@ -68,3 +68,21 @@ export function resolveClosestRatioForDimensions(
 export function supportedRatioTokens(supported: readonly string[]): string[] {
   return supported.filter((token) => parseRatioToken(token) !== null);
 }
+
+/**
+ * Tokens through which a provider exposes its own automatic ratio selection. Poyo spells this
+ * `auto` on most catalogue pages and `adaptive` on Hailuo 03 reference generation.
+ */
+export const UPSTREAM_AUTOMATIC_RATIO_TOKENS = ['auto', 'adaptive'] as const;
+
+/** Return the upstream automatic token a registry enum exposes, or `null` when it has none. */
+export function upstreamAutomaticRatioToken(supported: readonly string[]): string | null {
+  return UPSTREAM_AUTOMATIC_RATIO_TOKENS.find((token) => supported.includes(token)) ?? null;
+}
+
+/** Filter a registry enum list down to the ratio tiles a person can choose explicitly. */
+export function explicitRatioTokens(supported: readonly string[]): string[] {
+  return supported.filter(
+    (token) => !UPSTREAM_AUTOMATIC_RATIO_TOKENS.some((automatic) => automatic === token)
+  );
+}
