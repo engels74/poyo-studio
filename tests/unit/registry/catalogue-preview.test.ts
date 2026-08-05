@@ -30,7 +30,8 @@ describe('registry catalogue and preview foundations', () => {
         output_format: 'png',
         seed: 42,
         google_search: true,
-        image_urls: ['https://assets.example/a.png']
+        image_urls: ['https://assets.example/a.png'],
+        enable_safety_checker: false
       }
     });
   });

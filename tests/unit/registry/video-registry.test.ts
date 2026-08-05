@@ -145,7 +145,7 @@ describe('reviewed video conditional adapters', () => {
     ).toThrow('multiPrompt must contain objects');
   });
 
-  test('REG-07 emits safety false only for Happy Horse and Wan 2.7 Video families', () => {
+  test('REG-07 opts every video model out of the safety checker and toggles only audited families', () => {
     const safetyIds = new Set([
       'happy-horse-1.1',
       'happy-horse',
@@ -157,6 +157,8 @@ describe('reviewed video conditional adapters', () => {
     for (const entry of VIDEO_CURRENT_ENTRIES) {
       const values = minimumValidVideoRequest(entry);
       const input = normalizeVideoRequest(entry.key, values).request.input;
+      // Poyo ignores the field on pages that do not document it, so it is always sent as false.
+      expect(input.enable_safety_checker).toBe(false);
       if (safetyIds.has(entry.publicModelId)) {
         expect(entry.output.safetyChecker).toBe(true);
         expect(entry.fields.find((field) => field.key === 'enableSafetyChecker')).toMatchObject({
@@ -164,12 +166,16 @@ describe('reviewed video conditional adapters', () => {
           kind: 'boolean',
           default: false
         });
-        expect(input.enable_safety_checker).toBe(false);
         expect(
           normalizeVideoRequest(entry.key, { ...values, enableSafetyChecker: true }).request.input
             .enable_safety_checker
         ).toBe(true);
-      } else expect(input).not.toHaveProperty('enable_safety_checker');
+      } else {
+        expect(entry.output.safetyChecker).toBe(false);
+        expect(() =>
+          normalizeVideoRequest(entry.key, { ...values, enableSafetyChecker: true })
+        ).toThrow('enableSafetyChecker is not supported for this workflow.');
+      }
     }
   });
 

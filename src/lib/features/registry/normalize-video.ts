@@ -233,8 +233,9 @@ export function normalizeVideoRequest(
     if (!roleValues.length) continue;
     input[role.apiKey] = role.apiKey.endsWith('_url') ? roleValues[0] : roleValues;
   }
-  if (entry.output.safetyChecker) input.enable_safety_checker = values.enableSafetyChecker ?? false;
-  else delete input.enable_safety_checker;
+  // Poyo drops enable_safety_checker on models whose page does not document it, verified live
+  // across every provider family, so the studio always opts out of provider-side filtering.
+  input.enable_safety_checker = values.enableSafetyChecker ?? false;
 
   const verifiedKeys = new Set(
     entry.fields
