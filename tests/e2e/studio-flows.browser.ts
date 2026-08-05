@@ -567,12 +567,10 @@ async function assertSeedreamProSizeControls(page: Page, submitCount: () => numb
       .getByRole('radio', { name: 'Automatic (1:1)' })
       .isChecked()
   ).toBe(true);
-  expect(
-    await outputPanel
-      .getByRole('group', { name: 'Resolution' })
-      .getByRole('radio', { name: 'Automatic (1K)' })
-      .isChecked()
-  ).toBe(true);
+  const resolutions = outputPanel.getByRole('group', { name: 'Resolution' });
+  // The largest documented tier is preselected; the reviewed default stays one click away.
+  expect(await resolutions.getByRole('radio', { name: '2K', exact: true }).isChecked()).toBe(true);
+  expect(await resolutions.getByRole('radio', { name: 'Automatic (1K)' }).isChecked()).toBe(false);
   expect(await outputPanel.getByLabel('N', { exact: true }).count()).toBe(0);
   expect(await outputPanel.getByText('Size mode', { exact: true }).count()).toBe(0);
   expect(await outputPanel.getByText(/never both/i).count()).toBe(0);
@@ -1855,6 +1853,61 @@ serial(
     }
   }
 );
+serial('VIDEO-RATIO-01 video studio sizes a lone input image like image studio', async () => {
+  const harness = await startBrowserAppHarness({
+    mediaToolShims: { exiftool: 'ready', imagemagick: 'ready', ffmpeg: 'ready', ffprobe: 'ready' }
+  });
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await context.newPage();
+  try {
+    await page.goto(`${harness.url}/studio/video`);
+    const inspector = page.locator('#parameter-inspector');
+    await selectRadioValue(inspector, 'image-to-video');
+    await selectRadioValue(inspector, 'runway-gen-4.5:image-to-video');
+    const output = await showInspectorSection(inspector, 'Output');
+    const ratios = output.getByRole('group', { name: 'Aspect Ratio' });
+    // Without a measured image the reviewed default stays in charge instead of blocking.
+    expect(await ratios.getByRole('radio', { name: 'Automatic (16:9)' }).isChecked()).toBe(true);
+
+    const inputs = await showInspectorSection(inspector, 'Inputs');
+    await inputs.getByLabel('Add local file').setInputFiles({
+      name: 'portrait-source.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from(solidPng(900, 1601))
+    });
+    await inputs.getByText('portrait-source.png').waitFor();
+    await inputs.getByText('900 × 1601 px').waitFor();
+
+    await showInspectorSection(inspector, 'Output');
+    const derived = ratios.getByRole('radio', { name: 'Automatic (9:16 from 900 × 1601)' });
+    await derived.waitFor();
+    expect(await derived.isChecked()).toBe(true);
+    expect(
+      await ratios
+        .getByText('Uses the first measurable image in the model’s documented input-role order.')
+        .count()
+    ).toBe(1);
+
+    const prompt = await showInspectorSection(inspector, 'Prompt');
+    await prompt.getByRole('textbox', { name: /^Prompt/ }).fill('Animate the portrait source');
+    await waitForValidRequest(page);
+    const submitsBefore = mockSubmitCount(harness);
+    await generationCommands(page).getByRole('button', { name: 'Generate video' }).click();
+    await waitUntil(
+      () => mockSubmitCount(harness) === submitsBefore + 1,
+      'The derived video ratio was not submitted.'
+    );
+    expect(
+      harness.mock.requests.filter((request) => request.pathname === '/api/generate/submit').at(-1)
+        ?.json
+    ).toMatchObject({ input: { aspect_ratio: '9:16' } });
+  } finally {
+    await context.close().catch(() => undefined);
+    await browser.close().catch(() => undefined);
+    await harness.cleanup();
+  }
+});
 serial('E2E-01..15 production studios, recovery, library, settings and accessibility', async () => {
   const tracker: StageTracker = {};
   const stage = stageRunner(tracker);
@@ -2699,8 +2752,8 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     harness.mock.queueOutcome('failed');
     await imageBatchCommands.getByRole('button', { name: 'Review batch (2)' }).click();
     let imageBatchDialog = page.getByRole('dialog', { name: 'Image batch' });
-    await imageBatchDialog.getByText('Batch landscape study · 16:9 · 1K').waitFor();
-    await imageBatchDialog.getByText('Batch portrait study · 9:16 · 1K').waitFor();
+    await imageBatchDialog.getByText('Batch landscape study · 16:9 · 2K').waitFor();
+    await imageBatchDialog.getByText('Batch portrait study · 9:16 · 2K').waitFor();
     page.once('dialog', async (dialog) => {
       expect(dialog.message()).toContain('replace the current setup draft');
       await dialog.accept();
@@ -2716,7 +2769,7 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     await imageBatchCommands.getByText('Updated the batch item.').waitFor();
     await imageBatchCommands.getByRole('button', { name: 'Review batch (2)' }).click();
     imageBatchDialog = page.getByRole('dialog', { name: 'Image batch' });
-    await imageBatchDialog.getByText('Batch landscape study revised · 16:9 · 1K').waitFor();
+    await imageBatchDialog.getByText('Batch landscape study revised · 16:9 · 2K').waitFor();
     await imageBatchDialog.getByRole('button', { name: 'Duplicate' }).first().click();
     await page.getByRole('dialog', { name: 'Image batch' }).getByText('Item 3').waitFor();
     await page
