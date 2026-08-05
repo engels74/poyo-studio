@@ -4,14 +4,22 @@ import {
   automaticFieldChoice,
   automaticSizingIssues,
   initialAutomaticFields,
+  preselectedResolutionToken,
   resolvedGuidedValues,
   restoreAutomaticFields
 } from '../../../src/lib/features/generation/studio-sizing';
 import { IMAGE_REGISTRY_ENTRIES } from '../../../src/lib/features/registry/image-registry';
+import { VIDEO_REGISTRY_ENTRIES } from '../../../src/lib/features/registry/video-registry';
 
 function entry(key: string) {
   const result = IMAGE_REGISTRY_ENTRIES.find((candidate) => candidate.key === key);
   if (!result) throw new Error(`Missing image entry ${key}`);
+  return result;
+}
+
+function videoEntry(key: string) {
+  const result = VIDEO_REGISTRY_ENTRIES.find((candidate) => candidate.key === key);
+  if (!result) throw new Error(`Missing video entry ${key}`);
   return result;
 }
 
@@ -177,5 +185,47 @@ describe('studio automatic sizing', () => {
       aspectRatio: false,
       resolution: true
     });
+  });
+
+  test('SIZE-07 preselects the largest documented resolution tier instead of a lower default', () => {
+    const seedream = entry('seedream-5.0-pro-edit:image-edit');
+    expect(preselectedResolutionToken(seedream)).toBe('2K');
+    expect(initialAutomaticFields(seedream).resolution).toBe(false);
+    // The reviewed default stays truthful behind the automatic tile.
+    expect(automaticFieldChoice(seedream, 'resolution', {})).toMatchObject({
+      value: '1K',
+      kind: 'registry-default'
+    });
+
+    // Flux.2 requires an explicit resolution, so the preselection also removes a blocked start.
+    const flux = entry('flux-2-pro:text-to-image');
+    expect(preselectedResolutionToken(flux)).toBe('2K');
+    expect(initialAutomaticFields(flux)).toEqual({ aspectRatio: true, resolution: false });
+
+    // Union-size families own a single size field, so a defaulted ratio keeps it.
+    const unionSize = entry('seedream-4.5:text-to-image');
+    expect(unionSize.validation.conditionalRules).toContain(
+      'size-is-one-of-resolution-ratio-or-custom'
+    );
+    expect(preselectedResolutionToken(unionSize)).toBe('4K');
+    expect(
+      preselectedResolutionToken({
+        ...unionSize,
+        fields: unionSize.fields.map((field) =>
+          field.key === 'aspectRatio' ? { ...field, default: '1:1' } : field
+        )
+      })
+    ).toBeUndefined();
+
+    // Models without a resolution choice keep their existing automatic behaviour.
+    expect(preselectedResolutionToken(entry('flux-dev:text-to-image'))).toBeUndefined();
+    expect(preselectedResolutionToken(videoEntry('hailuo-02-pro:text-to-video'))).toBeUndefined();
+  });
+
+  test('SIZE-08 keeps reviewed defaults when a documented rule couples resolution to duration', () => {
+    const veo = videoEntry('veo3.1-lite-official:text-to-video');
+    expect(veo.validation.conditionalRules).toContain('generation-type-model-duration-matrix');
+    expect(preselectedResolutionToken(veo)).toBeUndefined();
+    expect(initialAutomaticFields(veo).resolution).toBe(true);
   });
 });

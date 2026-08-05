@@ -1,4 +1,5 @@
 import { resolveClosestRatioForDimensions, supportedRatioTokens } from '../registry/ratio-resolver';
+import { highestResolutionToken } from '../registry/resolution-resolver';
 import type { FieldDefinition } from '../registry/types';
 import type { StudioEntry, StudioRoleInput } from './contracts';
 
@@ -46,6 +47,36 @@ function firstMeasuredImage(
 
 function isImageEdit(entry: StudioEntry): boolean {
   return entry.output.mediaKind === 'image' && entry.workflow !== 'text-to-image';
+}
+
+/**
+ * Documented conditional rules that tie the largest resolution tier to another field, so their
+ * models keep the reviewed default instead of starting from a combination the provider rejects.
+ * VEO 3.1 couples 1080p and 4k to an eight-second duration.
+ */
+const RESOLUTION_COUPLED_RULES = ['generation-type-model-duration-matrix'];
+
+/**
+ * The output resolution a fresh draft starts from: the largest tier the model exposes, so a
+ * documented lower default never silently caps quality. Single-tier enums keep the automatic
+ * choice because there is nothing to pick.
+ */
+export function preselectedResolutionToken(entry: StudioEntry): string | undefined {
+  const field = fieldFor(entry, 'resolution');
+  const supported = field?.enum ?? [];
+  if (supported.length < 2) return undefined;
+  // Union-size families accept a resolution or an aspect ratio, never both, so a defaulted
+  // ratio keeps ownership of the shared size field.
+  if (
+    entry.validation.conditionalRules.includes('size-is-one-of-resolution-ratio-or-custom') &&
+    entry.fields.some(
+      (candidate) => candidate.key === 'aspectRatio' && candidate.default !== undefined
+    )
+  )
+    return undefined;
+  if (entry.validation.conditionalRules.some((rule) => RESOLUTION_COUPLED_RULES.includes(rule)))
+    return undefined;
+  return highestResolutionToken(supported) ?? undefined;
 }
 
 export function automaticFieldChoice(
@@ -135,7 +166,10 @@ export function initialAutomaticFields(
 ): AutomaticFieldState {
   return {
     aspectRatio: !explicitValues && automaticFieldChoice(entry, 'aspectRatio', {}).available,
-    resolution: !explicitValues && automaticFieldChoice(entry, 'resolution', {}).available
+    resolution:
+      !explicitValues &&
+      preselectedResolutionToken(entry) === undefined &&
+      automaticFieldChoice(entry, 'resolution', {}).available
   };
 }
 

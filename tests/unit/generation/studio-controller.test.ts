@@ -44,7 +44,7 @@ describe('registry-driven studio controller', () => {
       const fresh = initialGuidedValues(seedream);
       expect(fresh).toMatchObject({
         aspectRatio: '1:1',
-        resolution: '1K'
+        resolution: '2K'
       });
       expect(fresh).not.toHaveProperty('n');
       expect(seedream.fields.map((field) => field.key)).not.toContain('n');

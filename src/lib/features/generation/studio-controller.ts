@@ -9,6 +9,7 @@ import type {
   VideoRegistryEntry
 } from '../registry/types';
 import type { StudioEntry, StudioRoleInput } from './contracts';
+import { preselectedResolutionToken } from './studio-sizing';
 
 export type SizeMode = 'resolution' | 'aspect-ratio' | 'custom';
 
@@ -127,6 +128,8 @@ export function initialGuidedValues(
   for (const field of entry.fields) {
     if (field.default !== undefined) values[field.key] = cloneJson(field.default);
   }
+  const resolution = preselectedResolutionToken(entry);
+  if (resolution !== undefined) values.resolution = resolution;
   if (entry.output.safetyChecker) values.enableSafetyChecker = false;
   if (preset) Object.assign(values, cloneJson(preset.guided));
   return values;
