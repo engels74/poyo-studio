@@ -93,26 +93,6 @@ function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-export function workflowLabel(workflow: string): string {
-  const labels: Record<string, string> = {
-    'text-to-image': 'Create from text',
-    'image-to-image': 'Transform one image',
-    'image-edit': 'Edit with references',
-    'text-to-video': 'Create from text',
-    'image-to-video': 'Animate an image',
-    'frame-to-video': 'Use start and end frames',
-    'reference-to-video': 'Create from reference media',
-    'video-to-video': 'Transform a video',
-    'video-edit': 'Edit a video',
-    'motion-control': 'Motion control',
-    'character-animation': 'Character animation',
-    'character-replacement': 'Character replacement',
-    'multi-shot-video': 'Multi-shot video',
-    'image-fusion-video': 'Image fusion'
-  };
-  return labels[workflow] ?? workflow.replaceAll('-', ' ');
-}
-
 export function roleLabel(role: string): string {
   return role
     .split('-')

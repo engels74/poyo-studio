@@ -1766,6 +1766,30 @@ serial(
       await page.getByRole('button', { name: 'Edit setup' }).click();
       const videoInspector = page.getByRole('dialog', { name: 'Video setup' });
       await videoInspector.waitFor();
+      const videoSetup = await showInspectorSection(videoInspector, 'Setup');
+      const videoIntent = videoSetup.getByRole('group', { name: 'Creative intent' });
+      const createModes = videoIntent.getByRole('group', { name: 'Create' });
+      const editModes = videoIntent.getByRole('group', { name: 'Edit' });
+      expect(
+        await createModes
+          .locator('input[type="radio"]')
+          .evaluateAll((inputs) => inputs.map((input) => (input as HTMLInputElement).value))
+      ).toEqual(['text-to-video', 'multi-shot-video']);
+      expect(await editModes.locator('input[type="radio"]').first().getAttribute('value')).toBe(
+        'image-to-video'
+      );
+      expect(await videoIntent.getByText('img2vid', { exact: true }).count()).toBe(1);
+      // Grouping the modes visually must not split them into separate radio groups.
+      await createModes.locator('input[type="radio"][value="text-to-video"]').focus();
+      await page.keyboard.press('Space');
+      await page.keyboard.press('ArrowDown');
+      expect(
+        await createModes.locator('input[type="radio"][value="multi-shot-video"]').isChecked()
+      ).toBe(true);
+      await page.keyboard.press('ArrowDown');
+      expect(
+        await editModes.locator('input[type="radio"][value="image-to-video"]').isChecked()
+      ).toBe(true);
       await selectRadioValue(videoInspector, 'text-to-video');
       await selectRadioValue(videoInspector, 'kling-2.6:text-to-video');
       const klingOutput = await showInspectorSection(videoInspector, 'Output');
