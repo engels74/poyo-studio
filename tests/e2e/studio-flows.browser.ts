@@ -1643,6 +1643,14 @@ serial(
       const fluxSuffix = await assertAspectRatioPreview(fluxRatios, '1:1 HD', 1);
       await assertAspectRatioPreview(fluxRatios, '3:4', 3 / 4);
       await assertAspectRatioPreview(fluxRatios, '16:9', 16 / 9);
+      const tileGeometry = () =>
+        fluxRatios.evaluate((group) =>
+          [...group.querySelectorAll('label')].map((label) => {
+            const box = label.getBoundingClientRect();
+            return `${Math.round(box.x)}:${Math.round(box.y)}:${Math.round(box.width)}:${Math.round(box.height)}`;
+          })
+        );
+      const unselectedGeometry = await tileGeometry();
       await fluxSquare.focus();
       await page.keyboard.press('Space');
       expect(await fluxSquare.isChecked()).toBe(true);
@@ -1654,6 +1662,18 @@ serial(
         'label:has(input[type="radio"][value="1:1 HD"])'
       );
       expect(await selectedFluxLabel.locator('svg[aria-hidden="true"]').count()).toBe(1);
+      // Selecting a tile only repaints it: the wrapped rows must not reflow.
+      expect(await tileGeometry()).toEqual(unselectedGeometry);
+      expect(
+        await selectedFluxLabel
+          .locator('svg[aria-hidden="true"]')
+          .evaluate((icon) => getComputedStyle(icon.parentElement as HTMLElement).visibility)
+      ).toBe('visible');
+      expect(
+        await fluxRatios
+          .locator('label:has(input[type="radio"][value="3:4"]) svg[aria-hidden="true"]')
+          .evaluate((icon) => getComputedStyle(icon.parentElement as HTMLElement).visibility)
+      ).toBe('hidden');
 
       await page.goto(`${harness.url}/studio/image`);
       await selectRadioValue(imageInspector, 'text-to-image');

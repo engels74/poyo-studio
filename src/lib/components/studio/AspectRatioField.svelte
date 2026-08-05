@@ -42,7 +42,10 @@ let options = $derived((field.enum ?? []).filter((option) => option !== 'auto'))
           onchange={() => onchange(field.key, undefined, true)}
         />
         <span>{automaticChoice.label}</span>
-        {#if automatic}<AppIcon name="success" size={14} />{/if}
+        <!-- The check slot is always laid out so selecting a tile never reflows the wrapped rows. -->
+        <span class="flex size-3.5 shrink-0 items-center justify-center" class:invisible={!automatic}>
+          <AppIcon name="success" size={14} />
+        </span>
       </label>
     {/if}
     {#each options as option (option)}
@@ -73,7 +76,9 @@ let options = $derived((field.enum ?? []).filter((option) => option !== 'auto'))
           </span>
         {/if}
         <span>{option}</span>
-        {#if selected}<AppIcon name="success" size={14} />{/if}
+        <span class="flex size-3.5 shrink-0 items-center justify-center" class:invisible={!selected}>
+          <AppIcon name="success" size={14} />
+        </span>
       </label>
     {/each}
   </div>
