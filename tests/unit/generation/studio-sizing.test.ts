@@ -9,6 +9,7 @@ import {
   restoreAutomaticFields
 } from '../../../src/lib/features/generation/studio-sizing';
 import { IMAGE_REGISTRY_ENTRIES } from '../../../src/lib/features/registry/image-registry';
+import { explicitRatioTokens } from '../../../src/lib/features/registry/ratio-resolver';
 import { VIDEO_REGISTRY_ENTRIES } from '../../../src/lib/features/registry/video-registry';
 
 function entry(key: string) {
@@ -314,5 +315,21 @@ describe('studio automatic sizing', () => {
     const choice = automaticFieldChoice(model, 'aspectRatio', portraitImage('reference-image'));
     expect(choice).toMatchObject({ available: true, value: 'adaptive', kind: 'upstream-auto' });
     expect(initialAutomaticFields(model).aspectRatio).toBe(true);
+  });
+
+  test('SIZE-12 keeps a single documented auto token as the only ratio the studio offers', () => {
+    const model = videoEntry('seedance-2.5:image-to-video');
+    expect(
+      explicitRatioTokens(model.fields.find((field) => field.key === 'aspectRatio')?.enum ?? [])
+    ).toEqual([]);
+    const choice = automaticFieldChoice(model, 'aspectRatio', portraitImage('start-frame'));
+    expect(choice).toMatchObject({ available: true, value: 'auto', kind: 'upstream-auto' });
+    expect(initialAutomaticFields(model).aspectRatio).toBe(true);
+    expect(
+      resolvedGuidedValues(model, { prompt: 'studio video' }, portraitImage('start-frame'), {
+        aspectRatio: true,
+        resolution: false
+      }).aspectRatio
+    ).toBe('auto');
   });
 });

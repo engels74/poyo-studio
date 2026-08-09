@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "reviewedAt": "2026-07-15T21:58:12Z",
+  "reviewedAt": "2026-08-09T09:47:01Z",
   "vectors": [
     {
       "rule": "size-and-resolution-required",
@@ -145,6 +145,33 @@
         "referenceAudioUrls": ["https://assets.example/a.mp3"]
       },
       "issueIncludes": "audio requires an image or video reference"
+    },
+    {
+      "rule": "frames-vs-references-and-reference-counts",
+      "entryKey": "seedance-2.5:reference-to-video",
+      "values": {
+        "prompt": "studio video",
+        "duration": 4,
+        "aspectRatio": "auto",
+        "resolution": "720p",
+        "generateAudio": false,
+        "referenceAudioUrls": ["https://assets.example/a.mp3"]
+      },
+      "issueIncludes": "audio requires an image or video reference"
+    },
+    {
+      "rule": "frames-vs-references-and-reference-counts",
+      "entryKey": "seedance-2.5:image-to-video",
+      "values": {
+        "prompt": "studio video",
+        "duration": 4,
+        "aspectRatio": "auto",
+        "resolution": "720p",
+        "generateAudio": false,
+        "imageUrls": ["https://assets.example/start.png"],
+        "referenceVideoUrls": ["https://assets.example/motion.mp4"]
+      },
+      "issueIncludes": "referenceVideoUrls is not supported"
     },
     {
       "rule": "generation-type-model-duration-matrix",

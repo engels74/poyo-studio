@@ -47,7 +47,7 @@ const estimate: Estimate = {
   classification: 'estimate',
   credits: 60,
   signature:
-    'version=pricing-signature-v1|registry=video-2026-07-20.1|model=wan2.7-image-to-video|workflow=image-to-video|unit=per-second|duration=5|resolution=720p',
+    'version=pricing-signature-v1|registry=video-2026-08-09.1|model=wan2.7-image-to-video|workflow=image-to-video|unit=per-second|duration=5|resolution=720p',
   basis: { unit: 'per-second', creditsPerUnit: 12, units: 5 },
   provenance: 'published',
   sourceVerifiedAt: '2026-07-20T00:00:00.000Z',

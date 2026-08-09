@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "registryVersion": "video-2026-07-20.1",
-  "reviewedAt": "2026-08-05T19:51:27Z",
+  "registryVersion": "video-2026-08-09.1",
+  "reviewedAt": "2026-08-09T09:47:01Z",
   "workflows": [
     {
       "entryKey": "omni-flash:text-to-video",
@@ -2901,6 +2901,476 @@
         "Reviewed adapter condition: frames-vs-references-and-reference-counts.",
         "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Frame inputs conflict with all references; reference audio requires an image or video reference."
+      ]
+    },
+    {
+      "entryKey": "seedance-2.5:text-to-video",
+      "status": "current",
+      "source": {
+        "pageSlug": "seedance-2.5",
+        "markdownId": "model:video:seedance-2.5:markdown",
+        "jsonId": "model:video:seedance-2.5:json"
+      },
+      "schema": {
+        "publicModelId": "seedance-2.5",
+        "workflow": "text-to-video",
+        "fields": [
+          {
+            "key": "prompt",
+            "apiKey": "prompt",
+            "kind": "text",
+            "level": "essential",
+            "required": true,
+            "min": 1,
+            "max": 5000
+          },
+          {
+            "key": "duration",
+            "apiKey": "duration",
+            "kind": "integer",
+            "level": "common",
+            "required": true,
+            "default": 4,
+            "min": 4,
+            "max": 30
+          },
+          {
+            "key": "aspectRatio",
+            "apiKey": "aspect_ratio",
+            "kind": "enum",
+            "level": "common",
+            "required": false,
+            "enum": ["auto", "1:1", "21:9", "4:3", "3:4", "16:9", "9:16"]
+          },
+          {
+            "key": "resolution",
+            "apiKey": "resolution",
+            "kind": "enum",
+            "level": "common",
+            "required": true,
+            "default": "720p",
+            "enum": ["480p", "720p"]
+          },
+          {
+            "key": "generateAudio",
+            "apiKey": "generate_audio",
+            "kind": "boolean",
+            "level": "common",
+            "default": false
+          }
+        ],
+        "inputRoles": [],
+        "output": {
+          "mediaKind": "video",
+          "formats": ["video/mp4", "video/webm", "video/quicktime"],
+          "durations": {
+            "min": 4,
+            "max": 30
+          },
+          "resolutions": ["480p", "720p"],
+          "aspectRatios": ["auto", "1:1", "21:9", "4:3", "3:4", "16:9", "9:16"],
+          "seed": false,
+          "safetyChecker": false,
+          "audio": "boolean-generate"
+        },
+        "validation": {
+          "conditionalRules": ["frames-vs-references-and-reference-counts"]
+        },
+        "payload": {
+          "adapter": "video-input-v1"
+        },
+        "limitations": [
+          "Image inputs conflict with all references and pin the aspect ratio to auto; reference media accepts 30 images, 10 videos and 10 audio clips, and audio requires an image or video reference."
+        ]
+      },
+      "vectors": {
+        "minimum": {
+          "values": {
+            "prompt": "studio video",
+            "duration": 4,
+            "aspectRatio": "auto",
+            "resolution": "720p",
+            "generateAudio": false
+          },
+          "request": {
+            "model": "seedance-2.5",
+            "input": {
+              "prompt": "studio video",
+              "duration": 4,
+              "aspect_ratio": "auto",
+              "resolution": "720p",
+              "generate_audio": false,
+              "enable_safety_checker": false
+            }
+          }
+        },
+        "advanced": {
+          "values": {
+            "prompt": "studio video",
+            "duration": 30,
+            "aspectRatio": "9:16",
+            "resolution": "720p",
+            "generateAudio": true
+          },
+          "request": {
+            "model": "seedance-2.5",
+            "input": {
+              "prompt": "studio video",
+              "duration": 30,
+              "aspect_ratio": "9:16",
+              "resolution": "720p",
+              "generate_audio": true,
+              "enable_safety_checker": false
+            }
+          },
+          "coveredFields": ["duration", "aspectRatio", "resolution", "generateAudio"]
+        },
+        "invalid": {
+          "label": "required prompt",
+          "values": {
+            "duration": 4,
+            "aspectRatio": "auto",
+            "resolution": "720p",
+            "generateAudio": false
+          },
+          "issueIncludes": "prompt is required"
+        }
+      },
+      "manualDecisions": [
+        "Reviewed adapter condition: frames-vs-references-and-reference-counts.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
+        "Image inputs conflict with all references and pin the aspect ratio to auto; reference media accepts 30 images, 10 videos and 10 audio clips, and audio requires an image or video reference."
+      ]
+    },
+    {
+      "entryKey": "seedance-2.5:image-to-video",
+      "status": "current",
+      "source": {
+        "pageSlug": "seedance-2.5",
+        "markdownId": "model:video:seedance-2.5:markdown",
+        "jsonId": "model:video:seedance-2.5:json"
+      },
+      "schema": {
+        "publicModelId": "seedance-2.5",
+        "workflow": "image-to-video",
+        "fields": [
+          {
+            "key": "prompt",
+            "apiKey": "prompt",
+            "kind": "text",
+            "level": "essential",
+            "required": true,
+            "min": 1,
+            "max": 5000
+          },
+          {
+            "key": "duration",
+            "apiKey": "duration",
+            "kind": "integer",
+            "level": "common",
+            "required": true,
+            "default": 4,
+            "min": 4,
+            "max": 30
+          },
+          {
+            "key": "aspectRatio",
+            "apiKey": "aspect_ratio",
+            "kind": "enum",
+            "level": "common",
+            "required": false,
+            "default": "auto",
+            "enum": ["auto"]
+          },
+          {
+            "key": "resolution",
+            "apiKey": "resolution",
+            "kind": "enum",
+            "level": "common",
+            "required": true,
+            "default": "720p",
+            "enum": ["480p", "720p"]
+          },
+          {
+            "key": "generateAudio",
+            "apiKey": "generate_audio",
+            "kind": "boolean",
+            "level": "common",
+            "default": false
+          }
+        ],
+        "inputRoles": [
+          {
+            "role": "start-frame",
+            "requestKey": "imageUrls",
+            "apiKey": "image_urls",
+            "mediaKind": "image",
+            "required": true,
+            "min": 1,
+            "max": 2,
+            "formats": ["image/jpeg", "image/png", "image/webp"]
+          }
+        ],
+        "output": {
+          "mediaKind": "video",
+          "formats": ["video/mp4", "video/webm", "video/quicktime"],
+          "durations": {
+            "min": 4,
+            "max": 30
+          },
+          "resolutions": ["480p", "720p"],
+          "aspectRatios": ["auto"],
+          "seed": false,
+          "safetyChecker": false,
+          "audio": "boolean-generate"
+        },
+        "validation": {
+          "conditionalRules": ["frames-vs-references-and-reference-counts"]
+        },
+        "payload": {
+          "adapter": "video-input-v1"
+        },
+        "limitations": [
+          "Image inputs conflict with all references and pin the aspect ratio to auto; reference media accepts 30 images, 10 videos and 10 audio clips, and audio requires an image or video reference."
+        ]
+      },
+      "vectors": {
+        "minimum": {
+          "values": {
+            "prompt": "studio video",
+            "duration": 4,
+            "aspectRatio": "auto",
+            "resolution": "720p",
+            "generateAudio": false,
+            "imageUrls": ["https://assets.example/start-frame-0.png"]
+          },
+          "request": {
+            "model": "seedance-2.5",
+            "input": {
+              "prompt": "studio video",
+              "duration": 4,
+              "aspect_ratio": "auto",
+              "resolution": "720p",
+              "generate_audio": false,
+              "image_urls": ["https://assets.example/start-frame-0.png"],
+              "enable_safety_checker": false
+            }
+          }
+        },
+        "advanced": {
+          "values": {
+            "prompt": "studio video",
+            "duration": 30,
+            "aspectRatio": "auto",
+            "resolution": "720p",
+            "generateAudio": true,
+            "imageUrls": ["https://assets.example/start-frame-0.png"]
+          },
+          "request": {
+            "model": "seedance-2.5",
+            "input": {
+              "prompt": "studio video",
+              "duration": 30,
+              "aspect_ratio": "auto",
+              "resolution": "720p",
+              "generate_audio": true,
+              "image_urls": ["https://assets.example/start-frame-0.png"],
+              "enable_safety_checker": false
+            }
+          },
+          "coveredFields": ["duration", "aspectRatio", "resolution", "generateAudio"]
+        },
+        "invalid": {
+          "label": "required prompt",
+          "values": {
+            "duration": 4,
+            "aspectRatio": "auto",
+            "resolution": "720p",
+            "generateAudio": false,
+            "imageUrls": ["https://assets.example/start-frame-0.png"]
+          },
+          "issueIncludes": "prompt is required"
+        }
+      },
+      "manualDecisions": [
+        "Reviewed adapter condition: frames-vs-references-and-reference-counts.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
+        "Image inputs conflict with all references and pin the aspect ratio to auto; reference media accepts 30 images, 10 videos and 10 audio clips, and audio requires an image or video reference."
+      ]
+    },
+    {
+      "entryKey": "seedance-2.5:reference-to-video",
+      "status": "current",
+      "source": {
+        "pageSlug": "seedance-2.5",
+        "markdownId": "model:video:seedance-2.5:markdown",
+        "jsonId": "model:video:seedance-2.5:json"
+      },
+      "schema": {
+        "publicModelId": "seedance-2.5",
+        "workflow": "reference-to-video",
+        "fields": [
+          {
+            "key": "prompt",
+            "apiKey": "prompt",
+            "kind": "text",
+            "level": "essential",
+            "required": true,
+            "min": 1,
+            "max": 5000
+          },
+          {
+            "key": "duration",
+            "apiKey": "duration",
+            "kind": "integer",
+            "level": "common",
+            "required": true,
+            "default": 4,
+            "min": 4,
+            "max": 30
+          },
+          {
+            "key": "aspectRatio",
+            "apiKey": "aspect_ratio",
+            "kind": "enum",
+            "level": "common",
+            "required": false,
+            "enum": ["auto", "1:1", "21:9", "4:3", "3:4", "16:9", "9:16"]
+          },
+          {
+            "key": "resolution",
+            "apiKey": "resolution",
+            "kind": "enum",
+            "level": "common",
+            "required": true,
+            "default": "720p",
+            "enum": ["480p", "720p"]
+          },
+          {
+            "key": "generateAudio",
+            "apiKey": "generate_audio",
+            "kind": "boolean",
+            "level": "common",
+            "default": false
+          }
+        ],
+        "inputRoles": [
+          {
+            "role": "reference-image",
+            "requestKey": "referenceImageUrls",
+            "apiKey": "reference_image_urls",
+            "mediaKind": "image",
+            "required": false,
+            "min": 0,
+            "max": 30,
+            "formats": ["image/jpeg", "image/png", "image/webp"]
+          },
+          {
+            "role": "reference-video",
+            "requestKey": "referenceVideoUrls",
+            "apiKey": "reference_video_urls",
+            "mediaKind": "video",
+            "required": false,
+            "min": 0,
+            "max": 10,
+            "formats": ["video/mp4", "video/webm", "video/quicktime"]
+          },
+          {
+            "role": "reference-audio",
+            "requestKey": "referenceAudioUrls",
+            "apiKey": "reference_audio_urls",
+            "mediaKind": "audio",
+            "required": false,
+            "min": 0,
+            "max": 10,
+            "formats": ["audio/mpeg", "audio/wav", "audio/mp4"]
+          }
+        ],
+        "output": {
+          "mediaKind": "video",
+          "formats": ["video/mp4", "video/webm", "video/quicktime"],
+          "durations": {
+            "min": 4,
+            "max": 30
+          },
+          "resolutions": ["480p", "720p"],
+          "aspectRatios": ["auto", "1:1", "21:9", "4:3", "3:4", "16:9", "9:16"],
+          "seed": false,
+          "safetyChecker": false,
+          "audio": "boolean-generate"
+        },
+        "validation": {
+          "conditionalRules": ["frames-vs-references-and-reference-counts"]
+        },
+        "payload": {
+          "adapter": "video-input-v1"
+        },
+        "limitations": [
+          "Image inputs conflict with all references and pin the aspect ratio to auto; reference media accepts 30 images, 10 videos and 10 audio clips, and audio requires an image or video reference."
+        ]
+      },
+      "vectors": {
+        "minimum": {
+          "values": {
+            "prompt": "studio video",
+            "duration": 4,
+            "aspectRatio": "auto",
+            "resolution": "720p",
+            "generateAudio": false,
+            "referenceImageUrls": ["https://assets.example/reference.png"]
+          },
+          "request": {
+            "model": "seedance-2.5",
+            "input": {
+              "prompt": "studio video",
+              "duration": 4,
+              "aspect_ratio": "auto",
+              "resolution": "720p",
+              "generate_audio": false,
+              "reference_image_urls": ["https://assets.example/reference.png"],
+              "enable_safety_checker": false
+            }
+          }
+        },
+        "advanced": {
+          "values": {
+            "prompt": "studio video",
+            "duration": 30,
+            "aspectRatio": "9:16",
+            "resolution": "720p",
+            "generateAudio": true,
+            "referenceImageUrls": ["https://assets.example/reference.png"]
+          },
+          "request": {
+            "model": "seedance-2.5",
+            "input": {
+              "prompt": "studio video",
+              "duration": 30,
+              "aspect_ratio": "9:16",
+              "resolution": "720p",
+              "generate_audio": true,
+              "reference_image_urls": ["https://assets.example/reference.png"],
+              "enable_safety_checker": false
+            }
+          },
+          "coveredFields": ["duration", "aspectRatio", "resolution", "generateAudio"]
+        },
+        "invalid": {
+          "label": "required prompt",
+          "values": {
+            "duration": 4,
+            "aspectRatio": "auto",
+            "resolution": "720p",
+            "generateAudio": false,
+            "referenceImageUrls": ["https://assets.example/reference.png"]
+          },
+          "issueIncludes": "prompt is required"
+        }
+      },
+      "manualDecisions": [
+        "Reviewed adapter condition: frames-vs-references-and-reference-counts.",
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
+        "Image inputs conflict with all references and pin the aspect ratio to auto; reference media accepts 30 images, 10 videos and 10 audio clips, and audio requires an image or video reference."
       ]
     },
     {
