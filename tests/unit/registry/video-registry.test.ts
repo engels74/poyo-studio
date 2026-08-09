@@ -32,11 +32,11 @@ function minimum(key: string): GuidedVideoRequest {
 }
 
 describe('audited video registry coverage', () => {
-  test('REG-01/02 accounts for 36 pages, 54 IDs, 124 current workflows and explicit exclusions', () => {
-    expect(VIDEO_PAGE_SLUGS).toHaveLength(36);
-    expect(new Set(VIDEO_PAGE_SLUGS).size).toBe(36);
-    expect(VIDEO_PUBLIC_IDS).toHaveLength(54);
-    expect(VIDEO_CURRENT_ENTRIES).toHaveLength(124);
+  test('REG-01/02 accounts for 37 pages, 55 IDs, 127 current workflows and explicit exclusions', () => {
+    expect(VIDEO_PAGE_SLUGS).toHaveLength(37);
+    expect(new Set(VIDEO_PAGE_SLUGS).size).toBe(37);
+    expect(VIDEO_PUBLIC_IDS).toHaveLength(55);
+    expect(VIDEO_CURRENT_ENTRIES).toHaveLength(127);
     expect(VIDEO_EXCLUDED_ENTRIES).toHaveLength(2);
     expect(VIDEO_EXCLUDED_ENTRIES.every((entry) => entry.status === 'excluded-initial-scope')).toBe(
       true
@@ -89,7 +89,7 @@ describe('audited video registry coverage', () => {
           "SELECT COUNT(*) count FROM registry_entries WHERE modality='video'"
         )
         .get()?.count
-    ).toBe(134);
+    ).toBe(137);
     expect(
       database
         .query<{ count: number }, []>(
@@ -100,7 +100,7 @@ describe('audited video registry coverage', () => {
     expect(
       database.query<{ count: number }, []>('SELECT COUNT(*) count FROM registry_entries').get()
         ?.count
-    ).toBe(186);
+    ).toBe(189);
     database.close();
   });
 });
@@ -396,6 +396,159 @@ describe('reviewed video conditional adapters', () => {
         referenceVideoUrls: ['https://assets.example/reference.mp4']
       })
     ).toThrow('referenceVideoUrls is not supported');
+  });
+
+  test('REG-05 Seedance 2.5 pins its documented modes, auto image ratio, and wider reference matrix', () => {
+    expect(
+      VIDEO_CURRENT_ENTRIES.filter((entry) => entry.publicModelId === 'seedance-2.5').map(
+        (entry) => entry.workflow
+      )
+    ).toEqual(['text-to-video', 'image-to-video', 'reference-to-video']);
+
+    const text = videoEntry('seedance-2.5:text-to-video');
+    expect(text.provider).toBe('ByteDance');
+    expect(text.fields.find((field) => field.key === 'duration')).toMatchObject({
+      kind: 'integer',
+      required: true,
+      default: 4,
+      min: 4,
+      max: 30
+    });
+    expect(text.fields.find((field) => field.key === 'resolution')).toMatchObject({
+      required: true,
+      enum: ['480p', '720p'],
+      default: '720p'
+    });
+    expect(text.fields.find((field) => field.key === 'aspectRatio')?.enum).toEqual([
+      'auto',
+      '1:1',
+      '21:9',
+      '4:3',
+      '3:4',
+      '16:9',
+      '9:16'
+    ]);
+    expect(normalizeVideoRequest(text.key, minimum(text.key)).request).toEqual({
+      model: 'seedance-2.5',
+      input: {
+        prompt: 'studio video',
+        duration: 4,
+        aspect_ratio: 'auto',
+        resolution: '720p',
+        generate_audio: false,
+        enable_safety_checker: false
+      }
+    });
+    expect(() => normalizeVideoRequest(text.key, { ...minimum(text.key), duration: 31 })).toThrow(
+      'exceeds maximum'
+    );
+    expect(() =>
+      normalizeVideoRequest(text.key, { ...minimum(text.key), resolution: '1080p' })
+    ).toThrow('resolution is unsupported');
+
+    // A start frame plus an optional end frame share image_urls, and the page pins that mode to auto.
+    const image = videoEntry('seedance-2.5:image-to-video');
+    expect(image.inputRoles).toEqual([
+      expect.objectContaining({
+        role: 'start-frame',
+        apiKey: 'image_urls',
+        required: true,
+        min: 1,
+        max: 2
+      })
+    ]);
+    expect(image.fields.find((field) => field.key === 'aspectRatio')).toMatchObject({
+      enum: ['auto'],
+      default: 'auto'
+    });
+    expect(
+      normalizeVideoRequest(image.key, {
+        ...minimum(image.key),
+        imageUrls: ['https://assets.example/first.png', 'https://assets.example/last.png']
+      }).request.input
+    ).toMatchObject({
+      aspect_ratio: 'auto',
+      image_urls: ['https://assets.example/first.png', 'https://assets.example/last.png']
+    });
+    expect(() =>
+      normalizeVideoRequest(image.key, { ...minimum(image.key), aspectRatio: '16:9' })
+    ).toThrow('aspectRatio is unsupported');
+    expect(() =>
+      normalizeVideoRequest(image.key, {
+        ...minimum(image.key),
+        referenceImageUrls: ['https://assets.example/reference.png']
+      })
+    ).toThrow('referenceImageUrls is not supported');
+
+    const reference = videoEntry('seedance-2.5:reference-to-video');
+    expect(reference.inputRoles.map((role) => [role.apiKey, role.max])).toEqual([
+      ['reference_image_urls', 30],
+      ['reference_video_urls', 10],
+      ['reference_audio_urls', 10]
+    ]);
+    expect(
+      normalizeVideoRequest(reference.key, {
+        ...minimum(reference.key),
+        referenceVideoUrls: ['https://assets.example/motion.mp4'],
+        referenceAudioUrls: ['https://assets.example/rhythm.wav']
+      }).request.input
+    ).toMatchObject({
+      reference_image_urls: ['https://assets.example/reference.png'],
+      reference_video_urls: ['https://assets.example/motion.mp4'],
+      reference_audio_urls: ['https://assets.example/rhythm.wav']
+    });
+    expect(() =>
+      normalizeVideoRequest(reference.key, {
+        ...minimum(reference.key),
+        referenceImageUrls: [],
+        referenceAudioUrls: ['https://assets.example/rhythm.wav']
+      })
+    ).toThrow('requires an image or video reference');
+    // The documented 50-file total is exactly the sum of the per-list caps, so a full corpus passes
+    // and the per-list caps are what reject an oversized request.
+    expect(
+      Object.keys(
+        normalizeVideoRequest(reference.key, {
+          ...minimum(reference.key),
+          referenceImageUrls: Array.from(
+            { length: 30 },
+            (_, index) => `https://assets.example/i-${index}.png`
+          ),
+          referenceVideoUrls: Array.from(
+            { length: 10 },
+            (_, index) => `https://assets.example/v-${index}.mp4`
+          ),
+          referenceAudioUrls: Array.from(
+            { length: 10 },
+            (_, index) => `https://assets.example/a-${index}.mp3`
+          )
+        }).request.input
+      )
+    ).toEqual(
+      expect.arrayContaining([
+        'reference_image_urls',
+        'reference_video_urls',
+        'reference_audio_urls'
+      ])
+    );
+    expect(() =>
+      normalizeVideoRequest(reference.key, {
+        ...minimum(reference.key),
+        referenceImageUrls: Array.from(
+          { length: 31 },
+          (_, index) => `https://assets.example/i-${index}.png`
+        )
+      })
+    ).toThrow('reference-image supports at most 30 inputs');
+    expect(() =>
+      normalizeVideoRequest(reference.key, {
+        ...minimum(reference.key),
+        referenceVideoUrls: Array.from(
+          { length: 11 },
+          (_, index) => `https://assets.example/v-${index}.mp4`
+        )
+      })
+    ).toThrow('reference-video supports at most 10 inputs');
   });
 
   test('REG-05 VEO derives generation_type and enforces model/duration restrictions', () => {

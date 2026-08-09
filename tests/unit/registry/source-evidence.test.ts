@@ -12,7 +12,7 @@ const manifest = manifestJson as unknown as RegistrySourceManifest;
 
 describe('official registry source evidence', () => {
   test('pins the complete reviewed model and operations corpus', () => {
-    expect(manifest.sources).toHaveLength(146);
+    expect(manifest.sources).toHaveLength(148);
     expect(sourceCorpusSha256(manifest.sources)).toBe(manifest.corpusSha256);
 
     const modelMarkdown = manifest.sources.filter(
@@ -21,8 +21,8 @@ describe('official registry source evidence', () => {
     const modelJson = manifest.sources.filter(
       (source) => source.category === 'model' && source.representation === 'json'
     );
-    expect(modelMarkdown).toHaveLength(58);
-    expect(modelJson).toHaveLength(58);
+    expect(modelMarkdown).toHaveLength(59);
+    expect(modelJson).toHaveLength(59);
     expect(modelMarkdown.every((source) => source.status === 'available')).toBe(true);
     expect(modelJson.every((source) => source.status === 'available' && source.structured)).toBe(
       true

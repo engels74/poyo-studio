@@ -10,7 +10,7 @@ import type {
   VideoWorkflow
 } from './types';
 
-export const VIDEO_REGISTRY_VERSION = 'video-2026-07-20.1';
+export const VIDEO_REGISTRY_VERSION = 'video-2026-08-09.1';
 export const VIDEO_VERIFIED_AT = OFFICIAL_SOURCE_MANIFEST.verifiedAt;
 const videoFormats = ['video/mp4', 'video/webm', 'video/quicktime'];
 const imageFormats = ['image/jpeg', 'image/png', 'image/webp'];
@@ -425,6 +425,25 @@ const pages: Page[] = [
     ]
   },
   {
+    slug: 'seedance-2.5',
+    provider: 'ByteDance',
+    family: 'Seedance 2.5',
+    models: [
+      {
+        id: 'seedance-2.5',
+        workflows: ['text-to-video', 'image-to-video', 'reference-to-video']
+      }
+    ],
+    ratios: seedanceRatios,
+    resolutions: ['480p', '720p'],
+    resolutionDefault: '720p',
+    durations: { min: 4, max: 30 },
+    generateAudio: true,
+    limitations: [
+      'Image inputs conflict with all references and pin the aspect ratio to auto; reference media accepts 30 images, 10 videos and 10 audio clips, and audio requires an image or video reference.'
+    ]
+  },
+  {
     slug: 'sora-2-official',
     provider: 'OpenAI',
     family: 'Sora 2 Official',
@@ -616,6 +635,22 @@ function mediaRole(
   };
 }
 
+/**
+ * Seedance reference generation caps each media list and the combined file count. Seedance 2 and
+ * 2 Mini share the documented nine/three/three matrix under a twelve-file total, while 2.5 widens
+ * every list to a total that equals the sum of its own maxima.
+ */
+export function seedanceReferenceLimits(family: string): {
+  images: number;
+  videos: number;
+  audio: number;
+  total: number;
+} {
+  return family === 'Seedance 2.5'
+    ? { images: 30, videos: 10, audio: 10, total: 50 }
+    : { images: 9, videos: 3, audio: 3, total: 12 };
+}
+
 function rolesFor(page: Page, modelId: string, workflow: VideoWorkflow): InputRole[] {
   if (workflow === 'text-to-video' && page.family === 'Wan 2.7 Video')
     return [mediaRole('audio', 'audioUrl', 'audio_url', 'audio', false, 0, 1)];
@@ -628,6 +663,9 @@ function rolesFor(page: Page, modelId: string, workflow: VideoWorkflow): InputRo
       ];
     if (page.family === 'Hailuo 03')
       // A start frame plus an optional end frame travel in one documented image_urls list.
+      return [mediaRole('start-frame', 'imageUrls', 'image_urls', 'image', true, 1, 2)];
+    // Seedance 2.5 shares that shape and derives the ratio from the first image.
+    if (page.family === 'Seedance 2.5')
       return [mediaRole('start-frame', 'imageUrls', 'image_urls', 'image', true, 1, 2)];
     if (['Hailuo 2.3', 'Kling 2.1', 'Kling 2.5 Turbo Pro'].includes(page.family))
       return [mediaRole('start-frame', 'startImageUrl', 'start_image_url', 'image', true, 1, 1)];
@@ -699,7 +737,8 @@ function rolesFor(page: Page, modelId: string, workflow: VideoWorkflow): InputRo
           page.family === 'Happy Horse 1.1' ? 9 : null
         )
       ];
-    if (page.family.startsWith('Seedance 2'))
+    if (page.family.startsWith('Seedance 2')) {
+      const limits = seedanceReferenceLimits(page.family);
       return [
         mediaRole(
           'reference-image',
@@ -708,7 +747,7 @@ function rolesFor(page: Page, modelId: string, workflow: VideoWorkflow): InputRo
           'image',
           false,
           0,
-          9
+          limits.images
         ),
         mediaRole(
           'reference-video',
@@ -717,7 +756,7 @@ function rolesFor(page: Page, modelId: string, workflow: VideoWorkflow): InputRo
           'video',
           false,
           0,
-          3
+          limits.videos
         ),
         mediaRole(
           'reference-audio',
@@ -726,9 +765,10 @@ function rolesFor(page: Page, modelId: string, workflow: VideoWorkflow): InputRo
           'audio',
           false,
           0,
-          3
+          limits.audio
         )
       ];
+    }
     if (page.family.startsWith('Kling O3'))
       return [
         mediaRole('start-frame', 'imageUrls', 'image_urls', 'image', false, 0, 2),
@@ -853,11 +893,14 @@ function effectiveRatios(page: Page, modelId: string, workflow: VideoWorkflow) {
     if (workflow === 'image-to-video') return null;
     if (workflow === 'reference-to-video') return ['adaptive', ...(page.ratios ?? [])] as const;
   }
+  // Seedance 2.5 documents that supplying image_urls pins the request to aspect_ratio auto.
+  if (page.family === 'Seedance 2.5' && workflow === 'image-to-video') return ['auto'] as const;
   return page.ratios ?? null;
 }
 
 function effectiveRatioDefault(page: Page, workflow: VideoWorkflow): string | undefined {
   if (page.family === 'Hailuo 03' && workflow === 'reference-to-video') return 'adaptive';
+  if (page.family === 'Seedance 2.5' && workflow === 'image-to-video') return 'auto';
   return page.ratioDefault;
 }
 
@@ -930,7 +973,10 @@ function fieldsFor(page: Page, modelId: string, workflow: VideoWorkflow): FieldD
   if (resolutions)
     fields.push(
       field('resolution', 'resolution', 'enum', 'common', {
-        required: page.family === 'Seedance 2' || page.family === 'Kling 2.6 Motion Control',
+        required:
+          page.family === 'Seedance 2' ||
+          page.family === 'Seedance 2.5' ||
+          page.family === 'Kling 2.6 Motion Control',
         default: page.resolutionDefault ?? resolutions[0],
         enum: resolutions
       })

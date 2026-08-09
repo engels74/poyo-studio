@@ -13,7 +13,7 @@ import type {
   NormalizedPreview,
   VideoRegistryEntry
 } from './types';
-import { VIDEO_REGISTRY_ENTRIES } from './video-registry';
+import { seedanceReferenceLimits, VIDEO_REGISTRY_ENTRIES } from './video-registry';
 
 const protectedKeys =
   /(?:model|callback|api.?key|authorization|cookie|credential|password|secret|token|path|file|directory)/i;
@@ -169,8 +169,9 @@ function validate(entry: VideoRegistryEntry, values: GuidedVideoRequest): string
     const audios = values.referenceAudioUrls?.length ?? 0;
     if (!images && !videos && !audios)
       issues.push('Seedance reference mode requires reference media.');
-    if (images + videos + audios > 12)
-      issues.push('Seedance supports at most 12 total reference files.');
+    const total = seedanceReferenceLimits(entry.family).total;
+    if (images + videos + audios > total)
+      issues.push(`Seedance supports at most ${total} total reference files.`);
     if (audios && !images && !videos)
       issues.push('Seedance reference audio requires an image or video reference.');
   }
