@@ -148,6 +148,34 @@
     },
     {
       "rule": "frames-vs-references-and-reference-counts",
+      "entryKey": "seedance-2:image-to-video",
+      "values": {
+        "prompt": "studio video",
+        "duration": 4,
+        "aspectRatio": "auto",
+        "resolution": "480p",
+        "generateAudio": false,
+        "imageUrls": ["https://assets.example/start.png"],
+        "referenceVideoUrls": ["https://assets.example/motion.mp4"]
+      },
+      "issueIncludes": "referenceVideoUrls is not supported"
+    },
+    {
+      "rule": "frames-vs-references-and-reference-counts",
+      "entryKey": "seedance-2-mini:image-to-video",
+      "values": {
+        "prompt": "studio video",
+        "duration": 4,
+        "aspectRatio": "auto",
+        "resolution": "720p",
+        "generateAudio": false,
+        "imageUrls": ["https://assets.example/start.png"],
+        "referenceVideoUrls": ["https://assets.example/motion.mp4"]
+      },
+      "issueIncludes": "referenceVideoUrls is not supported"
+    },
+    {
+      "rule": "frames-vs-references-and-reference-counts",
       "entryKey": "seedance-2.5:reference-to-video",
       "values": {
         "prompt": "studio video",

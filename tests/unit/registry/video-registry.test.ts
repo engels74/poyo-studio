@@ -389,13 +389,73 @@ describe('reviewed video conditional adapters', () => {
         referenceAudioUrls: ['https://assets.example/audio.mp3']
       })
     ).toThrow('12 total');
-    const frame = 'seedance-2:frame-to-video';
+    const image = 'seedance-2:image-to-video';
     expect(() =>
-      normalizeVideoRequest(frame, {
-        ...minimum(frame),
+      normalizeVideoRequest(image, {
+        ...minimum(image),
         referenceVideoUrls: ['https://assets.example/reference.mp4']
       })
     ).toThrow('referenceVideoUrls is not supported');
+  });
+
+  test('REG-05 Seedance 2 and 2 Mini expose image-to-video with an optional ending frame', () => {
+    // Every Seedance 2 page documents image_urls as index 0 starting frame plus index 1 optional
+    // ending frame, so the studio offers "Image to video", not a both-frames-required mode.
+    for (const modelId of ['seedance-2', 'seedance-2-fast', 'seedance-2-mini']) {
+      expect(
+        VIDEO_CURRENT_ENTRIES.filter((entry) => entry.publicModelId === modelId).map(
+          (entry) => entry.workflow
+        )
+      ).toEqual(['text-to-video', 'image-to-video', 'reference-to-video']);
+
+      const key = `${modelId}:image-to-video`;
+      expect(videoEntry(key).inputRoles).toEqual([
+        expect.objectContaining({
+          role: 'start-frame',
+          requestKey: 'imageUrls',
+          apiKey: 'image_urls',
+          required: true,
+          min: 1,
+          max: 2
+        })
+      ]);
+
+      // A lone starting frame is valid; the ending frame is genuinely optional.
+      expect(
+        normalizeVideoRequest(key, {
+          ...minimum(key),
+          imageUrls: ['https://assets.example/first.png']
+        }).request.input
+      ).toMatchObject({ image_urls: ['https://assets.example/first.png'] });
+
+      // Supplying both frames keeps documented order: index 0 start, index 1 end.
+      expect(
+        normalizeVideoRequest(key, {
+          ...minimum(key),
+          imageUrls: ['https://assets.example/first.png', 'https://assets.example/last.png']
+        }).request.input
+      ).toMatchObject({
+        image_urls: ['https://assets.example/first.png', 'https://assets.example/last.png']
+      });
+
+      // A third image exceeds the documented two-image cap.
+      expect(() =>
+        normalizeVideoRequest(key, {
+          ...minimum(key),
+          imageUrls: [
+            'https://assets.example/first.png',
+            'https://assets.example/last.png',
+            'https://assets.example/extra.png'
+          ]
+        })
+      ).toThrow('at most 2');
+    }
+
+    // Unlike Seedance 2.5, the 2 and 2 Mini pages do not pin image mode to aspect_ratio auto.
+    expect(
+      videoEntry('seedance-2:image-to-video').fields.find((field) => field.key === 'aspectRatio')
+        ?.enum
+    ).toEqual(['auto', '1:1', '21:9', '4:3', '3:4', '16:9', '9:16']);
   });
 
   test('REG-05 Seedance 2.5 pins its documented modes, auto image ratio, and wider reference matrix', () => {

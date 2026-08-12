@@ -1573,7 +1573,7 @@
           "adapter": "video-input-v1"
         },
         "limitations": [
-          "Frame inputs conflict with all references; reference audio requires an image or video reference."
+          "Image inputs take a starting frame plus an optional ending frame, conflict with all references, and reference audio requires an image or video reference."
         ]
       },
       "vectors": {
@@ -1632,11 +1632,11 @@
       "manualDecisions": [
         "Reviewed adapter condition: frames-vs-references-and-reference-counts.",
         "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
-        "Frame inputs conflict with all references; reference audio requires an image or video reference."
+        "Image inputs take a starting frame plus an optional ending frame, conflict with all references, and reference audio requires an image or video reference."
       ]
     },
     {
-      "entryKey": "seedance-2:frame-to-video",
+      "entryKey": "seedance-2:image-to-video",
       "status": "current",
       "source": {
         "pageSlug": "seedance-2",
@@ -1645,7 +1645,7 @@
       },
       "schema": {
         "publicModelId": "seedance-2",
-        "workflow": "frame-to-video",
+        "workflow": "image-to-video",
         "fields": [
           {
             "key": "prompt",
@@ -1723,7 +1723,7 @@
           "adapter": "video-input-v1"
         },
         "limitations": [
-          "Frame inputs conflict with all references; reference audio requires an image or video reference."
+          "Image inputs take a starting frame plus an optional ending frame, conflict with all references, and reference audio requires an image or video reference."
         ]
       },
       "vectors": {
@@ -1787,7 +1787,7 @@
       "manualDecisions": [
         "Reviewed adapter condition: frames-vs-references-and-reference-counts.",
         "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
-        "Frame inputs conflict with all references; reference audio requires an image or video reference."
+        "Image inputs take a starting frame plus an optional ending frame, conflict with all references, and reference audio requires an image or video reference."
       ]
     },
     {
@@ -1898,7 +1898,7 @@
           "adapter": "video-input-v1"
         },
         "limitations": [
-          "Frame inputs conflict with all references; reference audio requires an image or video reference."
+          "Image inputs take a starting frame plus an optional ending frame, conflict with all references, and reference audio requires an image or video reference."
         ]
       },
       "vectors": {
@@ -1962,7 +1962,7 @@
       "manualDecisions": [
         "Reviewed adapter condition: frames-vs-references-and-reference-counts.",
         "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
-        "Frame inputs conflict with all references; reference audio requires an image or video reference."
+        "Image inputs take a starting frame plus an optional ending frame, conflict with all references, and reference audio requires an image or video reference."
       ]
     },
     {
@@ -2042,7 +2042,7 @@
           "adapter": "video-input-v1"
         },
         "limitations": [
-          "Frame inputs conflict with all references; reference audio requires an image or video reference."
+          "Image inputs take a starting frame plus an optional ending frame, conflict with all references, and reference audio requires an image or video reference."
         ]
       },
       "vectors": {
@@ -2101,11 +2101,11 @@
       "manualDecisions": [
         "Reviewed adapter condition: frames-vs-references-and-reference-counts.",
         "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
-        "Frame inputs conflict with all references; reference audio requires an image or video reference."
+        "Image inputs take a starting frame plus an optional ending frame, conflict with all references, and reference audio requires an image or video reference."
       ]
     },
     {
-      "entryKey": "seedance-2-fast:frame-to-video",
+      "entryKey": "seedance-2-fast:image-to-video",
       "status": "current",
       "source": {
         "pageSlug": "seedance-2",
@@ -2114,7 +2114,7 @@
       },
       "schema": {
         "publicModelId": "seedance-2-fast",
-        "workflow": "frame-to-video",
+        "workflow": "image-to-video",
         "fields": [
           {
             "key": "prompt",
@@ -2192,7 +2192,7 @@
           "adapter": "video-input-v1"
         },
         "limitations": [
-          "Frame inputs conflict with all references; reference audio requires an image or video reference."
+          "Image inputs take a starting frame plus an optional ending frame, conflict with all references, and reference audio requires an image or video reference."
         ]
       },
       "vectors": {
@@ -2256,7 +2256,7 @@
       "manualDecisions": [
         "Reviewed adapter condition: frames-vs-references-and-reference-counts.",
         "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
-        "Frame inputs conflict with all references; reference audio requires an image or video reference."
+        "Image inputs take a starting frame plus an optional ending frame, conflict with all references, and reference audio requires an image or video reference."
       ]
     },
     {
@@ -2367,7 +2367,7 @@
           "adapter": "video-input-v1"
         },
         "limitations": [
-          "Frame inputs conflict with all references; reference audio requires an image or video reference."
+          "Image inputs take a starting frame plus an optional ending frame, conflict with all references, and reference audio requires an image or video reference."
         ]
       },
       "vectors": {
@@ -2431,7 +2431,7 @@
       "manualDecisions": [
         "Reviewed adapter condition: frames-vs-references-and-reference-counts.",
         "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
-        "Frame inputs conflict with all references; reference audio requires an image or video reference."
+        "Image inputs take a starting frame plus an optional ending frame, conflict with all references, and reference audio requires an image or video reference."
       ]
     },
     {
@@ -2511,7 +2511,7 @@
           "adapter": "video-input-v1"
         },
         "limitations": [
-          "Frame inputs conflict with all references; reference audio requires an image or video reference."
+          "Image inputs take a starting frame plus an optional ending frame, conflict with all references, and reference audio requires an image or video reference."
         ]
       },
       "vectors": {
@@ -2570,11 +2570,11 @@
       "manualDecisions": [
         "Reviewed adapter condition: frames-vs-references-and-reference-counts.",
         "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
-        "Frame inputs conflict with all references; reference audio requires an image or video reference."
+        "Image inputs take a starting frame plus an optional ending frame, conflict with all references, and reference audio requires an image or video reference."
       ]
     },
     {
-      "entryKey": "seedance-2-mini:frame-to-video",
+      "entryKey": "seedance-2-mini:image-to-video",
       "status": "current",
       "source": {
         "pageSlug": "seedance-2-mini",
@@ -2583,7 +2583,7 @@
       },
       "schema": {
         "publicModelId": "seedance-2-mini",
-        "workflow": "frame-to-video",
+        "workflow": "image-to-video",
         "fields": [
           {
             "key": "prompt",
@@ -2661,7 +2661,7 @@
           "adapter": "video-input-v1"
         },
         "limitations": [
-          "Frame inputs conflict with all references; reference audio requires an image or video reference."
+          "Image inputs take a starting frame plus an optional ending frame, conflict with all references, and reference audio requires an image or video reference."
         ]
       },
       "vectors": {
@@ -2725,7 +2725,7 @@
       "manualDecisions": [
         "Reviewed adapter condition: frames-vs-references-and-reference-counts.",
         "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
-        "Frame inputs conflict with all references; reference audio requires an image or video reference."
+        "Image inputs take a starting frame plus an optional ending frame, conflict with all references, and reference audio requires an image or video reference."
       ]
     },
     {
@@ -2836,7 +2836,7 @@
           "adapter": "video-input-v1"
         },
         "limitations": [
-          "Frame inputs conflict with all references; reference audio requires an image or video reference."
+          "Image inputs take a starting frame plus an optional ending frame, conflict with all references, and reference audio requires an image or video reference."
         ]
       },
       "vectors": {
@@ -2900,7 +2900,7 @@
       "manualDecisions": [
         "Reviewed adapter condition: frames-vs-references-and-reference-counts.",
         "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
-        "Frame inputs conflict with all references; reference audio requires an image or video reference."
+        "Image inputs take a starting frame plus an optional ending frame, conflict with all references, and reference audio requires an image or video reference."
       ]
     },
     {
