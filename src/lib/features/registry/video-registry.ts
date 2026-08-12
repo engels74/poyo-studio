@@ -390,10 +390,10 @@ const pages: Page[] = [
     provider: 'ByteDance',
     family: 'Seedance 2',
     models: [
-      { id: 'seedance-2', workflows: ['text-to-video', 'frame-to-video', 'reference-to-video'] },
+      { id: 'seedance-2', workflows: ['text-to-video', 'image-to-video', 'reference-to-video'] },
       {
         id: 'seedance-2-fast',
-        workflows: ['text-to-video', 'frame-to-video', 'reference-to-video']
+        workflows: ['text-to-video', 'image-to-video', 'reference-to-video']
       }
     ],
     prompt: [3, 20000],
@@ -402,7 +402,7 @@ const pages: Page[] = [
     durations: { min: 4, max: 15 },
     generateAudio: true,
     limitations: [
-      'Frame inputs conflict with all references; reference audio requires an image or video reference.'
+      'Image inputs take a starting frame plus an optional ending frame, conflict with all references, and reference audio requires an image or video reference.'
     ]
   },
   {
@@ -412,7 +412,7 @@ const pages: Page[] = [
     models: [
       {
         id: 'seedance-2-mini',
-        workflows: ['text-to-video', 'frame-to-video', 'reference-to-video']
+        workflows: ['text-to-video', 'image-to-video', 'reference-to-video']
       }
     ],
     ratios: seedanceRatios,
@@ -421,7 +421,7 @@ const pages: Page[] = [
     durations: { min: 4, max: 15 },
     generateAudio: true,
     limitations: [
-      'Frame inputs conflict with all references; reference audio requires an image or video reference.'
+      'Image inputs take a starting frame plus an optional ending frame, conflict with all references, and reference audio requires an image or video reference.'
     ]
   },
   {
@@ -661,11 +661,11 @@ function rolesFor(page: Page, modelId: string, workflow: VideoWorkflow): InputRo
         mediaRole('source-video', 'videoUrl', 'video_url', 'video', false, 0, 1),
         mediaRole('audio', 'audioUrl', 'audio_url', 'audio', false, 0, 1)
       ];
-    if (page.family === 'Hailuo 03')
-      // A start frame plus an optional end frame travel in one documented image_urls list.
-      return [mediaRole('start-frame', 'imageUrls', 'image_urls', 'image', true, 1, 2)];
-    // Seedance 2.5 shares that shape and derives the ratio from the first image.
-    if (page.family === 'Seedance 2.5')
+    // A start frame plus an optional end frame travel in one documented image_urls list: index 0
+    // is the starting frame and index 1 the optional ending frame. Hailuo 03 and every Seedance 2
+    // page share that shape, so the end frame stays optional rather than becoming a separate
+    // both-frames-required mode. Seedance 2.5 additionally derives the ratio from the first image.
+    if (page.family === 'Hailuo 03' || page.family.startsWith('Seedance 2'))
       return [mediaRole('start-frame', 'imageUrls', 'image_urls', 'image', true, 1, 2)];
     if (['Hailuo 2.3', 'Kling 2.1', 'Kling 2.5 Turbo Pro'].includes(page.family))
       return [mediaRole('start-frame', 'startImageUrl', 'start_image_url', 'image', true, 1, 1)];
