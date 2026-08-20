@@ -8,7 +8,7 @@
       "!!build",
       "!!coverage",
       "!!data",
-      "!!.augment",
+      "!!.agents",
       "!!.gjc",
       "!!.omc",
       "!!.omx"
