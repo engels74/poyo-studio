@@ -89,6 +89,32 @@ describe('durable job SSE protocol', () => {
     controller.abort();
   });
 
+  test('SSE-04 a disconnecting client tears the stream down in either order without throwing', async () => {
+    for (const order of ['cancel-then-abort', 'abort-then-cancel'] as const) {
+      const fixture = await createJobFixture();
+      cleanups.push(fixture.cleanup);
+      const controller = new AbortController();
+      const reader = createJobEventStream(
+        fixture.repository,
+        null,
+        controller.signal,
+        5
+      ).getReader();
+      await reader.read();
+
+      if (order === 'cancel-then-abort') {
+        await reader.cancel();
+        expect(() => controller.abort()).not.toThrow();
+      } else {
+        controller.abort();
+        await expect(reader.cancel()).resolves.toBeUndefined();
+      }
+
+      createTestJob(fixture.repository, `torn-down-${order}`);
+      await Bun.sleep(20);
+    }
+  });
+
   test('PERF-04 durable event replay is bounded and resumes from the returned cursor', async () => {
     const fixture = await createJobFixture();
     cleanups.push(fixture.cleanup);
