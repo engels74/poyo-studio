@@ -25,8 +25,8 @@ describe('Bun SvelteKit foundation', () => {
   test('pins the verified runtime and dependency baseline', async () => {
     const manifest = (await Bun.file('package.json').json()) as PackageManifest;
 
-    expect(Bun.version).toBe('1.3.14');
-    expect(manifest.packageManager).toBe('bun@1.3.14');
+    expect(Bun.version).toBe('1.4.0');
+    expect(manifest.packageManager).toBe('bun@1.4.0');
     expect(manifest.scripts.dev).toBe('bun --bun vite dev --host 127.0.0.1');
     expect(manifest.devDependencies).toMatchObject(expectedVersions);
   });

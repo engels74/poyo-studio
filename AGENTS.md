@@ -8,7 +8,7 @@ Poyo Local Studio: a local-first SvelteKit 2 / Svelte 5 (runes) app on Bun, back
 
 ## Commands
 
-Bun is the only supported runner (`bun@1.3.14`, pinned in `.bun-version` and `engines`).
+Bun is the only supported runner (`bun@1.4.0`, pinned in `.bun-version` and `engines`).
 
 | Task | Command |
 | --- | --- |

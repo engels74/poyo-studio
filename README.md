@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/engels74/poyo-suite/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue.svg" alt="AGPL-3.0 license"></a>
-  <img src="https://img.shields.io/badge/Bun-1.3.14-000000?logo=bun&logoColor=white" alt="Bun 1.3.14">
+  <img src="https://img.shields.io/badge/Bun-1.4.0-000000?logo=bun&logoColor=white" alt="Bun 1.4.0">
   <img src="https://img.shields.io/badge/SvelteKit-2.69-FF3E00?logo=svelte&logoColor=white" alt="SvelteKit 2.69">
   <img src="https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white" alt="TypeScript 5.9">
   <img src="https://img.shields.io/badge/UnoCSS-presetWind4-333333?logo=unocss&logoColor=white" alt="UnoCSS presetWind4">
@@ -28,7 +28,7 @@ The project is independent and is not an official Poyo.ai client.
 
 ### Requirements
 
-- [Bun 1.3.14](https://bun.sh/) — pinned in `.bun-version` and `package.json`.
+- [Bun 1.4.0](https://bun.sh/) — pinned in `.bun-version` and `package.json`.
 - A Poyo API key for connectivity or generation. No paid request is needed to install, build,
   or run the automated test suite.
 
