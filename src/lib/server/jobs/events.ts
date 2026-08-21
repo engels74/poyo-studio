@@ -100,6 +100,15 @@ export function createJobEventStream(
   pollMs = 500
 ): ReadableStream<Uint8Array> {
   let timer: ReturnType<typeof setInterval> | null = null;
+  // A disconnecting client both cancels the stream and aborts the request signal, in an order the
+  // runtime chooses. Whichever arrives second must not touch the controller: close() or enqueue()
+  // on an already-closed controller throws, and both callers here are event handlers whose throw
+  // is unhandled and terminates the server.
+  let finished = false;
+  const stopPolling = () => {
+    if (timer) clearInterval(timer);
+    timer = null;
+  };
   return new ReadableStream({
     start(controller) {
       const initial = initialJobEvents(repository, lastEventId);
@@ -107,6 +116,7 @@ export function createJobEventStream(
       if (initial.chunks.length === 0) controller.enqueue(encoder.encode(': connected\n\n'));
       for (const chunk of initial.chunks) controller.enqueue(chunk);
       const poll = () => {
+        if (finished) return;
         const events = repository.eventsAfter(cursor);
         const projection = events.length ? repository.outstandingProjection() : undefined;
         for (const [index, event] of events.entries()) {
@@ -125,16 +135,17 @@ export function createJobEventStream(
       signal?.addEventListener(
         'abort',
         () => {
-          if (timer) clearInterval(timer);
-          timer = null;
+          stopPolling();
+          if (finished) return;
+          finished = true;
           controller.close();
         },
         { once: true }
       );
     },
     cancel() {
-      if (timer) clearInterval(timer);
-      timer = null;
+      stopPolling();
+      finished = true;
     }
   });
 }
