@@ -32,11 +32,11 @@ function minimum(key: string): GuidedVideoRequest {
 }
 
 describe('audited video registry coverage', () => {
-  test('REG-01/02 accounts for 37 pages, 55 IDs, 127 current workflows and explicit exclusions', () => {
-    expect(VIDEO_PAGE_SLUGS).toHaveLength(37);
-    expect(new Set(VIDEO_PAGE_SLUGS).size).toBe(37);
-    expect(VIDEO_PUBLIC_IDS).toHaveLength(55);
-    expect(VIDEO_CURRENT_ENTRIES).toHaveLength(127);
+  test('REG-01/02 accounts for 38 pages, 60 IDs, 132 current workflows and explicit exclusions', () => {
+    expect(VIDEO_PAGE_SLUGS).toHaveLength(38);
+    expect(new Set(VIDEO_PAGE_SLUGS).size).toBe(38);
+    expect(VIDEO_PUBLIC_IDS).toHaveLength(60);
+    expect(VIDEO_CURRENT_ENTRIES).toHaveLength(132);
     expect(VIDEO_EXCLUDED_ENTRIES).toHaveLength(2);
     expect(VIDEO_EXCLUDED_ENTRIES.every((entry) => entry.status === 'excluded-initial-scope')).toBe(
       true
@@ -89,7 +89,7 @@ describe('audited video registry coverage', () => {
           "SELECT COUNT(*) count FROM registry_entries WHERE modality='video'"
         )
         .get()?.count
-    ).toBe(137);
+    ).toBe(142);
     expect(
       database
         .query<{ count: number }, []>(
@@ -100,7 +100,7 @@ describe('audited video registry coverage', () => {
     expect(
       database.query<{ count: number }, []>('SELECT COUNT(*) count FROM registry_entries').get()
         ?.count
-    ).toBe(189);
+    ).toBe(200);
     database.close();
   });
 });
@@ -816,5 +816,161 @@ describe('reviewed video conditional adapters', () => {
     expect(() => normalizeRegistryRequest(key, minimum(key), [null] as unknown as [])).toThrow(
       'key/value objects'
     );
+  });
+
+  test('REG-05 Flux 3 splits its five model IDs into one media shape each', () => {
+    expect(
+      VIDEO_CURRENT_ENTRIES.filter((entry) => entry.family === 'Flux 3').map((entry) => [
+        entry.publicModelId,
+        entry.workflow
+      ])
+    ).toEqual([
+      ['flux-3/text-to-video', 'text-to-video'],
+      ['flux-3/image-to-video', 'image-to-video'],
+      ['flux-3/first-last-frame-to-video', 'frame-to-video'],
+      ['flux-3/extend-video', 'video-to-video'],
+      ['flux-3/keyframes-to-video', 'keyframe-to-video']
+    ]);
+
+    const text = videoEntry('flux-3/text-to-video:text-to-video');
+    expect(text.provider).toBe('Black Forest Labs');
+    expect(text.inputRoles).toEqual([]);
+    expect(text.fields.find((field) => field.key === 'duration')).toMatchObject({
+      kind: 'integer',
+      required: true,
+      default: 5,
+      min: 5,
+      max: 20
+    });
+    expect(text.fields.find((field) => field.key === 'aspectRatio')).toMatchObject({
+      apiKey: 'aspect_ratio',
+      default: 'auto',
+      enum: ['auto', '21:9', '2:1', '16:9', '4:3', '1:1', '3:4', '9:16']
+    });
+    expect(text.fields.find((field) => field.key === 'resolution')).toMatchObject({
+      enum: ['720p', '1080p'],
+      default: '720p'
+    });
+    expect(text.output.audio).toBe('boolean-sound');
+    expect(normalizeVideoRequest(text.key, minimum(text.key)).request).toEqual({
+      model: 'flux-3/text-to-video',
+      input: {
+        prompt: 'studio video',
+        duration: 5,
+        aspect_ratio: 'auto',
+        resolution: '720p',
+        sound: true,
+        enable_safety_checker: false
+      }
+    });
+    expect(() => normalizeVideoRequest(text.key, { ...minimum(text.key), duration: 21 })).toThrow(
+      'exceeds maximum'
+    );
+
+    // One image starts a shot, two ordered images become the first and last frame.
+    expect(videoEntry('flux-3/image-to-video:image-to-video').inputRoles).toEqual([
+      expect.objectContaining({ apiKey: 'image_urls', required: true, min: 1, max: 1 })
+    ]);
+    const frames = videoEntry('flux-3/first-last-frame-to-video:frame-to-video');
+    expect(frames.inputRoles).toEqual([
+      expect.objectContaining({
+        role: 'start-frame',
+        apiKey: 'image_urls',
+        required: true,
+        min: 2,
+        max: 2
+      })
+    ]);
+    expect(() =>
+      normalizeVideoRequest(frames.key, {
+        ...minimum(frames.key),
+        imageUrls: ['https://assets.example/start.png']
+      })
+    ).toThrow('start-frame requires at least 2 input');
+
+    // Extending a video carries a single MP4 in video_url, not the plural list other pages use.
+    const extend = videoEntry('flux-3/extend-video:video-to-video');
+    expect(extend.inputRoles).toEqual([
+      expect.objectContaining({
+        role: 'source-video',
+        requestKey: 'videoUrl',
+        apiKey: 'video_url',
+        required: true,
+        min: 1,
+        max: 1
+      })
+    ]);
+    expect(normalizeVideoRequest(extend.key, minimum(extend.key)).request.input).toMatchObject({
+      video_url: 'https://assets.example/source-video-0.mp4'
+    });
+  });
+
+  test('REG-05 Flux 3 keyframes stay unique whole frames on the documented 24 fps timeline', () => {
+    const entry = videoEntry('flux-3/keyframes-to-video:keyframe-to-video');
+    expect(entry.inputRoles).toEqual([]);
+    expect(entry.fields.find((field) => field.key === 'keyframes')).toMatchObject({
+      apiKey: 'keyframes',
+      kind: 'object-list',
+      level: 'essential',
+      required: true,
+      min: 1,
+      max: 10
+    });
+
+    const base = minimum(entry.key);
+    expect(normalizeVideoRequest(entry.key, base).request).toEqual({
+      model: 'flux-3/keyframes-to-video',
+      input: {
+        prompt: 'studio video',
+        keyframes: [{ image_url: 'https://assets.example/keyframe.png', frame_index: 0 }],
+        duration: 5,
+        aspect_ratio: 'auto',
+        resolution: '720p',
+        sound: true,
+        enable_safety_checker: false
+      }
+    });
+
+    const keyframe = (frameIndex: number, name = 'frame') => ({
+      image_url: `https://assets.example/${name}.png`,
+      frame_index: frameIndex
+    });
+    expect(() => normalizeVideoRequest(entry.key, { ...base, keyframes: [] })).toThrow(
+      'keyframes is required'
+    );
+    expect(() =>
+      normalizeVideoRequest(entry.key, {
+        ...base,
+        keyframes: Array.from({ length: 11 }, (_, index) => keyframe(index, `frame-${index}`))
+      })
+    ).toThrow('keyframes has too many items');
+    // duration 5 puts the last usable frame at 5 x 24.
+    expect(() => normalizeVideoRequest(entry.key, { ...base, keyframes: [keyframe(121)] })).toThrow(
+      'Each keyframe requires frame_index 0-120.'
+    );
+    expect(() =>
+      normalizeVideoRequest(entry.key, { ...base, duration: 6, keyframes: [keyframe(121)] })
+    ).not.toThrow();
+    expect(() => normalizeVideoRequest(entry.key, { ...base, keyframes: [keyframe(1.5)] })).toThrow(
+      'Each keyframe requires frame_index 0-120.'
+    );
+    expect(() =>
+      normalizeVideoRequest(entry.key, {
+        ...base,
+        keyframes: [keyframe(0, 'a'), keyframe(0, 'b')]
+      })
+    ).toThrow('Keyframe frame_index values must be unique.');
+    expect(() =>
+      normalizeVideoRequest(entry.key, {
+        ...base,
+        keyframes: [{ image_url: 'ftp://assets.example/frame.png', frame_index: 0 }]
+      })
+    ).toThrow('keyframe requires HTTP(S) URLs without credentials.');
+    expect(() =>
+      normalizeVideoRequest(entry.key, {
+        ...base,
+        keyframes: [{ frame_index: 0 }]
+      } as unknown as Parameters<typeof normalizeVideoRequest>[1])
+    ).toThrow('Each keyframe requires an image_url.');
   });
 });

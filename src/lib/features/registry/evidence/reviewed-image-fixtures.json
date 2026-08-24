@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "registryVersion": "image-2026-07-20.1",
-  "reviewedAt": "2026-08-09T09:47:01Z",
+  "registryVersion": "image-2026-08-24.1",
+  "reviewedAt": "2026-08-24T17:23:08Z",
   "workflows": [
     {
       "entryKey": "flux-2-pro:text-to-image",
@@ -2417,6 +2417,276 @@
       ]
     },
     {
+      "entryKey": "grok-imagine-image-2.0:text-to-image",
+      "status": "current",
+      "source": {
+        "pageSlug": "grok-imagine-image-2-0",
+        "markdownId": "model:image:grok-imagine-image-2-0:markdown",
+        "jsonId": "model:image:grok-imagine-image-2-0:json"
+      },
+      "schema": {
+        "publicModelId": "grok-imagine-image-2.0",
+        "workflow": "text-to-image",
+        "fields": [
+          {
+            "key": "prompt",
+            "apiKey": "prompt",
+            "kind": "text",
+            "level": "essential",
+            "required": true,
+            "min": 1,
+            "max": 8000
+          },
+          {
+            "key": "aspectRatio",
+            "apiKey": "aspect_ratio",
+            "kind": "enum",
+            "level": "common",
+            "enum": ["1:1", "2:3", "3:2", "9:16", "16:9"],
+            "default": "1:1"
+          },
+          {
+            "key": "resolution",
+            "apiKey": "resolution",
+            "kind": "enum",
+            "level": "common",
+            "enum": ["1K", "2K"],
+            "default": "1K"
+          },
+          {
+            "key": "n",
+            "apiKey": "n",
+            "kind": "integer",
+            "level": "common",
+            "default": 1,
+            "min": 1,
+            "max": 4
+          },
+          {
+            "key": "quality",
+            "apiKey": "quality",
+            "kind": "enum",
+            "level": "common",
+            "default": "medium",
+            "enum": ["low", "medium"]
+          }
+        ],
+        "inputRoles": [
+          {
+            "role": "reference",
+            "required": false,
+            "min": 0,
+            "max": 3,
+            "mediaKind": "image",
+            "formats": ["image/jpeg", "image/png", "image/gif", "image/webp"]
+          }
+        ],
+        "output": {
+          "mediaKind": "image",
+          "formats": ["png"],
+          "counts": [1, 2, 3, 4],
+          "customSize": false,
+          "seed": false,
+          "safetyChecker": false
+        },
+        "validation": {
+          "conditionalRules": []
+        },
+        "payload": {
+          "adapter": "image-input-v1"
+        },
+        "limitations": [
+          "Supplying image_urls switches the single model ID from generation to editing."
+        ]
+      },
+      "vectors": {
+        "minimum": {
+          "values": {
+            "prompt": "studio image"
+          },
+          "request": {
+            "model": "grok-imagine-image-2.0",
+            "input": {
+              "prompt": "studio image",
+              "aspect_ratio": "1:1",
+              "resolution": "1K",
+              "n": 1,
+              "quality": "medium",
+              "enable_safety_checker": false
+            }
+          }
+        },
+        "advanced": {
+          "values": {
+            "prompt": "studio image",
+            "aspectRatio": "16:9",
+            "resolution": "2K",
+            "n": 4,
+            "quality": "medium"
+          },
+          "request": {
+            "model": "grok-imagine-image-2.0",
+            "input": {
+              "prompt": "studio image",
+              "aspect_ratio": "16:9",
+              "resolution": "2K",
+              "n": 4,
+              "quality": "medium",
+              "enable_safety_checker": false
+            }
+          },
+          "coveredFields": ["aspectRatio", "resolution", "n", "quality"]
+        },
+        "invalid": {
+          "label": "required prompt",
+          "values": {},
+          "issueIncludes": "prompt is required"
+        }
+      },
+      "manualDecisions": [
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
+        "Supplying image_urls switches the single model ID from generation to editing."
+      ]
+    },
+    {
+      "entryKey": "grok-imagine-image-2.0:image-edit",
+      "status": "current",
+      "source": {
+        "pageSlug": "grok-imagine-image-2-0",
+        "markdownId": "model:image:grok-imagine-image-2-0:markdown",
+        "jsonId": "model:image:grok-imagine-image-2-0:json"
+      },
+      "schema": {
+        "publicModelId": "grok-imagine-image-2.0",
+        "workflow": "image-edit",
+        "fields": [
+          {
+            "key": "prompt",
+            "apiKey": "prompt",
+            "kind": "text",
+            "level": "essential",
+            "required": true,
+            "min": 1,
+            "max": 8000
+          },
+          {
+            "key": "aspectRatio",
+            "apiKey": "aspect_ratio",
+            "kind": "enum",
+            "level": "common",
+            "enum": ["1:1", "2:3", "3:2", "9:16", "16:9"],
+            "default": "1:1"
+          },
+          {
+            "key": "resolution",
+            "apiKey": "resolution",
+            "kind": "enum",
+            "level": "common",
+            "enum": ["1K", "2K"],
+            "default": "1K"
+          },
+          {
+            "key": "n",
+            "apiKey": "n",
+            "kind": "integer",
+            "level": "common",
+            "default": 1,
+            "min": 1,
+            "max": 4
+          },
+          {
+            "key": "quality",
+            "apiKey": "quality",
+            "kind": "enum",
+            "level": "common",
+            "default": "medium",
+            "enum": ["low", "medium"]
+          }
+        ],
+        "inputRoles": [
+          {
+            "role": "reference",
+            "required": true,
+            "min": 0,
+            "max": 3,
+            "mediaKind": "image",
+            "formats": ["image/jpeg", "image/png", "image/gif", "image/webp"]
+          }
+        ],
+        "output": {
+          "mediaKind": "image",
+          "formats": ["png"],
+          "counts": [1, 2, 3, 4],
+          "customSize": false,
+          "seed": false,
+          "safetyChecker": false
+        },
+        "validation": {
+          "conditionalRules": []
+        },
+        "payload": {
+          "adapter": "image-input-v1"
+        },
+        "limitations": [
+          "Supplying image_urls switches the single model ID from generation to editing."
+        ]
+      },
+      "vectors": {
+        "minimum": {
+          "values": {
+            "prompt": "studio image",
+            "imageUrls": []
+          },
+          "request": {
+            "model": "grok-imagine-image-2.0",
+            "input": {
+              "prompt": "studio image",
+              "aspect_ratio": "1:1",
+              "resolution": "1K",
+              "n": 1,
+              "quality": "medium",
+              "image_urls": [],
+              "enable_safety_checker": false
+            }
+          }
+        },
+        "advanced": {
+          "values": {
+            "prompt": "studio image",
+            "imageUrls": [],
+            "aspectRatio": "16:9",
+            "resolution": "2K",
+            "n": 4,
+            "quality": "medium"
+          },
+          "request": {
+            "model": "grok-imagine-image-2.0",
+            "input": {
+              "prompt": "studio image",
+              "aspect_ratio": "16:9",
+              "resolution": "2K",
+              "n": 4,
+              "quality": "medium",
+              "image_urls": [],
+              "enable_safety_checker": false
+            }
+          },
+          "coveredFields": ["aspectRatio", "resolution", "n", "quality"]
+        },
+        "invalid": {
+          "label": "required prompt",
+          "values": {
+            "imageUrls": []
+          },
+          "issueIncludes": "prompt is required"
+        }
+      },
+      "manualDecisions": [
+        "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
+        "Supplying image_urls switches the single model ID from generation to editing."
+      ]
+    },
+    {
       "entryKey": "kling-o1-image-edit:image-edit",
       "status": "current",
       "source": {
@@ -4284,6 +4554,670 @@
       "manualDecisions": [
         "Project override: enable_safety_checker is sent as false even though this page does not document it; Poyo drops the undocumented field, verified live.",
         "Some seed fields are official-variant only."
+      ]
+    },
+    {
+      "entryKey": "qwen-image-3:text-to-image",
+      "status": "current",
+      "source": {
+        "pageSlug": "qwen-image-3",
+        "markdownId": "model:image:qwen-image-3:markdown",
+        "jsonId": "model:image:qwen-image-3:json"
+      },
+      "schema": {
+        "publicModelId": "qwen-image-3",
+        "workflow": "text-to-image",
+        "fields": [
+          {
+            "key": "prompt",
+            "apiKey": "prompt",
+            "kind": "text",
+            "level": "essential",
+            "required": true,
+            "min": 1,
+            "max": 5000
+          },
+          {
+            "key": "aspectRatio",
+            "apiKey": "size",
+            "kind": "enum",
+            "level": "common",
+            "enum": ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9"]
+          },
+          {
+            "key": "resolution",
+            "apiKey": "resolution",
+            "kind": "enum",
+            "level": "common",
+            "enum": ["1K", "2K"],
+            "default": "1K"
+          },
+          {
+            "key": "outputFormat",
+            "apiKey": "output_format",
+            "kind": "enum",
+            "level": "common",
+            "enum": ["png", "jpeg"],
+            "default": "png"
+          },
+          {
+            "key": "seed",
+            "apiKey": "seed",
+            "kind": "integer",
+            "level": "advanced",
+            "min": 0,
+            "max": 2147483647
+          },
+          {
+            "key": "enableSafetyChecker",
+            "apiKey": "enable_safety_checker",
+            "kind": "boolean",
+            "level": "common",
+            "default": false
+          },
+          {
+            "key": "negativePrompt",
+            "apiKey": "negative_prompt",
+            "kind": "text",
+            "level": "advanced",
+            "max": 5000
+          },
+          {
+            "key": "promptExtend",
+            "apiKey": "prompt_extend",
+            "kind": "boolean",
+            "level": "advanced",
+            "default": true
+          }
+        ],
+        "inputRoles": [
+          {
+            "role": "reference",
+            "required": false,
+            "min": 0,
+            "max": 3,
+            "mediaKind": "image",
+            "formats": ["image/jpeg", "image/png", "image/gif", "image/webp"]
+          }
+        ],
+        "output": {
+          "mediaKind": "image",
+          "formats": ["png", "jpeg"],
+          "counts": null,
+          "customSize": false,
+          "seed": true,
+          "safetyChecker": true
+        },
+        "validation": {
+          "conditionalRules": []
+        },
+        "payload": {
+          "adapter": "image-input-v1"
+        },
+        "limitations": [
+          "Omitting image_urls generates from text; one to three references switch the same model ID to reference generation."
+        ]
+      },
+      "vectors": {
+        "minimum": {
+          "values": {
+            "prompt": "studio image"
+          },
+          "request": {
+            "model": "qwen-image-3",
+            "input": {
+              "prompt": "studio image",
+              "resolution": "1K",
+              "output_format": "png",
+              "enable_safety_checker": false,
+              "prompt_extend": true
+            }
+          }
+        },
+        "advanced": {
+          "values": {
+            "prompt": "studio image",
+            "aspectRatio": "21:9",
+            "resolution": "2K",
+            "outputFormat": "jpeg",
+            "seed": 2147483647,
+            "enableSafetyChecker": true,
+            "negativePrompt": "reviewed advanced value",
+            "promptExtend": false
+          },
+          "request": {
+            "model": "qwen-image-3",
+            "input": {
+              "prompt": "studio image",
+              "size": "21:9",
+              "resolution": "2K",
+              "output_format": "jpeg",
+              "seed": 2147483647,
+              "enable_safety_checker": true,
+              "negative_prompt": "reviewed advanced value",
+              "prompt_extend": false
+            }
+          },
+          "coveredFields": [
+            "aspectRatio",
+            "resolution",
+            "outputFormat",
+            "seed",
+            "enableSafetyChecker",
+            "negativePrompt",
+            "promptExtend"
+          ]
+        },
+        "invalid": {
+          "label": "required prompt",
+          "values": {},
+          "issueIncludes": "prompt is required"
+        }
+      },
+      "manualDecisions": [
+        "Project override: enable_safety_checker is explicitly false unless the user opts in.",
+        "Omitting image_urls generates from text; one to three references switch the same model ID to reference generation."
+      ]
+    },
+    {
+      "entryKey": "qwen-image-3:image-edit",
+      "status": "current",
+      "source": {
+        "pageSlug": "qwen-image-3",
+        "markdownId": "model:image:qwen-image-3:markdown",
+        "jsonId": "model:image:qwen-image-3:json"
+      },
+      "schema": {
+        "publicModelId": "qwen-image-3",
+        "workflow": "image-edit",
+        "fields": [
+          {
+            "key": "prompt",
+            "apiKey": "prompt",
+            "kind": "text",
+            "level": "essential",
+            "required": true,
+            "min": 1,
+            "max": 5000
+          },
+          {
+            "key": "aspectRatio",
+            "apiKey": "size",
+            "kind": "enum",
+            "level": "common",
+            "enum": ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9"]
+          },
+          {
+            "key": "resolution",
+            "apiKey": "resolution",
+            "kind": "enum",
+            "level": "common",
+            "enum": ["1K", "2K"],
+            "default": "1K"
+          },
+          {
+            "key": "outputFormat",
+            "apiKey": "output_format",
+            "kind": "enum",
+            "level": "common",
+            "enum": ["png", "jpeg"],
+            "default": "png"
+          },
+          {
+            "key": "seed",
+            "apiKey": "seed",
+            "kind": "integer",
+            "level": "advanced",
+            "min": 0,
+            "max": 2147483647
+          },
+          {
+            "key": "enableSafetyChecker",
+            "apiKey": "enable_safety_checker",
+            "kind": "boolean",
+            "level": "common",
+            "default": false
+          },
+          {
+            "key": "negativePrompt",
+            "apiKey": "negative_prompt",
+            "kind": "text",
+            "level": "advanced",
+            "max": 5000
+          },
+          {
+            "key": "promptExtend",
+            "apiKey": "prompt_extend",
+            "kind": "boolean",
+            "level": "advanced",
+            "default": true
+          }
+        ],
+        "inputRoles": [
+          {
+            "role": "reference",
+            "required": true,
+            "min": 0,
+            "max": 3,
+            "mediaKind": "image",
+            "formats": ["image/jpeg", "image/png", "image/gif", "image/webp"]
+          }
+        ],
+        "output": {
+          "mediaKind": "image",
+          "formats": ["png", "jpeg"],
+          "counts": null,
+          "customSize": false,
+          "seed": true,
+          "safetyChecker": true
+        },
+        "validation": {
+          "conditionalRules": []
+        },
+        "payload": {
+          "adapter": "image-input-v1"
+        },
+        "limitations": [
+          "Omitting image_urls generates from text; one to three references switch the same model ID to reference generation."
+        ]
+      },
+      "vectors": {
+        "minimum": {
+          "values": {
+            "prompt": "studio image",
+            "imageUrls": []
+          },
+          "request": {
+            "model": "qwen-image-3",
+            "input": {
+              "prompt": "studio image",
+              "resolution": "1K",
+              "output_format": "png",
+              "enable_safety_checker": false,
+              "prompt_extend": true,
+              "image_urls": []
+            }
+          }
+        },
+        "advanced": {
+          "values": {
+            "prompt": "studio image",
+            "imageUrls": [],
+            "aspectRatio": "21:9",
+            "resolution": "2K",
+            "outputFormat": "jpeg",
+            "seed": 2147483647,
+            "enableSafetyChecker": true,
+            "negativePrompt": "reviewed advanced value",
+            "promptExtend": false
+          },
+          "request": {
+            "model": "qwen-image-3",
+            "input": {
+              "prompt": "studio image",
+              "size": "21:9",
+              "resolution": "2K",
+              "output_format": "jpeg",
+              "seed": 2147483647,
+              "enable_safety_checker": true,
+              "negative_prompt": "reviewed advanced value",
+              "prompt_extend": false,
+              "image_urls": []
+            }
+          },
+          "coveredFields": [
+            "aspectRatio",
+            "resolution",
+            "outputFormat",
+            "seed",
+            "enableSafetyChecker",
+            "negativePrompt",
+            "promptExtend"
+          ]
+        },
+        "invalid": {
+          "label": "required prompt",
+          "values": {
+            "imageUrls": []
+          },
+          "issueIncludes": "prompt is required"
+        }
+      },
+      "manualDecisions": [
+        "Project override: enable_safety_checker is explicitly false unless the user opts in.",
+        "Omitting image_urls generates from text; one to three references switch the same model ID to reference generation."
+      ]
+    },
+    {
+      "entryKey": "qwen-image-3-pro:text-to-image",
+      "status": "current",
+      "source": {
+        "pageSlug": "qwen-image-3",
+        "markdownId": "model:image:qwen-image-3:markdown",
+        "jsonId": "model:image:qwen-image-3:json"
+      },
+      "schema": {
+        "publicModelId": "qwen-image-3-pro",
+        "workflow": "text-to-image",
+        "fields": [
+          {
+            "key": "prompt",
+            "apiKey": "prompt",
+            "kind": "text",
+            "level": "essential",
+            "required": true,
+            "min": 1,
+            "max": 5000
+          },
+          {
+            "key": "aspectRatio",
+            "apiKey": "size",
+            "kind": "enum",
+            "level": "common",
+            "enum": ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9"]
+          },
+          {
+            "key": "resolution",
+            "apiKey": "resolution",
+            "kind": "enum",
+            "level": "common",
+            "enum": ["1K", "2K"],
+            "default": "1K"
+          },
+          {
+            "key": "outputFormat",
+            "apiKey": "output_format",
+            "kind": "enum",
+            "level": "common",
+            "enum": ["png", "jpeg"],
+            "default": "png"
+          },
+          {
+            "key": "seed",
+            "apiKey": "seed",
+            "kind": "integer",
+            "level": "advanced",
+            "min": 0,
+            "max": 2147483647
+          },
+          {
+            "key": "enableSafetyChecker",
+            "apiKey": "enable_safety_checker",
+            "kind": "boolean",
+            "level": "common",
+            "default": false
+          },
+          {
+            "key": "negativePrompt",
+            "apiKey": "negative_prompt",
+            "kind": "text",
+            "level": "advanced",
+            "max": 5000
+          },
+          {
+            "key": "promptExtend",
+            "apiKey": "prompt_extend",
+            "kind": "boolean",
+            "level": "advanced",
+            "default": true
+          }
+        ],
+        "inputRoles": [
+          {
+            "role": "reference",
+            "required": false,
+            "min": 0,
+            "max": 3,
+            "mediaKind": "image",
+            "formats": ["image/jpeg", "image/png", "image/gif", "image/webp"]
+          }
+        ],
+        "output": {
+          "mediaKind": "image",
+          "formats": ["png", "jpeg"],
+          "counts": null,
+          "customSize": false,
+          "seed": true,
+          "safetyChecker": true
+        },
+        "validation": {
+          "conditionalRules": []
+        },
+        "payload": {
+          "adapter": "image-input-v1"
+        },
+        "limitations": [
+          "Omitting image_urls generates from text; one to three references switch the same model ID to reference generation."
+        ]
+      },
+      "vectors": {
+        "minimum": {
+          "values": {
+            "prompt": "studio image"
+          },
+          "request": {
+            "model": "qwen-image-3-pro",
+            "input": {
+              "prompt": "studio image",
+              "resolution": "1K",
+              "output_format": "png",
+              "enable_safety_checker": false,
+              "prompt_extend": true
+            }
+          }
+        },
+        "advanced": {
+          "values": {
+            "prompt": "studio image",
+            "aspectRatio": "21:9",
+            "resolution": "2K",
+            "outputFormat": "jpeg",
+            "seed": 2147483647,
+            "enableSafetyChecker": true,
+            "negativePrompt": "reviewed advanced value",
+            "promptExtend": false
+          },
+          "request": {
+            "model": "qwen-image-3-pro",
+            "input": {
+              "prompt": "studio image",
+              "size": "21:9",
+              "resolution": "2K",
+              "output_format": "jpeg",
+              "seed": 2147483647,
+              "enable_safety_checker": true,
+              "negative_prompt": "reviewed advanced value",
+              "prompt_extend": false
+            }
+          },
+          "coveredFields": [
+            "aspectRatio",
+            "resolution",
+            "outputFormat",
+            "seed",
+            "enableSafetyChecker",
+            "negativePrompt",
+            "promptExtend"
+          ]
+        },
+        "invalid": {
+          "label": "required prompt",
+          "values": {},
+          "issueIncludes": "prompt is required"
+        }
+      },
+      "manualDecisions": [
+        "Project override: enable_safety_checker is explicitly false unless the user opts in.",
+        "Omitting image_urls generates from text; one to three references switch the same model ID to reference generation."
+      ]
+    },
+    {
+      "entryKey": "qwen-image-3-pro:image-edit",
+      "status": "current",
+      "source": {
+        "pageSlug": "qwen-image-3",
+        "markdownId": "model:image:qwen-image-3:markdown",
+        "jsonId": "model:image:qwen-image-3:json"
+      },
+      "schema": {
+        "publicModelId": "qwen-image-3-pro",
+        "workflow": "image-edit",
+        "fields": [
+          {
+            "key": "prompt",
+            "apiKey": "prompt",
+            "kind": "text",
+            "level": "essential",
+            "required": true,
+            "min": 1,
+            "max": 5000
+          },
+          {
+            "key": "aspectRatio",
+            "apiKey": "size",
+            "kind": "enum",
+            "level": "common",
+            "enum": ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9"]
+          },
+          {
+            "key": "resolution",
+            "apiKey": "resolution",
+            "kind": "enum",
+            "level": "common",
+            "enum": ["1K", "2K"],
+            "default": "1K"
+          },
+          {
+            "key": "outputFormat",
+            "apiKey": "output_format",
+            "kind": "enum",
+            "level": "common",
+            "enum": ["png", "jpeg"],
+            "default": "png"
+          },
+          {
+            "key": "seed",
+            "apiKey": "seed",
+            "kind": "integer",
+            "level": "advanced",
+            "min": 0,
+            "max": 2147483647
+          },
+          {
+            "key": "enableSafetyChecker",
+            "apiKey": "enable_safety_checker",
+            "kind": "boolean",
+            "level": "common",
+            "default": false
+          },
+          {
+            "key": "negativePrompt",
+            "apiKey": "negative_prompt",
+            "kind": "text",
+            "level": "advanced",
+            "max": 5000
+          },
+          {
+            "key": "promptExtend",
+            "apiKey": "prompt_extend",
+            "kind": "boolean",
+            "level": "advanced",
+            "default": true
+          }
+        ],
+        "inputRoles": [
+          {
+            "role": "reference",
+            "required": true,
+            "min": 0,
+            "max": 3,
+            "mediaKind": "image",
+            "formats": ["image/jpeg", "image/png", "image/gif", "image/webp"]
+          }
+        ],
+        "output": {
+          "mediaKind": "image",
+          "formats": ["png", "jpeg"],
+          "counts": null,
+          "customSize": false,
+          "seed": true,
+          "safetyChecker": true
+        },
+        "validation": {
+          "conditionalRules": []
+        },
+        "payload": {
+          "adapter": "image-input-v1"
+        },
+        "limitations": [
+          "Omitting image_urls generates from text; one to three references switch the same model ID to reference generation."
+        ]
+      },
+      "vectors": {
+        "minimum": {
+          "values": {
+            "prompt": "studio image",
+            "imageUrls": []
+          },
+          "request": {
+            "model": "qwen-image-3-pro",
+            "input": {
+              "prompt": "studio image",
+              "resolution": "1K",
+              "output_format": "png",
+              "enable_safety_checker": false,
+              "prompt_extend": true,
+              "image_urls": []
+            }
+          }
+        },
+        "advanced": {
+          "values": {
+            "prompt": "studio image",
+            "imageUrls": [],
+            "aspectRatio": "21:9",
+            "resolution": "2K",
+            "outputFormat": "jpeg",
+            "seed": 2147483647,
+            "enableSafetyChecker": true,
+            "negativePrompt": "reviewed advanced value",
+            "promptExtend": false
+          },
+          "request": {
+            "model": "qwen-image-3-pro",
+            "input": {
+              "prompt": "studio image",
+              "size": "21:9",
+              "resolution": "2K",
+              "output_format": "jpeg",
+              "seed": 2147483647,
+              "enable_safety_checker": true,
+              "negative_prompt": "reviewed advanced value",
+              "prompt_extend": false,
+              "image_urls": []
+            }
+          },
+          "coveredFields": [
+            "aspectRatio",
+            "resolution",
+            "outputFormat",
+            "seed",
+            "enableSafetyChecker",
+            "negativePrompt",
+            "promptExtend"
+          ]
+        },
+        "invalid": {
+          "label": "required prompt",
+          "values": {
+            "imageUrls": []
+          },
+          "issueIncludes": "prompt is required"
+        }
+      },
+      "manualDecisions": [
+        "Project override: enable_safety_checker is explicitly false unless the user opts in.",
+        "Omitting image_urls generates from text; one to three references switch the same model ID to reference generation."
       ]
     },
     {

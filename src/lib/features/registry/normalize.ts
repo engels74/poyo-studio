@@ -160,10 +160,6 @@ export function normalizeImageRequest(
     const value = fieldValue(runtimeValues, field);
     if (value === undefined) continue;
     if (field.key === 'dimensions') continue;
-    if (field.key === 'aspectRatio') {
-      input.size = value;
-      continue;
-    }
     input[field.apiKey] = value;
   }
   if (values.width !== undefined && values.height !== undefined)

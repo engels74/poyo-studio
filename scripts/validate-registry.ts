@@ -129,17 +129,17 @@ if (sourceManifest.registryVersion !== `${IMAGE_REGISTRY_VERSION}+${VIDEO_REGIST
   errors.push('official source manifest registry version is stale');
 if (sourceCorpusSha256(sourceManifest.sources) !== sourceManifest.corpusSha256)
   errors.push('official source corpus hash does not match committed source records');
-if (sourceManifest.sources.length !== 148)
-  errors.push(`expected 148 official source records, found ${sourceManifest.sources.length}`);
+if (sourceManifest.sources.length !== 154)
+  errors.push(`expected 154 official source records, found ${sourceManifest.sources.length}`);
 const modelMarkdown = sourceManifest.sources.filter(
   (source) => source.category === 'model' && source.representation === 'markdown'
 );
 const modelJson = sourceManifest.sources.filter(
   (source) => source.category === 'model' && source.representation === 'json'
 );
-if (modelMarkdown.length !== 59 || modelJson.length !== 59)
+if (modelMarkdown.length !== 62 || modelJson.length !== 62)
   errors.push(
-    `expected 59 Markdown and 59 JSON model sources, found ${modelMarkdown.length}/${modelJson.length}`
+    `expected 62 Markdown and 62 JSON model sources, found ${modelMarkdown.length}/${modelJson.length}`
   );
 for (const source of sourceManifest.sources) {
   if (source.sha256.length !== 64 || source.canonicalSha256.length !== 64)
@@ -234,15 +234,15 @@ for (const conflict of conflictsJson.conflicts)
     if (!sourceIds.has(sourceId)) errors.push(`conflict ${conflict.scope} references ${sourceId}`);
 
 if (
-  IMAGE_PAGE_SLUGS.length !== 22 ||
-  IMAGE_PUBLIC_IDS.length !== 44 ||
-  IMAGE_REGISTRY.entries.length !== 50
+  IMAGE_PAGE_SLUGS.length !== 24 ||
+  IMAGE_PUBLIC_IDS.length !== 47 ||
+  IMAGE_REGISTRY.entries.length !== 56
 )
   errors.push('image registry inventory changed without reviewed evidence');
 if (
-  VIDEO_PAGE_SLUGS.length !== 37 ||
-  VIDEO_PUBLIC_IDS.length !== 55 ||
-  VIDEO_CURRENT_ENTRIES.length !== 127
+  VIDEO_PAGE_SLUGS.length !== 38 ||
+  VIDEO_PUBLIC_IDS.length !== 60 ||
+  VIDEO_CURRENT_ENTRIES.length !== 132
 )
   errors.push('video registry inventory changed without reviewed evidence');
 if (

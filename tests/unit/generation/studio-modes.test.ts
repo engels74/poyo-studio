@@ -33,6 +33,7 @@ describe('studio creative-intent modes', () => {
     expect(groups[1]?.modes.map((mode) => mode.tag)).toEqual([
       'img2vid',
       'frames2vid',
+      'keys2vid',
       'ref2vid',
       'fuse2vid',
       'vid2vid',

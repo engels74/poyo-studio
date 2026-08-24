@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "registryVersion": "image-2026-07-20.1+video-2026-08-09.1",
-  "verifiedAt": "2026-08-09T09:47:01Z",
+  "registryVersion": "image-2026-08-24.1+video-2026-08-24.1",
+  "verifiedAt": "2026-08-24T17:23:08Z",
   "hashAlgorithm": "sha256",
-  "corpusSha256": "b2dc6121a0cb8ebca3dcaabbf03e4cca2dcc37a91720b5cd4e18835009a8caad",
+  "corpusSha256": "1043e5cc7e9642c429b9215ef0ee01034e3f5b028327b9f1999f0f5c49a78950",
   "sources": [
     {
       "id": "audit:legacy:sora-2",
@@ -13,9 +13,9 @@
       "reviewNote": "Deprecated Sora specification is retained outside selectors.",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 8644,
-      "sha256": "96a6c0d1d5ded645b0ab18508cda8e9a30bc5bfe0a468b0fe39b5eb22e1c5ece",
-      "canonicalSha256": "96a6c0d1d5ded645b0ab18508cda8e9a30bc5bfe0a468b0fe39b5eb22e1c5ece",
+      "byteLength": 8149,
+      "sha256": "7f6837eb4a3747f593f63811dab45940aa40e63018bcbeadd7d4ed40f3b460e7",
+      "canonicalSha256": "7f6837eb4a3747f593f63811dab45940aa40e63018bcbeadd7d4ed40f3b460e7",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -130,9 +130,9 @@
       "reviewNote": "Deprecated Sora Pro specification is retained outside selectors.",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 8661,
-      "sha256": "d68f55f9636e3e9aa2d179f9d57bc1cd3633c0bfad60173c783cc38439da92e7",
-      "canonicalSha256": "d68f55f9636e3e9aa2d179f9d57bc1cd3633c0bfad60173c783cc38439da92e7",
+      "byteLength": 8166,
+      "sha256": "5a720e7e48c2e3dba22670d9cc7cc0db2c12444b242d2322699a14a0fe229376",
+      "canonicalSha256": "5a720e7e48c2e3dba22670d9cc7cc0db2c12444b242d2322699a14a0fe229376",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -666,9 +666,9 @@
       "reviewNote": "Indexed OpenAPI has no current Markdown catalogue page.",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 6808,
-      "sha256": "1d8729cfc3b9f64d9d79ee7b1de954c76c40d736cb1654be25054551215b7e3e",
-      "canonicalSha256": "1d8729cfc3b9f64d9d79ee7b1de954c76c40d736cb1654be25054551215b7e3e",
+      "byteLength": 6323,
+      "sha256": "9e7f062bc9f04acebf7ec21b2762f59bc18620e59c23ce33c542f7d95de974c5",
+      "canonicalSha256": "9e7f062bc9f04acebf7ec21b2762f59bc18620e59c23ce33c542f7d95de974c5",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -1071,9 +1071,9 @@
       "url": "https://docs.poyo.ai/llms.txt",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 27358,
-      "sha256": "aba4c7002f0052daf470cae3f8402d3b46be3bac2c410b3a265f19068573ee0e",
-      "canonicalSha256": "aba4c7002f0052daf470cae3f8402d3b46be3bac2c410b3a265f19068573ee0e",
+      "byteLength": 27105,
+      "sha256": "96a0d23550d6aedf1b2c0c7cbbeb49136efd573a9d6ea6ea4e8d6280f0551c38",
+      "canonicalSha256": "96a0d23550d6aedf1b2c0c7cbbeb49136efd573a9d6ea6ea4e8d6280f0551c38",
       "canonicalization": "raw-body-v1",
       "structured": null
     },
@@ -1086,9 +1086,9 @@
       "url": "https://docs.poyo.ai/api-manual/image-series/flux-2.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 8949,
-      "sha256": "6a395ea3f2179a9a4a871942b28d1e8640211a73d51629a9fb89f5a3fff92ab7",
-      "canonicalSha256": "6a395ea3f2179a9a4a871942b28d1e8640211a73d51629a9fb89f5a3fff92ab7",
+      "byteLength": 8380,
+      "sha256": "071649edfdfbc1250706e513ccb61455451b6eb7eef5f1f64b9f61198b6d5882",
+      "canonicalSha256": "071649edfdfbc1250706e513ccb61455451b6eb7eef5f1f64b9f61198b6d5882",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -1211,9 +1211,9 @@
       "url": "https://docs.poyo.ai/api-manual/image-series/flux-dev.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 7093,
-      "sha256": "d41f25123ff35b14633d0eb485fc1a00446951de195b0aa3bcded5a590a94b84",
-      "canonicalSha256": "d41f25123ff35b14633d0eb485fc1a00446951de195b0aa3bcded5a590a94b84",
+      "byteLength": 6574,
+      "sha256": "3c46e83e5db42e901f03f837e588704dd00e2e72840699b1aa00f35576962f72",
+      "canonicalSha256": "3c46e83e5db42e901f03f837e588704dd00e2e72840699b1aa00f35576962f72",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -1322,9 +1322,9 @@
       "url": "https://docs.poyo.ai/api-manual/image-series/flux-kontext.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 9828,
-      "sha256": "cabddbb2aafaa2e82fa6dbfee7b1f619a73f77a834265873f562d8156fde2a99",
-      "canonicalSha256": "cabddbb2aafaa2e82fa6dbfee7b1f619a73f77a834265873f562d8156fde2a99",
+      "byteLength": 9829,
+      "sha256": "723d7674f1d586a15a2ccaffa5342caf4b609f1ae68f3834401ea62d0187d414",
+      "canonicalSha256": "723d7674f1d586a15a2ccaffa5342caf4b609f1ae68f3834401ea62d0187d414",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -1452,9 +1452,9 @@
       "url": "https://docs.poyo.ai/api-manual/image-series/flux-schnell.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 5814,
-      "sha256": "997f9f5b9b7b4f23364ed1bc6956a1afed51fac92eb4d248e4ac3b5799b7c380",
-      "canonicalSha256": "997f9f5b9b7b4f23364ed1bc6956a1afed51fac92eb4d248e4ac3b5799b7c380",
+      "byteLength": 5379,
+      "sha256": "d1927f285233aa646d5da1da194d97fef1ced2df8ac06606dd0df4c24e990172",
+      "canonicalSha256": "d1927f285233aa646d5da1da194d97fef1ced2df8ac06606dd0df4c24e990172",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -1556,9 +1556,9 @@
       "url": "https://docs.poyo.ai/api-manual/image-series/gpt-4o-image.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 8218,
-      "sha256": "942817361e0c2493cd880a3f7ef69cecdc164f31443c6077f87fda2c2b1ccb5d",
-      "canonicalSha256": "942817361e0c2493cd880a3f7ef69cecdc164f31443c6077f87fda2c2b1ccb5d",
+      "byteLength": 7747,
+      "sha256": "16e2080779696b879efe3ddf9de317cbaad983acd998df89df97dab92bad7009",
+      "canonicalSha256": "16e2080779696b879efe3ddf9de317cbaad983acd998df89df97dab92bad7009",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -1684,9 +1684,9 @@
       "url": "https://docs.poyo.ai/api-manual/image-series/gpt-image-1.5.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 8332,
-      "sha256": "98001c8bc69f43dd54b734e82a82047d1be0309f1911410eb65871d0e4804118",
-      "canonicalSha256": "98001c8bc69f43dd54b734e82a82047d1be0309f1911410eb65871d0e4804118",
+      "byteLength": 7861,
+      "sha256": "5cb73e638ebcd71ffe9daab65005f63cae36a34ce54af8c888315874952de7b0",
+      "canonicalSha256": "5cb73e638ebcd71ffe9daab65005f63cae36a34ce54af8c888315874952de7b0",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -1813,9 +1813,9 @@
       "url": "https://docs.poyo.ai/api-manual/image-series/gpt-image-2.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 11144,
-      "sha256": "f65272eea2c27250086e26c0c4cb0bb14dfd5c2e68abf095b9159a07902e6d65",
-      "canonicalSha256": "f65272eea2c27250086e26c0c4cb0bb14dfd5c2e68abf095b9159a07902e6d65",
+      "byteLength": 10739,
+      "sha256": "98f781b972f2158de5fbb60cd6a4ffd0d3f1c4dc00bca66260125682411144ba",
+      "canonicalSha256": "98f781b972f2158de5fbb60cd6a4ffd0d3f1c4dc00bca66260125682411144ba",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -1935,6 +1935,128 @@
       "structured": null
     },
     {
+      "id": "model:image:grok-imagine-image-2-0:json",
+      "category": "model",
+      "representation": "json",
+      "modality": "image",
+      "pageSlug": "grok-imagine-image-2-0",
+      "url": "https://docs.poyo.ai/api-manual/image-series/grok-imagine-image-2-0.json",
+      "status": "available",
+      "httpStatus": 200,
+      "byteLength": 6957,
+      "sha256": "7974b21f0c9fa229b487fa570520bc77bda0a26f1e2a71c527ec9f6c286cab50",
+      "canonicalSha256": "7974b21f0c9fa229b487fa570520bc77bda0a26f1e2a71c527ec9f6c286cab50",
+      "canonicalization": "raw-body-v1",
+      "structured": {
+        "openapi": "3.0.0",
+        "paths": ["/api/generate/submit"],
+        "properties": [
+          {
+            "path": "SubmitRequest.callback_url",
+            "type": "string",
+            "required": false,
+            "format": "uri"
+          },
+          {
+            "path": "SubmitRequest.input",
+            "type": "object",
+            "required": true
+          },
+          {
+            "path": "SubmitRequest.input.aspect_ratio",
+            "type": "string",
+            "required": false,
+            "enum": ["1:1", "2:3", "3:2", "9:16", "16:9"],
+            "default": "1:1"
+          },
+          {
+            "path": "SubmitRequest.input.image_urls",
+            "type": "array",
+            "required": false,
+            "minItems": 1,
+            "maxItems": 3
+          },
+          {
+            "path": "SubmitRequest.input.n",
+            "type": "integer",
+            "required": false,
+            "default": 1,
+            "minimum": 1,
+            "maximum": 4
+          },
+          {
+            "path": "SubmitRequest.input.prompt",
+            "type": "string",
+            "required": true,
+            "minLength": 1,
+            "maxLength": 8000
+          },
+          {
+            "path": "SubmitRequest.input.quality",
+            "type": "string",
+            "required": false,
+            "enum": ["low", "medium"],
+            "default": "medium"
+          },
+          {
+            "path": "SubmitRequest.input.resolution",
+            "type": "string",
+            "required": false,
+            "enum": ["1K", "2K"],
+            "default": "1K"
+          },
+          {
+            "path": "SubmitRequest.model",
+            "type": "string",
+            "required": true,
+            "enum": ["grok-imagine-image-2.0"]
+          },
+          {
+            "path": "SubmitResponse.code",
+            "type": "integer",
+            "required": true
+          },
+          {
+            "path": "SubmitResponse.data",
+            "type": "object",
+            "required": true
+          },
+          {
+            "path": "SubmitResponse.data.created_time",
+            "type": "string",
+            "required": true,
+            "format": "date-time"
+          },
+          {
+            "path": "SubmitResponse.data.status",
+            "type": "string",
+            "required": true,
+            "enum": ["not_started"]
+          },
+          {
+            "path": "SubmitResponse.data.task_id",
+            "type": "string",
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "model:image:grok-imagine-image-2-0:markdown",
+      "category": "model",
+      "representation": "markdown",
+      "modality": "image",
+      "pageSlug": "grok-imagine-image-2-0",
+      "url": "https://docs.poyo.ai/api-manual/image-series/grok-imagine-image-2-0.md",
+      "status": "available",
+      "httpStatus": 200,
+      "byteLength": 7276,
+      "sha256": "00820023fcd8f51313ad7c5eef9452589f5c06b3ba533bd1726cb4dc452a358a",
+      "canonicalSha256": "00820023fcd8f51313ad7c5eef9452589f5c06b3ba533bd1726cb4dc452a358a",
+      "canonicalization": "raw-body-v1",
+      "structured": null
+    },
+    {
       "id": "model:image:grok-imagine-image-quality:json",
       "category": "model",
       "representation": "json",
@@ -1943,9 +2065,9 @@
       "url": "https://docs.poyo.ai/api-manual/image-series/grok-imagine-image-quality.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 8530,
-      "sha256": "58c45e937f0bec0acc818255294196048cf566f8e174be7072ddd5b538283537",
-      "canonicalSha256": "58c45e937f0bec0acc818255294196048cf566f8e174be7072ddd5b538283537",
+      "byteLength": 7360,
+      "sha256": "365986a5e64313b018fe20082a2bc9f6fa6f261fd5f9ece9d0455f51bb5df926",
+      "canonicalSha256": "365986a5e64313b018fe20082a2bc9f6fa6f261fd5f9ece9d0455f51bb5df926",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -2003,13 +2125,6 @@
             "minimum": 1
           },
           {
-            "path": "SubmitRequest.input.output_format",
-            "type": "string",
-            "required": false,
-            "enum": ["png", "jpeg", "jpg", "webp"],
-            "default": "png"
-          },
-          {
             "path": "SubmitRequest.input.prompt",
             "type": "string",
             "required": true
@@ -2020,11 +2135,6 @@
             "required": false,
             "enum": ["1K", "2K"],
             "default": "1K"
-          },
-          {
-            "path": "SubmitRequest.input.sync_mode",
-            "type": "boolean",
-            "required": false
           },
           {
             "path": "SubmitRequest.model",
@@ -2071,9 +2181,9 @@
       "url": "https://docs.poyo.ai/api-manual/image-series/grok-imagine-image-quality.md",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 7530,
-      "sha256": "aa3a22edbcc29b9d36397c2a1300ef224ecd4bd4540c0f748bc4b0d26f894f6a",
-      "canonicalSha256": "aa3a22edbcc29b9d36397c2a1300ef224ecd4bd4540c0f748bc4b0d26f894f6a",
+      "byteLength": 7046,
+      "sha256": "a51f42005b9cca95e7bf2dce34051da7aa3eb3d6d5595574c8c40d2f1ee06543",
+      "canonicalSha256": "a51f42005b9cca95e7bf2dce34051da7aa3eb3d6d5595574c8c40d2f1ee06543",
       "canonicalization": "raw-body-v1",
       "structured": null
     },
@@ -2086,9 +2196,9 @@
       "url": "https://docs.poyo.ai/api-manual/image-series/grok-imagine-image.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 7072,
-      "sha256": "8033bca60a9cb8c3959ad02395fd4372280b720286939dd111008d764063a3f3",
-      "canonicalSha256": "8033bca60a9cb8c3959ad02395fd4372280b720286939dd111008d764063a3f3",
+      "byteLength": 6619,
+      "sha256": "17a5c64aa47f899dfd2c2cf42bb8d0adaa951858ca24a2fd8142076fc1b19d8c",
+      "canonicalSha256": "17a5c64aa47f899dfd2c2cf42bb8d0adaa951858ca24a2fd8142076fc1b19d8c",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -2203,9 +2313,9 @@
       "url": "https://docs.poyo.ai/api-manual/image-series/kling-o1.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 10661,
-      "sha256": "a5c3b2800158f3ca108243b0b4c5b0624d32df0b5d89e447831f60feb0262eaf",
-      "canonicalSha256": "a5c3b2800158f3ca108243b0b4c5b0624d32df0b5d89e447831f60feb0262eaf",
+      "byteLength": 10006,
+      "sha256": "fbb11985a3f71e94f428f2914f26a36a21d9c86fd5a62d6dcef90601ee6d9fcb",
+      "canonicalSha256": "fbb11985a3f71e94f428f2914f26a36a21d9c86fd5a62d6dcef90601ee6d9fcb",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -2349,9 +2459,9 @@
       "url": "https://docs.poyo.ai/api-manual/image-series/kling-o3.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 11056,
-      "sha256": "670ed448adaa534b199b5cc3c285e7424435c8290da157d7e2d4590649e1801d",
-      "canonicalSha256": "670ed448adaa534b199b5cc3c285e7424435c8290da157d7e2d4590649e1801d",
+      "byteLength": 10383,
+      "sha256": "8694cf970f41a0c8630ead5118866df8fe982fcecf3dd57bbe3871101be3b55d",
+      "canonicalSha256": "8694cf970f41a0c8630ead5118866df8fe982fcecf3dd57bbe3871101be3b55d",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -2495,9 +2605,9 @@
       "url": "https://docs.poyo.ai/api-manual/image-series/nano-banana-2-lite.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 7955,
-      "sha256": "26d4c5c918eaa1a62af1e5949b6afa822bbe266cb530b2fa7ec231615636dafc",
-      "canonicalSha256": "26d4c5c918eaa1a62af1e5949b6afa822bbe266cb530b2fa7ec231615636dafc",
+      "byteLength": 7432,
+      "sha256": "46289f550e708c91afbe0ba6ccfeee0239d7e423d0e840b33f59618faf78ca29",
+      "canonicalSha256": "46289f550e708c91afbe0ba6ccfeee0239d7e423d0e840b33f59618faf78ca29",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -2612,9 +2722,9 @@
       "url": "https://docs.poyo.ai/api-manual/image-series/nano-banana-2-new.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 11429,
-      "sha256": "9f041d30a544bda6308f382148db9e49c595d3af3442987d2ab8f3556ec2467c",
-      "canonicalSha256": "9f041d30a544bda6308f382148db9e49c595d3af3442987d2ab8f3556ec2467c",
+      "byteLength": 10604,
+      "sha256": "befb176195e1a53b35ee4b3756a3d9c5f1382dcff5a1ece494e3c26190fefd61",
+      "canonicalSha256": "befb176195e1a53b35ee4b3756a3d9c5f1382dcff5a1ece494e3c26190fefd61",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -2774,9 +2884,9 @@
       "url": "https://docs.poyo.ai/api-manual/image-series/nano-banana-2.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 11023,
-      "sha256": "f8b6cec184e9733fd9ffd33f949143fa86411b8eb22242f528a71667ca2031e5",
-      "canonicalSha256": "f8b6cec184e9733fd9ffd33f949143fa86411b8eb22242f528a71667ca2031e5",
+      "byteLength": 10288,
+      "sha256": "291c2a700f0583813f9bafa207885a4e57f004f40767791d99dd55547c0b1af8",
+      "canonicalSha256": "291c2a700f0583813f9bafa207885a4e57f004f40767791d99dd55547c0b1af8",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -2934,9 +3044,9 @@
       "url": "https://docs.poyo.ai/api-manual/image-series/nano-banana.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 7803,
-      "sha256": "d88b7aca8c22f83d698ef36b8441e97fbc6c358953a06356167b6a460f6a28d8",
-      "canonicalSha256": "d88b7aca8c22f83d698ef36b8441e97fbc6c358953a06356167b6a460f6a28d8",
+      "byteLength": 7296,
+      "sha256": "279adb40d644949eab3ff90d73842ed296ae852ee2d161d684b709e877ed753b",
+      "canonicalSha256": "279adb40d644949eab3ff90d73842ed296ae852ee2d161d684b709e877ed753b",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -3042,6 +3152,142 @@
       "structured": null
     },
     {
+      "id": "model:image:qwen-image-3:json",
+      "category": "model",
+      "representation": "json",
+      "modality": "image",
+      "pageSlug": "qwen-image-3",
+      "url": "https://docs.poyo.ai/api-manual/image-series/qwen-image-3.json",
+      "status": "available",
+      "httpStatus": 200,
+      "byteLength": 4920,
+      "sha256": "b8c21281853c2195db74c7ae27efa7d0efaef8986919e004fcc793bac36d1dfd",
+      "canonicalSha256": "b8c21281853c2195db74c7ae27efa7d0efaef8986919e004fcc793bac36d1dfd",
+      "canonicalization": "raw-body-v1",
+      "structured": {
+        "openapi": "3.0.0",
+        "paths": ["/api/generate/submit"],
+        "properties": [
+          {
+            "path": "SubmitRequest.callback_url",
+            "type": "string",
+            "required": false,
+            "format": "uri"
+          },
+          {
+            "path": "SubmitRequest.input",
+            "type": "object",
+            "required": true
+          },
+          {
+            "path": "SubmitRequest.input.enable_safety_checker",
+            "type": "boolean",
+            "required": false,
+            "default": true
+          },
+          {
+            "path": "SubmitRequest.input.image_urls",
+            "type": "array",
+            "required": false,
+            "minItems": 1,
+            "maxItems": 3
+          },
+          {
+            "path": "SubmitRequest.input.negative_prompt",
+            "type": "string",
+            "required": false,
+            "maxLength": 5000
+          },
+          {
+            "path": "SubmitRequest.input.output_format",
+            "type": "string",
+            "required": false,
+            "enum": ["png", "jpeg"],
+            "default": "png"
+          },
+          {
+            "path": "SubmitRequest.input.prompt",
+            "type": "string",
+            "required": true,
+            "maxLength": 5000
+          },
+          {
+            "path": "SubmitRequest.input.prompt_extend",
+            "type": "boolean",
+            "required": false,
+            "default": true
+          },
+          {
+            "path": "SubmitRequest.input.resolution",
+            "type": "string",
+            "required": false,
+            "enum": ["1K", "2K"],
+            "default": "1K"
+          },
+          {
+            "path": "SubmitRequest.input.seed",
+            "type": "integer",
+            "required": false,
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          {
+            "path": "SubmitRequest.input.size",
+            "type": "string",
+            "required": false,
+            "enum": ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9"]
+          },
+          {
+            "path": "SubmitRequest.model",
+            "type": "string",
+            "required": true,
+            "enum": ["qwen-image-3", "qwen-image-3-pro"]
+          },
+          {
+            "path": "SubmitResponse.code",
+            "type": "integer",
+            "required": true
+          },
+          {
+            "path": "SubmitResponse.data",
+            "type": "object",
+            "required": true
+          },
+          {
+            "path": "SubmitResponse.data.created_time",
+            "type": "string",
+            "required": false,
+            "format": "date-time"
+          },
+          {
+            "path": "SubmitResponse.data.status",
+            "type": "string",
+            "required": false
+          },
+          {
+            "path": "SubmitResponse.data.task_id",
+            "type": "string",
+            "required": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "model:image:qwen-image-3:markdown",
+      "category": "model",
+      "representation": "markdown",
+      "modality": "image",
+      "pageSlug": "qwen-image-3",
+      "url": "https://docs.poyo.ai/api-manual/image-series/qwen-image-3.md",
+      "status": "available",
+      "httpStatus": 200,
+      "byteLength": 9124,
+      "sha256": "64914109e895cea31dc3ccb8e8ee6dc822748850b11766ff2dd10701b89679b0",
+      "canonicalSha256": "64914109e895cea31dc3ccb8e8ee6dc822748850b11766ff2dd10701b89679b0",
+      "canonicalization": "raw-body-v1",
+      "structured": null
+    },
+    {
       "id": "model:image:seedream-4-5:json",
       "category": "model",
       "representation": "json",
@@ -3050,9 +3296,9 @@
       "url": "https://docs.poyo.ai/api-manual/image-series/seedream-4-5.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 11531,
-      "sha256": "b26fbbfddd61c9373e2f4232154611aee8a3cb883d79ad53b0eb8b6cc694a7e4",
-      "canonicalSha256": "b26fbbfddd61c9373e2f4232154611aee8a3cb883d79ad53b0eb8b6cc694a7e4",
+      "byteLength": 10898,
+      "sha256": "810f0806b0eef1bdae68cc7d4e7f4bede32101cde2c2ee35a5c75959b4704bbe",
+      "canonicalSha256": "810f0806b0eef1bdae68cc7d4e7f4bede32101cde2c2ee35a5c75959b4704bbe",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -3182,9 +3428,9 @@
       "url": "https://docs.poyo.ai/api-manual/image-series/seedream-4.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 9188,
-      "sha256": "6e0d1c3820e85cc8e63d8a635d5522129e9540711d107022db4db04bfe2b1504",
-      "canonicalSha256": "6e0d1c3820e85cc8e63d8a635d5522129e9540711d107022db4db04bfe2b1504",
+      "byteLength": 9189,
+      "sha256": "4dff306feaf4364db907d4fa1bded25e1bf9c9fb6f083e8b0d8e6b1b73166cf8",
+      "canonicalSha256": "4dff306feaf4364db907d4fa1bded25e1bf9c9fb6f083e8b0d8e6b1b73166cf8",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -3316,9 +3562,9 @@
       "url": "https://docs.poyo.ai/api-manual/image-series/seedream-5-0-lite.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 11690,
-      "sha256": "5a9e57cd44c98180482e2bf9fe7b291699be1cd45d4caa9e13a5a43bd1298a34",
-      "canonicalSha256": "5a9e57cd44c98180482e2bf9fe7b291699be1cd45d4caa9e13a5a43bd1298a34",
+      "byteLength": 11057,
+      "sha256": "48cd95e7a94ab86688e358b1e6a8138843300c77994d07621f75b82a2092fc9d",
+      "canonicalSha256": "48cd95e7a94ab86688e358b1e6a8138843300c77994d07621f75b82a2092fc9d",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -3449,9 +3695,9 @@
       "url": "https://docs.poyo.ai/api-manual/image-series/seedream-5-0-pro.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 10525,
-      "sha256": "5c9803f068c9a52c761357be084aba9905f40d28b600db53a51c1dc2b2a3e7ea",
-      "canonicalSha256": "5c9803f068c9a52c761357be084aba9905f40d28b600db53a51c1dc2b2a3e7ea",
+      "byteLength": 9902,
+      "sha256": "63fa74f3f92d79f181a5f52425a7335afbaccd5434cc3f354ff4da4b4b7ef969",
+      "canonicalSha256": "63fa74f3f92d79f181a5f52425a7335afbaccd5434cc3f354ff4da4b4b7ef969",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -3587,9 +3833,9 @@
       "url": "https://docs.poyo.ai/api-manual/image-series/wan-2-7-image-pro.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 10547,
-      "sha256": "96a3b414e018b04c6c571b00c58839e0a79298495e8c928611e25b023be1711f",
-      "canonicalSha256": "96a3b414e018b04c6c571b00c58839e0a79298495e8c928611e25b023be1711f",
+      "byteLength": 42950,
+      "sha256": "b3f3fc679d3e9c58e1252d8f87e9a08f12157069c364a8504d9bd14f9aa6f48a",
+      "canonicalSha256": "b3f3fc679d3e9c58e1252d8f87e9a08f12157069c364a8504d9bd14f9aa6f48a",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -3718,9 +3964,9 @@
       "url": "https://docs.poyo.ai/api-manual/image-series/wan-2-7-image.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 10348,
-      "sha256": "8a5f7bf4664c300749ecfbe778654c1bbe47e8281f42e57641c3bb897e02e329",
-      "canonicalSha256": "8a5f7bf4664c300749ecfbe778654c1bbe47e8281f42e57641c3bb897e02e329",
+      "byteLength": 42052,
+      "sha256": "8e85e0e721e07985325d7ac389e9e56faab5ccd3e06cd8802308e7f06c5b35af",
+      "canonicalSha256": "8e85e0e721e07985325d7ac389e9e56faab5ccd3e06cd8802308e7f06c5b35af",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -3849,9 +4095,9 @@
       "url": "https://docs.poyo.ai/api-manual/image-series/z-image.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 7423,
-      "sha256": "b946e5aee4701eba81f3f3521de701e1d4a3464bc585fb6e5f7cd8d940231372",
-      "canonicalSha256": "b946e5aee4701eba81f3f3521de701e1d4a3464bc585fb6e5f7cd8d940231372",
+      "byteLength": 28360,
+      "sha256": "317d3945b4b67593953ae972cd15e11e80ccfeade2082c06175a6d3588232ab0",
+      "canonicalSha256": "317d3945b4b67593953ae972cd15e11e80ccfeade2082c06175a6d3588232ab0",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -3964,6 +4210,210 @@
       "structured": null
     },
     {
+      "id": "model:video:flux-3:json",
+      "category": "model",
+      "representation": "json",
+      "modality": "video",
+      "pageSlug": "flux-3",
+      "url": "https://docs.poyo.ai/api-manual/video-series/flux-3.json",
+      "status": "available",
+      "httpStatus": 200,
+      "byteLength": 6015,
+      "sha256": "57e0974d1e33b8fb90dbd513f99fece8e2065097dcb5c3cf5890b90398515267",
+      "canonicalSha256": "57e0974d1e33b8fb90dbd513f99fece8e2065097dcb5c3cf5890b90398515267",
+      "canonicalization": "raw-body-v1",
+      "structured": {
+        "openapi": "3.0.0",
+        "paths": ["/api/generate/submit"],
+        "properties": [
+          {
+            "path": "Flux3Input.aspect_ratio",
+            "type": "string",
+            "required": false,
+            "enum": ["auto", "21:9", "2:1", "16:9", "4:3", "1:1", "3:4", "9:16"],
+            "default": "auto"
+          },
+          {
+            "path": "Flux3Input.duration",
+            "type": "integer",
+            "required": false,
+            "default": 5,
+            "minimum": 5,
+            "maximum": 20
+          },
+          {
+            "path": "Flux3Input.image_urls",
+            "type": "array",
+            "required": false,
+            "minItems": 1,
+            "maxItems": 2
+          },
+          {
+            "path": "Flux3Input.keyframes",
+            "type": "array",
+            "required": false,
+            "minItems": 1,
+            "maxItems": 10
+          },
+          {
+            "path": "Flux3Input.prompt",
+            "type": "string",
+            "required": true,
+            "minLength": 1
+          },
+          {
+            "path": "Flux3Input.resolution",
+            "type": "string",
+            "required": false,
+            "enum": ["720p", "1080p"],
+            "default": "720p"
+          },
+          {
+            "path": "Flux3Input.sound",
+            "type": "boolean",
+            "required": false,
+            "default": true
+          },
+          {
+            "path": "Flux3Input.video_url",
+            "type": "string",
+            "required": false,
+            "format": "uri"
+          },
+          {
+            "path": "Keyframe.frame_index",
+            "type": "integer",
+            "required": true,
+            "minimum": 0
+          },
+          {
+            "path": "Keyframe.image_url",
+            "type": "string",
+            "required": true,
+            "format": "uri"
+          },
+          {
+            "path": "SubmitRequest.callback_url",
+            "type": "string",
+            "required": false,
+            "format": "uri"
+          },
+          {
+            "path": "SubmitRequest.input",
+            "type": "object",
+            "required": true
+          },
+          {
+            "path": "SubmitRequest.input.aspect_ratio",
+            "type": "string",
+            "required": false,
+            "enum": ["auto", "21:9", "2:1", "16:9", "4:3", "1:1", "3:4", "9:16"],
+            "default": "auto"
+          },
+          {
+            "path": "SubmitRequest.input.duration",
+            "type": "integer",
+            "required": false,
+            "default": 5,
+            "minimum": 5,
+            "maximum": 20
+          },
+          {
+            "path": "SubmitRequest.input.image_urls",
+            "type": "array",
+            "required": false,
+            "minItems": 1,
+            "maxItems": 2
+          },
+          {
+            "path": "SubmitRequest.input.keyframes",
+            "type": "array",
+            "required": false,
+            "minItems": 1,
+            "maxItems": 10
+          },
+          {
+            "path": "SubmitRequest.input.prompt",
+            "type": "string",
+            "required": true,
+            "minLength": 1
+          },
+          {
+            "path": "SubmitRequest.input.resolution",
+            "type": "string",
+            "required": false,
+            "enum": ["720p", "1080p"],
+            "default": "720p"
+          },
+          {
+            "path": "SubmitRequest.input.sound",
+            "type": "boolean",
+            "required": false,
+            "default": true
+          },
+          {
+            "path": "SubmitRequest.input.video_url",
+            "type": "string",
+            "required": false,
+            "format": "uri"
+          },
+          {
+            "path": "SubmitRequest.model",
+            "type": "string",
+            "required": true,
+            "enum": [
+              "flux-3/text-to-video",
+              "flux-3/image-to-video",
+              "flux-3/first-last-frame-to-video",
+              "flux-3/extend-video",
+              "flux-3/keyframes-to-video"
+            ]
+          },
+          {
+            "path": "SubmitResponse.code",
+            "type": "integer",
+            "required": false
+          },
+          {
+            "path": "SubmitResponse.data",
+            "type": "object",
+            "required": false
+          },
+          {
+            "path": "SubmitResponse.data.created_time",
+            "type": "string",
+            "required": false,
+            "format": "date-time"
+          },
+          {
+            "path": "SubmitResponse.data.status",
+            "type": "string",
+            "required": false
+          },
+          {
+            "path": "SubmitResponse.data.task_id",
+            "type": "string",
+            "required": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "model:video:flux-3:markdown",
+      "category": "model",
+      "representation": "markdown",
+      "modality": "video",
+      "pageSlug": "flux-3",
+      "url": "https://docs.poyo.ai/api-manual/video-series/flux-3.md",
+      "status": "available",
+      "httpStatus": 200,
+      "byteLength": 7974,
+      "sha256": "93c429b2c72c7488d988fcf2146ca3377ccd5daf458a776ab4f9e0ac6e2fb1b5",
+      "canonicalSha256": "93c429b2c72c7488d988fcf2146ca3377ccd5daf458a776ab4f9e0ac6e2fb1b5",
+      "canonicalization": "raw-body-v1",
+      "structured": null
+    },
+    {
       "id": "model:video:grok-imagine-video-1-5:json",
       "category": "model",
       "representation": "json",
@@ -3972,9 +4422,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/grok-imagine-video-1-5.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 6425,
-      "sha256": "7c16eeee13b8a30f7fe768b635e7c78d8c3a2063990c190f90a016b2c9a8ed4a",
-      "canonicalSha256": "7c16eeee13b8a30f7fe768b635e7c78d8c3a2063990c190f90a016b2c9a8ed4a",
+      "byteLength": 4418,
+      "sha256": "8672f5a5653c4ac08d4d51cc1ad05a8953cac4676d09d772fa8769654e2a87c1",
+      "canonicalSha256": "8672f5a5653c4ac08d4d51cc1ad05a8953cac4676d09d772fa8769654e2a87c1",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -4137,9 +4587,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/grok-imagine.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 7380,
-      "sha256": "5141a5de4b37f3dcbdaf530c8d43e9383acb5ba7aa4e8416847db853ac21f007",
-      "canonicalSha256": "5141a5de4b37f3dcbdaf530c8d43e9383acb5ba7aa4e8416847db853ac21f007",
+      "byteLength": 6837,
+      "sha256": "3dd6b619d3c04265d46164d9a1a7638432a4d5f631cbaed746ecb025964e157e",
+      "canonicalSha256": "3dd6b619d3c04265d46164d9a1a7638432a4d5f631cbaed746ecb025964e157e",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -4266,9 +4716,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/hailuo-02.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 9021,
-      "sha256": "c0a0fa073dc1ce6fd575534e3c37edad6764d5ed7f1c40d4a8cede4664542c9f",
-      "canonicalSha256": "c0a0fa073dc1ce6fd575534e3c37edad6764d5ed7f1c40d4a8cede4664542c9f",
+      "byteLength": 8556,
+      "sha256": "c6a31e5c3e00c4279318fdd3ba255f4b5700ac7bdbba61b09de39e21d29a3810",
+      "canonicalSha256": "c6a31e5c3e00c4279318fdd3ba255f4b5700ac7bdbba61b09de39e21d29a3810",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -4400,9 +4850,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/hailuo-03.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 8296,
-      "sha256": "1f4eb77a2aba824605f6e465ce9e395bd64b912cc7fd988180beaf9ce6d8077b",
-      "canonicalSha256": "1f4eb77a2aba824605f6e465ce9e395bd64b912cc7fd988180beaf9ce6d8077b",
+      "byteLength": 8059,
+      "sha256": "6c13c765436e8cfaf954962865a977c8fdeb7c82580e41bd0f4802273774ea98",
+      "canonicalSha256": "6c13c765436e8cfaf954962865a977c8fdeb7c82580e41bd0f4802273774ea98",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -4578,9 +5028,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/hailuo-2-3.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 5316,
-      "sha256": "7ad8820bb15e8bc63d62894e634c8105ce0b66e6e1b69c5c23ed44d5895ef68a",
-      "canonicalSha256": "7ad8820bb15e8bc63d62894e634c8105ce0b66e6e1b69c5c23ed44d5895ef68a",
+      "byteLength": 4981,
+      "sha256": "4591622c1370d41fda5904701cf1c13d1855979d74fc360937f94f479dada1d5",
+      "canonicalSha256": "4591622c1370d41fda5904701cf1c13d1855979d74fc360937f94f479dada1d5",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -4688,9 +5138,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/happy-horse-1-1.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 9677,
-      "sha256": "afd471072b8b748b603c64194290823800e96550dd3de9bae87a833241181122",
-      "canonicalSha256": "afd471072b8b748b603c64194290823800e96550dd3de9bae87a833241181122",
+      "byteLength": 9124,
+      "sha256": "f051204555c54d785322cfa6eea6969afed11ad47f5e3f3b3fa1d8783783d4ad",
+      "canonicalSha256": "f051204555c54d785322cfa6eea6969afed11ad47f5e3f3b3fa1d8783783d4ad",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -4819,9 +5269,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/happy-horse.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 9887,
-      "sha256": "a9aa68a19da9d1ba733a4dfb35b7388264c127b9f6ee141fae764ae4e2710a06",
-      "canonicalSha256": "a9aa68a19da9d1ba733a4dfb35b7388264c127b9f6ee141fae764ae4e2710a06",
+      "byteLength": 9304,
+      "sha256": "3ae6332ea37d407271d7a2ddf6c5e5f31b7573d281768597643eeb34d9bb666f",
+      "canonicalSha256": "3ae6332ea37d407271d7a2ddf6c5e5f31b7573d281768597643eeb34d9bb666f",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -4962,9 +5412,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/kling-1-6.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 12050,
-      "sha256": "a5beba77deeea04b2bcb052a36d1aca9b204411b95494297990cad99a5ee8d9d",
-      "canonicalSha256": "a5beba77deeea04b2bcb052a36d1aca9b204411b95494297990cad99a5ee8d9d",
+      "byteLength": 11597,
+      "sha256": "f97af8de873c118aab1620c6748dc998e0954a92700764b8e51dd6ea4f243d68",
+      "canonicalSha256": "f97af8de873c118aab1620c6748dc998e0954a92700764b8e51dd6ea4f243d68",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -5111,9 +5561,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/kling-2-1.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 6189,
-      "sha256": "7283944559439d4d9aa189e82cee09b77064335e4a03fbd5dd12d329d77014af",
-      "canonicalSha256": "7283944559439d4d9aa189e82cee09b77064335e4a03fbd5dd12d329d77014af",
+      "byteLength": 5880,
+      "sha256": "74435c29bfdafe79791df01b471ba8e128a4ca994746a94ed230c48b367652b9",
+      "canonicalSha256": "74435c29bfdafe79791df01b471ba8e128a4ca994746a94ed230c48b367652b9",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -5220,9 +5670,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/kling-2-5-turbo-pro.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 6502,
-      "sha256": "43a290d829463c45dedd4912ad2667398bf29e02c09a0c79be880bc161ef5f01",
-      "canonicalSha256": "43a290d829463c45dedd4912ad2667398bf29e02c09a0c79be880bc161ef5f01",
+      "byteLength": 6221,
+      "sha256": "6323b00932f55120be8fef2578941d2877bdb506e465f25095886541d7f5bee7",
+      "canonicalSha256": "6323b00932f55120be8fef2578941d2877bdb506e465f25095886541d7f5bee7",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -5334,9 +5784,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/kling-2-6.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 6975,
-      "sha256": "4316d11fe50e8959ed230491031393435d36fe687eae9786933f130ff20e8aa5",
-      "canonicalSha256": "4316d11fe50e8959ed230491031393435d36fe687eae9786933f130ff20e8aa5",
+      "byteLength": 6546,
+      "sha256": "32af9c4a4840827f2bf28a172e0fca648ea0d0ffb5e0f994c2b0c171408901fa",
+      "canonicalSha256": "32af9c4a4840827f2bf28a172e0fca648ea0d0ffb5e0f994c2b0c171408901fa",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -5467,9 +5917,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/kling-2.6-motion-control.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 8312,
-      "sha256": "00797c5f372d8705729bff47635c0fb4f37133dded04ed298131efecde77a77f",
-      "canonicalSha256": "00797c5f372d8705729bff47635c0fb4f37133dded04ed298131efecde77a77f",
+      "byteLength": 7901,
+      "sha256": "aeff938025318ec7dbd535340f43ea5821ba5f2c5527f08aedf03f382b4e726d",
+      "canonicalSha256": "aeff938025318ec7dbd535340f43ea5821ba5f2c5527f08aedf03f382b4e726d",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -5598,9 +6048,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/kling-3-0-4k.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 9941,
-      "sha256": "8dd1fd90ba9fe9e840c6dbba3f8ea167747f61c69ba170d394c420d877f86ed0",
-      "canonicalSha256": "8dd1fd90ba9fe9e840c6dbba3f8ea167747f61c69ba170d394c420d877f86ed0",
+      "byteLength": 9556,
+      "sha256": "e43fb0b5d3dba1906397dda613bc3bb19b8b5010058384d3c5b7da6bcce77211",
+      "canonicalSha256": "e43fb0b5d3dba1906397dda613bc3bb19b8b5010058384d3c5b7da6bcce77211",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -5736,9 +6186,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/kling-3-0-motion-control.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 8699,
-      "sha256": "863277954aaa103ebb6f1588c601d8ac49dd814578af44b6e1b529d434836e61",
-      "canonicalSha256": "863277954aaa103ebb6f1588c601d8ac49dd814578af44b6e1b529d434836e61",
+      "byteLength": 8204,
+      "sha256": "92f7a87dbf168764376a61f254736a444c5ee16d8683ee153512b0ec6fd226f5",
+      "canonicalSha256": "92f7a87dbf168764376a61f254736a444c5ee16d8683ee153512b0ec6fd226f5",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -5854,9 +6304,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/kling-3-0-turbo.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 8648,
-      "sha256": "6a4a6aefff51cd829ad5475bfbe7d729859c4b5a2682e72a2da65a56ed4a4b6f",
-      "canonicalSha256": "6a4a6aefff51cd829ad5475bfbe7d729859c4b5a2682e72a2da65a56ed4a4b6f",
+      "byteLength": 8281,
+      "sha256": "5595d2082cf98e919f21aff7a018e7d616812d3fa361a45ce59e80c36cb1c9d3",
+      "canonicalSha256": "5595d2082cf98e919f21aff7a018e7d616812d3fa361a45ce59e80c36cb1c9d3",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -5967,9 +6417,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/kling-3-0.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 12330,
-      "sha256": "68b2e55b6a6e3018ead2648864a8d803c356ac1a844c8e662478ed30c559ce41",
-      "canonicalSha256": "68b2e55b6a6e3018ead2648864a8d803c356ac1a844c8e662478ed30c559ce41",
+      "byteLength": 11833,
+      "sha256": "1569daa88f7d3b3398e5b5cf32fb310480928be983bd385e1ef334d84d46320d",
+      "canonicalSha256": "1569daa88f7d3b3398e5b5cf32fb310480928be983bd385e1ef334d84d46320d",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -6112,9 +6562,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/kling-avatar-2-0.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 6879,
-      "sha256": "da6524680ebe48e26ef5c6c3ba8e1fe3af2d9c54730f0fe2936458de44207b6c",
-      "canonicalSha256": "da6524680ebe48e26ef5c6c3ba8e1fe3af2d9c54730f0fe2936458de44207b6c",
+      "byteLength": 6492,
+      "sha256": "7d31906624b543db95cd18827752a7cd5bf987586b35b547e03eb7975d7629f1",
+      "canonicalSha256": "7d31906624b543db95cd18827752a7cd5bf987586b35b547e03eb7975d7629f1",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -6230,9 +6680,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/kling-o3-4k.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 13639,
-      "sha256": "2d5529bf712da85fc29c6d51faac1983db50174d272bdd85fee1ea9d0e515fa2",
-      "canonicalSha256": "2d5529bf712da85fc29c6d51faac1983db50174d272bdd85fee1ea9d0e515fa2",
+      "byteLength": 13142,
+      "sha256": "5b702a7f6757ba306957d120810f9f816e43714b6db8013246127c3475262f97",
+      "canonicalSha256": "5b702a7f6757ba306957d120810f9f816e43714b6db8013246127c3475262f97",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -6379,9 +6829,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/kling-o3.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 13772,
-      "sha256": "88a605555cd81aa9489eaad178fa3ac001d533a9390f4319447186915d3a8142",
-      "canonicalSha256": "88a605555cd81aa9489eaad178fa3ac001d533a9390f4319447186915d3a8142",
+      "byteLength": 13275,
+      "sha256": "4eb99774b7c3d65dd3467ba268f5fbc3eef38e9967f3bd93c500298c2e2044a1",
+      "canonicalSha256": "4eb99774b7c3d65dd3467ba268f5fbc3eef38e9967f3bd93c500298c2e2044a1",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -6528,9 +6978,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/omni-flash.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 11263,
-      "sha256": "c68021fc53e19335ce89bc3a9dfe1d226b8c0b0c3c51c218f48224ce074805ff",
-      "canonicalSha256": "c68021fc53e19335ce89bc3a9dfe1d226b8c0b0c3c51c218f48224ce074805ff",
+      "byteLength": 10542,
+      "sha256": "c5efbac6946edd7a3cbdac841e51eb276ea3c2dd0de25dec3eb02f7281cffce8",
+      "canonicalSha256": "c5efbac6946edd7a3cbdac841e51eb276ea3c2dd0de25dec3eb02f7281cffce8",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -6700,9 +7150,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/runway-gen-4-5.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 5774,
-      "sha256": "f4d058b529219116a82f523e385939bb815c8ff26fd7b139c2a3cb95bc99f1d6",
-      "canonicalSha256": "f4d058b529219116a82f523e385939bb815c8ff26fd7b139c2a3cb95bc99f1d6",
+      "byteLength": 5367,
+      "sha256": "33dc53ca6bc748db251f35a2e2f916217942e538f7fd7cbf1b307ec70157f6c1",
+      "canonicalSha256": "33dc53ca6bc748db251f35a2e2f916217942e538f7fd7cbf1b307ec70157f6c1",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -6810,9 +7260,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/seedance-1-5-pro.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 8466,
-      "sha256": "dededdde246c855a2464cabb482bd20a2665b64ade813814b667660c32457d80",
-      "canonicalSha256": "dededdde246c855a2464cabb482bd20a2665b64ade813814b667660c32457d80",
+      "byteLength": 7805,
+      "sha256": "b93b9ab36e92cbd26caf25f9cd272f9928a962ae506660b97511de5cc1cc4294",
+      "canonicalSha256": "b93b9ab36e92cbd26caf25f9cd272f9928a962ae506660b97511de5cc1cc4294",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -6950,9 +7400,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/seedance-1.0-pro.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 7065,
-      "sha256": "6ddbb5968ca0ec07dab68eb7ce0212c4448ac859c0633afd30845e5f36961129",
-      "canonicalSha256": "6ddbb5968ca0ec07dab68eb7ce0212c4448ac859c0633afd30845e5f36961129",
+      "byteLength": 6612,
+      "sha256": "6229f7be265025bbd920211093d0dbf414e691531e5edca942ee7113f5f4c388",
+      "canonicalSha256": "6229f7be265025bbd920211093d0dbf414e691531e5edca942ee7113f5f4c388",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -7073,9 +7523,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/seedance-2-mini.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 10768,
-      "sha256": "130fd5f4d0fec097c8b0a2b0e9a6891a0612797ba7da3ab3738cdc4d658af602",
-      "canonicalSha256": "130fd5f4d0fec097c8b0a2b0e9a6891a0612797ba7da3ab3738cdc4d658af602",
+      "byteLength": 10257,
+      "sha256": "c942b3d7444c3241339e2e3ac71d36dbcf931db0e168aa65af9d347c040edeb6",
+      "canonicalSha256": "c942b3d7444c3241339e2e3ac71d36dbcf931db0e168aa65af9d347c040edeb6",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -7208,9 +7658,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/seedance-2.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 11888,
-      "sha256": "591f2f0d17b26e5efad924fe3ccd7055321f629e15f1c8c1f7d5cf3434e0a166",
-      "canonicalSha256": "591f2f0d17b26e5efad924fe3ccd7055321f629e15f1c8c1f7d5cf3434e0a166",
+      "byteLength": 11275,
+      "sha256": "a0ba9908e7f16a778f664ec2458a1ebe80cbde9a17d9b5c6217afa2153f1c29c",
+      "canonicalSha256": "a0ba9908e7f16a778f664ec2458a1ebe80cbde9a17d9b5c6217afa2153f1c29c",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -7446,9 +7896,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/sora-2-official.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 5808,
-      "sha256": "fd912b25fb7f01eea16272af28d9664b0563a885fbf37a9f1ec59227a4693746",
-      "canonicalSha256": "fd912b25fb7f01eea16272af28d9664b0563a885fbf37a9f1ec59227a4693746",
+      "byteLength": 5383,
+      "sha256": "40a829a517d538738eaac6e45aa807d335f79a6acdcc03b0be27d4c8ee6aaa4f",
+      "canonicalSha256": "40a829a517d538738eaac6e45aa807d335f79a6acdcc03b0be27d4c8ee6aaa4f",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -7551,9 +8001,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/sora-2-pro-official.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 7763,
-      "sha256": "08645546db3d7e7b2ac675eb23f83f9334e392004cdf95d2f424587a2984aca2",
-      "canonicalSha256": "08645546db3d7e7b2ac675eb23f83f9334e392004cdf95d2f424587a2984aca2",
+      "byteLength": 7200,
+      "sha256": "ab11cb84bec56a9f54485b8776f9bf771563b264ce3b3a3371f88bfdf581c9ae",
+      "canonicalSha256": "ab11cb84bec56a9f54485b8776f9bf771563b264ce3b3a3371f88bfdf581c9ae",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -7682,9 +8132,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/veo-3-1-official.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 11087,
-      "sha256": "62f4320adf725a79da9df54ebe28d2cdfc99cb79b8061681aee1c2f2e889fbe2",
-      "canonicalSha256": "62f4320adf725a79da9df54ebe28d2cdfc99cb79b8061681aee1c2f2e889fbe2",
+      "byteLength": 11088,
+      "sha256": "ce3d07477b820cfdf2a477a7501126303c83a4192fbcd4d9894f4b251d4f5cd0",
+      "canonicalSha256": "ce3d07477b820cfdf2a477a7501126303c83a4192fbcd4d9894f4b251d4f5cd0",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -7822,9 +8272,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/veo-3-1.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 10033,
-      "sha256": "ac4996f4af4963fc7b3a4470c184c3c3f965b6170c58b5fa99f2b2d303d36d0c",
-      "canonicalSha256": "ac4996f4af4963fc7b3a4470c184c3c3f965b6170c58b5fa99f2b2d303d36d0c",
+      "byteLength": 10034,
+      "sha256": "0550ad7ab2004aedb2b064cfc52bf72440e0e9bcea86793d3e47e8af030ddafc",
+      "canonicalSha256": "0550ad7ab2004aedb2b064cfc52bf72440e0e9bcea86793d3e47e8af030ddafc",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -7957,9 +8407,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/wan-2-6.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 8880,
-      "sha256": "4edd90800d8fa88de629351b707d2a8b726a6e1156c990fa98d8530ec6eb6a1b",
-      "canonicalSha256": "4edd90800d8fa88de629351b707d2a8b726a6e1156c990fa98d8530ec6eb6a1b",
+      "byteLength": 8325,
+      "sha256": "c6ecb826e8a9ffa6382cab2ce8e560aef17973b2ec384e437bc3426927a3e0c7",
+      "canonicalSha256": "c6ecb826e8a9ffa6382cab2ce8e560aef17973b2ec384e437bc3426927a3e0c7",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -8093,9 +8543,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/wan-2-7-video.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 8960,
-      "sha256": "f14be39a6f2bc364ae09a594812ea59b786e0afdc068168112be068c10ddbe4d",
-      "canonicalSha256": "f14be39a6f2bc364ae09a594812ea59b786e0afdc068168112be068c10ddbe4d",
+      "byteLength": 8531,
+      "sha256": "24722d5b11128305f906d7aad1285971b1b01b537126f27ad0d6644990b921cb",
+      "canonicalSha256": "24722d5b11128305f906d7aad1285971b1b01b537126f27ad0d6644990b921cb",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -8258,9 +8708,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/wan-animate.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 6152,
-      "sha256": "290fdc0febc15439f31901b8e19e7a0b8356288b9bab02398c66cf724618b27a",
-      "canonicalSha256": "290fdc0febc15439f31901b8e19e7a0b8356288b9bab02398c66cf724618b27a",
+      "byteLength": 5831,
+      "sha256": "48d4b3d9c700eb13d79013e6fa8951dce5418507b21c9edcd17b19e670dbff19",
+      "canonicalSha256": "48d4b3d9c700eb13d79013e6fa8951dce5418507b21c9edcd17b19e670dbff19",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -8357,9 +8807,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/wan2.2-image-to-video-fast.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 5877,
-      "sha256": "e3d0a4cb17b4a9ed88fabd0314dafbe68b2268f34c20655587d30ecae9dc686d",
-      "canonicalSha256": "e3d0a4cb17b4a9ed88fabd0314dafbe68b2268f34c20655587d30ecae9dc686d",
+      "byteLength": 5574,
+      "sha256": "83dfcbe73f4f59c422357b80ef13a5a6797f58d8873b5c726c08d66bf97a413c",
+      "canonicalSha256": "83dfcbe73f4f59c422357b80ef13a5a6797f58d8873b5c726c08d66bf97a413c",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -8461,9 +8911,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/wan2.2-text-to-video-fast.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 5564,
-      "sha256": "92ef1b9a8d4b55e278ce4333e2a8078ed9146ecb0488732a5eb49c4cba925b6e",
-      "canonicalSha256": "92ef1b9a8d4b55e278ce4333e2a8078ed9146ecb0488732a5eb49c4cba925b6e",
+      "byteLength": 5257,
+      "sha256": "799e5c1921089be5089ee8d38bcfe6bf3992d0e9e208d0dbe652f92022a45d63",
+      "canonicalSha256": "799e5c1921089be5089ee8d38bcfe6bf3992d0e9e208d0dbe652f92022a45d63",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -8565,9 +9015,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/wan2.5-image-to-video.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 6534,
-      "sha256": "18fbc1b29ab068421fabeb6f661cd0f43ded98b59301f456df2604bba2270f6a",
-      "canonicalSha256": "18fbc1b29ab068421fabeb6f661cd0f43ded98b59301f456df2604bba2270f6a",
+      "byteLength": 6159,
+      "sha256": "fb0cc370ee465d5fc773a514240eee6d880efe843f37635dc7d54e4e015e3276",
+      "canonicalSha256": "fb0cc370ee465d5fc773a514240eee6d880efe843f37635dc7d54e4e015e3276",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -8686,9 +9136,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/wan2.5-text-to-video.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 6034,
-      "sha256": "f4b9595b46afb7060e6183abca579d070404d98d5d5864ffd37e075406b26f32",
-      "canonicalSha256": "f4b9595b46afb7060e6183abca579d070404d98d5d5864ffd37e075406b26f32",
+      "byteLength": 5655,
+      "sha256": "3dadc6c40e48303860d6aa2e38a2c984f67860d8f96e24a06b0ef3d749120313",
+      "canonicalSha256": "3dadc6c40e48303860d6aa2e38a2c984f67860d8f96e24a06b0ef3d749120313",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -8797,9 +9247,9 @@
       "url": "https://docs.poyo.ai/api-manual/account-management/user-balance.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 5039,
-      "sha256": "6851ef4fda202b1cc9eccfeab4a7c8152d26f082e98e0f9236be26b82529f0cc",
-      "canonicalSha256": "6851ef4fda202b1cc9eccfeab4a7c8152d26f082e98e0f9236be26b82529f0cc",
+      "byteLength": 4876,
+      "sha256": "3580ebd75e6a6d7a9cb88f85907cfd274b9e96c724382d8526b845a9568d881e",
+      "canonicalSha256": "3580ebd75e6a6d7a9cb88f85907cfd274b9e96c724382d8526b845a9568d881e",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -8897,9 +9347,9 @@
       "reviewNote": "The generic submit schema permits fields and combinations narrowed by model-specific pages.",
       "status": "contradictory",
       "httpStatus": 200,
-      "byteLength": 16010,
-      "sha256": "5686ba65b6e226584d7b7d86b3abb7d162fceb23625f913dbfd4703753260f86",
-      "canonicalSha256": "5686ba65b6e226584d7b7d86b3abb7d162fceb23625f913dbfd4703753260f86",
+      "byteLength": 15307,
+      "sha256": "59fb4a7e9fb582b1da96c7bc4135bdfa80f57d67385a999461cc234027e2bfd5",
+      "canonicalSha256": "59fb4a7e9fb582b1da96c7bc4135bdfa80f57d67385a999461cc234027e2bfd5",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -9066,9 +9516,9 @@
       "url": "https://docs.poyo.ai/.md",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 5091,
-      "sha256": "20e77ddb03a08d9bd2feee8e95ccbdb4d3fc3cc0f6a127aebf18a8d24fccdff9",
-      "canonicalSha256": "20e77ddb03a08d9bd2feee8e95ccbdb4d3fc3cc0f6a127aebf18a8d24fccdff9",
+      "byteLength": 9823,
+      "sha256": "9d68383e0123b9dea48d92575fb206b006b7e0451b8b8f6c19f727dfca92dcb9",
+      "canonicalSha256": "9d68383e0123b9dea48d92575fb206b006b7e0451b8b8f6c19f727dfca92dcb9",
       "canonicalization": "raw-body-v1",
       "structured": null
     },
@@ -9133,9 +9583,9 @@
       "url": "https://docs.poyo.ai/api-manual/file-series/upload-base64.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 11260,
-      "sha256": "b49f1018d06cd3c2e8fbd4c1c8c71a4d235c6858b8aa907774b0cd295e055472",
-      "canonicalSha256": "b49f1018d06cd3c2e8fbd4c1c8c71a4d235c6858b8aa907774b0cd295e055472",
+      "byteLength": 10997,
+      "sha256": "014b75a9e5b298faf0e4947e644e400e54ee16c02cb08d096bfee94a0dec5241",
+      "canonicalSha256": "014b75a9e5b298faf0e4947e644e400e54ee16c02cb08d096bfee94a0dec5241",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -9258,9 +9708,9 @@
       "url": "https://docs.poyo.ai/api-manual/file-series/upload-stream.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 13253,
-      "sha256": "e9ca76ada4c9189fa026019dd08a69d8dc53404ec52b9e774b4b44fd05063754",
-      "canonicalSha256": "e9ca76ada4c9189fa026019dd08a69d8dc53404ec52b9e774b4b44fd05063754",
+      "byteLength": 13254,
+      "sha256": "c0eeefb73f86dc8d3b1386441e6fada568cd3b87e9ffea413b7fcb166137d4fc",
+      "canonicalSha256": "c0eeefb73f86dc8d3b1386441e6fada568cd3b87e9ffea413b7fcb166137d4fc",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -9389,9 +9839,9 @@
       "url": "https://docs.poyo.ai/api-manual/file-series/upload-url.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 10563,
-      "sha256": "cddc0816abfe59f8fead2cf8ca0ad81d076f96b1e16cd06cef7973a72ecd8a56",
-      "canonicalSha256": "cddc0816abfe59f8fead2cf8ca0ad81d076f96b1e16cd06cef7973a72ecd8a56",
+      "byteLength": 10300,
+      "sha256": "fac10d8b24c0e08c0b7c6d7801839ac611b6df7fec220c1e854b1260d25b9d1f",
+      "canonicalSha256": "fac10d8b24c0e08c0b7c6d7801839ac611b6df7fec220c1e854b1260d25b9d1f",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -9543,9 +9993,9 @@
       "reviewNote": "Public catalogue only; no pricing-estimate API contract. Drift uses canonical visible main text rather than volatile HTML metadata.",
       "status": "unstructured",
       "httpStatus": 200,
-      "byteLength": 964682,
-      "sha256": "df7ad5a98f0f5df1d1742d291c58399f0a63fd81a8ab4acd9316b7b9c5b297d5",
-      "canonicalSha256": "f21c849976eec75c17f144edbbd58e72e86215f1bd251765bcd168b7802c797c",
+      "byteLength": 1010264,
+      "sha256": "2f78ff5b4f2c042f235f9fb59ba82d42f3a6c2e68a9edb2bd856aa6138502ca4",
+      "canonicalSha256": "a4a9a3b6b532439444c4e12a7369dc0d3f27719606e74de405200745d61bfb44",
       "canonicalization": "pricing-visible-text-v1",
       "structured": null
     }
