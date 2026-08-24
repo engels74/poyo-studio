@@ -6,6 +6,7 @@ export type VideoWorkflow =
   | 'text-to-video'
   | 'image-to-video'
   | 'frame-to-video'
+  | 'keyframe-to-video'
   | 'reference-to-video'
   | 'video-to-video'
   | 'video-edit'
@@ -137,6 +138,8 @@ export interface GuidedImageRequest {
   googleSearch?: boolean;
   webSearch?: boolean;
   syncMode?: boolean;
+  negativePrompt?: string;
+  promptExtend?: boolean;
 }
 export interface VideoRegistryEntry {
   key: string;
@@ -207,6 +210,7 @@ export interface GuidedVideoRequest {
   sourceVideoDuration?: number;
   multiShots?: boolean;
   multiPrompt?: Array<{ prompt: string; duration: number }>;
+  keyframes?: Array<{ image_url: string; frame_index: number }>;
   elements?: unknown[];
 }
 export interface ExpertOverride {

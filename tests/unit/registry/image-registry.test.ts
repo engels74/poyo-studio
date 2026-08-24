@@ -22,12 +22,12 @@ function registryEntry(key: string) {
 }
 
 describe('audited image registry', () => {
-  test('REG-01/02 accounts for all 22 pages, 44 public IDs, and 50 reviewed workflows', () => {
-    expect(IMAGE_PAGE_SLUGS).toHaveLength(22);
-    expect(new Set(IMAGE_PAGE_SLUGS).size).toBe(22);
-    expect(IMAGE_PUBLIC_IDS).toHaveLength(44);
-    expect(IMAGE_REGISTRY_ENTRIES).toHaveLength(50);
-    expect(new Set(IMAGE_REGISTRY_ENTRIES.map((entry) => entry.key)).size).toBe(50);
+  test('REG-01/02 accounts for all 24 pages, 47 public IDs, and 56 reviewed workflows', () => {
+    expect(IMAGE_PAGE_SLUGS).toHaveLength(24);
+    expect(new Set(IMAGE_PAGE_SLUGS).size).toBe(24);
+    expect(IMAGE_PUBLIC_IDS).toHaveLength(47);
+    expect(IMAGE_REGISTRY_ENTRIES).toHaveLength(56);
+    expect(new Set(IMAGE_REGISTRY_ENTRIES.map((entry) => entry.key)).size).toBe(56);
     for (const entry of IMAGE_REGISTRY_ENTRIES) {
       expect(entry.provenance.markdownUrl).toStartWith('https://docs.poyo.ai/');
       expect(entry.provenance.markdownSha256).toHaveLength(64);
@@ -122,6 +122,8 @@ describe('audited image registry', () => {
   });
   test('REG-07 opts every image model out of the safety checker and toggles only audited families', () => {
     const safetyIds = new Set([
+      'qwen-image-3',
+      'qwen-image-3-pro',
       'seedream-4.5',
       'seedream-4.5-edit',
       'seedream-5.0-lite',
@@ -304,7 +306,7 @@ describe('audited image registry', () => {
     expect(
       database.query<{ count: number }, []>('SELECT COUNT(*) count FROM registry_entries').get()
         ?.count
-    ).toBe(52);
+    ).toBe(58);
     expect(
       database
         .query<{ manifest_hash: string }, []>('SELECT manifest_hash FROM registry_versions')
@@ -312,6 +314,167 @@ describe('audited image registry', () => {
     ).toBe(IMAGE_REGISTRY.manifestHash);
     database.close();
   });
+  test('REG-11 Qwen Image 3 shares one model ID between text and reference generation', () => {
+    expect(
+      IMAGE_REGISTRY_ENTRIES.filter((entry) => entry.family === 'Qwen Image 3').map(
+        (entry) => entry.key
+      )
+    ).toEqual([
+      'qwen-image-3:text-to-image',
+      'qwen-image-3:image-edit',
+      'qwen-image-3-pro:text-to-image',
+      'qwen-image-3-pro:image-edit'
+    ]);
+
+    const text = registryEntry('qwen-image-3-pro:text-to-image');
+    expect(text.provider).toBe('Alibaba');
+    expect(text.inputRoles).toEqual([
+      expect.objectContaining({ role: 'reference', required: false, min: 0, max: 3 })
+    ]);
+    expect(text.fields.find((field) => field.key === 'aspectRatio')).toMatchObject({
+      apiKey: 'size',
+      enum: ['1:1', '3:2', '2:3', '4:3', '3:4', '16:9', '9:16', '21:9']
+    });
+    expect(text.fields.find((field) => field.key === 'resolution')).toMatchObject({
+      enum: ['1K', '2K'],
+      default: '1K'
+    });
+    expect(text.fields.find((field) => field.key === 'outputFormat')).toMatchObject({
+      enum: ['png', 'jpeg'],
+      default: 'png'
+    });
+    expect(text.fields.find((field) => field.key === 'promptExtend')).toMatchObject({
+      apiKey: 'prompt_extend',
+      kind: 'boolean',
+      default: true
+    });
+    expect(text.fields.find((field) => field.key === 'negativePrompt')).toMatchObject({
+      apiKey: 'negative_prompt',
+      kind: 'text',
+      max: 5000
+    });
+    expect(text.output.counts).toBeNull();
+
+    expect(normalizeImageRequest(text.key, { prompt: 'poster' }).request).toEqual({
+      model: 'qwen-image-3-pro',
+      input: {
+        prompt: 'poster',
+        resolution: '1K',
+        output_format: 'png',
+        prompt_extend: true,
+        enable_safety_checker: false
+      }
+    });
+    expect(
+      normalizeImageRequest(text.key, {
+        prompt: 'poster',
+        aspectRatio: '21:9',
+        resolution: '2K',
+        outputFormat: 'jpeg',
+        negativePrompt: 'watermark',
+        promptExtend: false,
+        seed: 314159
+      }).request.input
+    ).toMatchObject({
+      size: '21:9',
+      resolution: '2K',
+      output_format: 'jpeg',
+      negative_prompt: 'watermark',
+      prompt_extend: false,
+      seed: 314159
+    });
+
+    // The page is one unified endpoint, so the reference mode keeps the shared zero lower bound
+    // every other switching image page uses and caps the documented three references.
+    const reference = registryEntry('qwen-image-3:image-edit');
+    expect(reference.inputRoles).toEqual([
+      expect.objectContaining({ role: 'reference', required: true, min: 0, max: 3 })
+    ]);
+    expect(() =>
+      normalizeImageRequest(reference.key, {
+        prompt: 'badge',
+        imageUrls: Array.from({ length: 4 }, (_, index) => `https://assets.example/${index}.png`)
+      })
+    ).toThrow('At most 3 reference images are supported.');
+    expect(() =>
+      normalizeImageRequest(reference.key, {
+        prompt: 'badge',
+        imageUrls: ['https://a/b.png'],
+        n: 2
+      })
+    ).toThrow('n is not supported');
+  });
+
+  test('REG-12 Grok Imagine Image 2.0 submits its ratio as aspect_ratio', () => {
+    expect(
+      IMAGE_REGISTRY_ENTRIES.filter((entry) => entry.family === 'Grok Imagine Image 2.0').map(
+        (entry) => entry.key
+      )
+    ).toEqual(['grok-imagine-image-2.0:text-to-image', 'grok-imagine-image-2.0:image-edit']);
+
+    const text = registryEntry('grok-imagine-image-2.0:text-to-image');
+    expect(text.provider).toBe('xAI');
+    expect(text.fields.find((field) => field.key === 'aspectRatio')).toMatchObject({
+      apiKey: 'aspect_ratio',
+      enum: ['1:1', '2:3', '3:2', '9:16', '16:9'],
+      default: '1:1'
+    });
+    expect(text.fields.find((field) => field.key === 'quality')).toMatchObject({
+      enum: ['low', 'medium'],
+      default: 'medium'
+    });
+    expect(text.fields.find((field) => field.key === 'prompt')).toMatchObject({ max: 8000 });
+    expect(text.output.counts).toEqual([1, 2, 3, 4]);
+    expect(text.output.seed).toBe(false);
+
+    const request = normalizeImageRequest(text.key, { prompt: 'perfume bottle' }).request;
+    expect(request).toEqual({
+      model: 'grok-imagine-image-2.0',
+      input: {
+        prompt: 'perfume bottle',
+        aspect_ratio: '1:1',
+        resolution: '1K',
+        n: 1,
+        quality: 'medium',
+        enable_safety_checker: false
+      }
+    });
+    expect(request.input).not.toHaveProperty('size');
+
+    // Every other image page still names the shared field size, so the adapter stays keyed by apiKey.
+    expect(
+      normalizeImageRequest('grok-imagine-image:text-to-image', {
+        prompt: 'perfume bottle',
+        aspectRatio: '16:9'
+      }).request.input
+    ).toMatchObject({ size: '16:9' });
+
+    const edit = registryEntry('grok-imagine-image-2.0:image-edit');
+    expect(edit.inputRoles).toEqual([
+      expect.objectContaining({ role: 'reference', required: true, min: 0, max: 3 })
+    ]);
+    expect(() =>
+      normalizeImageRequest(edit.key, {
+        prompt: 'swap the background',
+        imageUrls: Array.from({ length: 4 }, (_, index) => `https://assets.example/${index}.png`)
+      })
+    ).toThrow('At most 3 reference images are supported.');
+    expect(() =>
+      normalizeImageRequest(edit.key, {
+        prompt: 'swap the background',
+        imageUrls: ['https://a/b.png'],
+        quality: 'high'
+      })
+    ).toThrow('quality is unsupported');
+    expect(() =>
+      normalizeImageRequest(edit.key, {
+        prompt: 'swap the background',
+        imageUrls: ['https://a/b.png'],
+        n: 5
+      })
+    ).toThrow('n exceeds maximum');
+  });
+
   test('REG-10 records the now-available paired Kling O3 source evidence', () => {
     const entries = IMAGE_REGISTRY_ENTRIES.filter(
       (entry) => entry.provenance.pageSlug === 'kling-o3'

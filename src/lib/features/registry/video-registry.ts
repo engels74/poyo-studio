@@ -10,7 +10,7 @@ import type {
   VideoWorkflow
 } from './types';
 
-export const VIDEO_REGISTRY_VERSION = 'video-2026-08-09.1';
+export const VIDEO_REGISTRY_VERSION = 'video-2026-08-24.1';
 export const VIDEO_VERIFIED_AT = OFFICIAL_SOURCE_MANIFEST.verifiedAt;
 const videoFormats = ['video/mp4', 'video/webm', 'video/quicktime'];
 const imageFormats = ['image/jpeg', 'image/png', 'image/webp'];
@@ -58,6 +58,28 @@ const klingRich: VideoWorkflow[] = [
 ];
 
 const pages: Page[] = [
+  {
+    slug: 'flux-3',
+    provider: 'Black Forest Labs',
+    family: 'Flux 3',
+    models: [
+      { id: 'flux-3/text-to-video', workflows: ['text-to-video'] },
+      { id: 'flux-3/image-to-video', workflows: ['image-to-video'] },
+      { id: 'flux-3/first-last-frame-to-video', workflows: ['frame-to-video'] },
+      { id: 'flux-3/extend-video', workflows: ['video-to-video'] },
+      { id: 'flux-3/keyframes-to-video', workflows: ['keyframe-to-video'] }
+    ],
+    durations: { min: 5, max: 20 },
+    durationDefault: 5,
+    ratios: ['auto', '21:9', '2:1', '16:9', '4:3', '1:1', '3:4', '9:16'],
+    ratioDefault: 'auto',
+    resolutions: ['720p', '1080p'],
+    resolutionDefault: '720p',
+    sound: true,
+    limitations: [
+      'Each model ID fixes its media input: one image, two ordered frames, one MP4 under 50 MB and 15 seconds, or 1-10 positioned keyframes.'
+    ]
+  },
   {
     slug: 'grok-imagine',
     provider: 'xAI',
@@ -687,7 +709,8 @@ function rolesFor(page: Page, modelId: string, workflow: VideoWorkflow): InputRo
         mediaRole('start-frame', 'imageUrls', 'image_urls', 'image', true, 1, 1),
         mediaRole('end-frame', 'endImageUrl', 'end_image_url', 'image', true, 1, 1)
       ];
-    if (page.family.includes('VEO'))
+    // Flux 3 and VEO both carry the first and last frame as one two-item image_urls list.
+    if (page.family === 'Flux 3' || page.family.includes('VEO'))
       return [mediaRole('start-frame', 'imageUrls', 'image_urls', 'image', true, 2, 2)];
     const max = 2;
     return [mediaRole('start-frame', 'imageUrls', 'image_urls', 'image', true, 1, max)];
@@ -808,6 +831,8 @@ function rolesFor(page: Page, modelId: string, workflow: VideoWorkflow): InputRo
     return [];
   }
   if (workflow === 'video-to-video') {
+    if (page.family === 'Flux 3')
+      return [mediaRole('source-video', 'videoUrl', 'video_url', 'video', true, 1, 1)];
     return [
       mediaRole(
         'source-video',
@@ -940,6 +965,14 @@ function fieldsFor(page: Page, modelId: string, workflow: VideoWorkflow): FieldD
         required: !promptOptional,
         min: page.prompt?.[0] ?? 1,
         max: page.prompt?.[1] ?? 5000
+      })
+    );
+  if (workflow === 'keyframe-to-video')
+    fields.push(
+      field('keyframes', 'keyframes', 'object-list', 'essential', {
+        required: true,
+        min: 1,
+        max: 10
       })
     );
   if (!omitDuration && durations) {

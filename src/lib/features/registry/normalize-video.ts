@@ -150,6 +150,30 @@ function validate(entry: VideoRegistryEntry, values: GuidedVideoRequest): string
       issues.push('Kling multi-shot requires sound=true.');
   }
 
+  if (entry.workflow === 'keyframe-to-video') {
+    // Keyframes are positioned on a documented 24 fps timeline, so every index must be a unique
+    // whole frame inside the requested duration.
+    const framesPerSecond = 24;
+    const maxIndex = (values.duration ?? 0) * framesPerSecond;
+    const seen = new Set<number>();
+    for (const keyframe of values.keyframes ?? []) {
+      if (!keyframe || typeof keyframe.image_url !== 'string' || !keyframe.image_url.trim()) {
+        issues.push('Each keyframe requires an image_url.');
+        continue;
+      }
+      issues.push(...validateUrls([keyframe.image_url], 'keyframe'));
+      if (
+        !Number.isInteger(keyframe.frame_index) ||
+        keyframe.frame_index < 0 ||
+        keyframe.frame_index > maxIndex
+      )
+        issues.push(`Each keyframe requires frame_index 0-${maxIndex}.`);
+      else if (seen.has(keyframe.frame_index))
+        issues.push('Keyframe frame_index values must be unique.');
+      else seen.add(keyframe.frame_index);
+    }
+  }
+
   if (entry.workflow === 'motion-control') {
     const orientation = values.characterOrientation ?? 'image';
     const observedDuration = values.referenceVideoDuration;
@@ -291,6 +315,8 @@ function minimumFieldValue(entry: VideoRegistryEntry, field: FieldDefinition): u
     const duration = Number(durationField?.default ?? durationField?.min ?? 3);
     return [{ prompt: 'establishing shot', duration }];
   }
+  if (field.key === 'keyframes')
+    return [{ image_url: 'https://assets.example/keyframe.png', frame_index: 0 }];
   if (field.key === 'elements' && field.required)
     return [{ name: 'subject', element_input_urls: ['https://assets.example/element.png'] }];
   if (field.key === 'elements') return undefined;

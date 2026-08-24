@@ -38,6 +38,7 @@ const modes: readonly StudioMode[] = [
   { workflow: 'image-edit', group: 'edit', label: 'Edit an image', tag: 'img2img' },
   { workflow: 'image-to-video', group: 'edit', label: 'Image to video', tag: 'img2vid' },
   { workflow: 'frame-to-video', group: 'edit', label: 'First and last frame', tag: 'frames2vid' },
+  { workflow: 'keyframe-to-video', group: 'edit', label: 'Keyframes to video', tag: 'keys2vid' },
   { workflow: 'reference-to-video', group: 'edit', label: 'References to video', tag: 'ref2vid' },
   { workflow: 'image-fusion-video', group: 'edit', label: 'Fuse images', tag: 'fuse2vid' },
   { workflow: 'video-to-video', group: 'edit', label: 'Video to video', tag: 'vid2vid' },

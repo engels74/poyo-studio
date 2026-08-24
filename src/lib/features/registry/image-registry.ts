@@ -8,7 +8,7 @@ import type {
 } from './types';
 import { OFFICIAL_SOURCE_MANIFEST, officialModelSources } from './evidence/source-evidence';
 
-export const IMAGE_REGISTRY_VERSION = 'image-2026-07-20.1';
+export const IMAGE_REGISTRY_VERSION = 'image-2026-08-24.1';
 export const IMAGE_VERIFIED_AT = OFFICIAL_SOURCE_MANIFEST.verifiedAt;
 const ratios8 = ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3', 'auto'];
 const seedreamRatios = ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3', '21:9'];
@@ -46,6 +46,7 @@ type Page = {
   ids: string[];
   prompt?: [number, number];
   ratios?: string[];
+  ratioApiKey?: string;
   res?: string[];
   n?: [number, number | null] | null;
   formats?: string[];
@@ -191,6 +192,31 @@ const pages: Page[] = [
     ]
   },
   {
+    slug: 'grok-imagine-image-2-0',
+    provider: 'xAI',
+    family: 'Grok Imagine Image 2.0',
+    ids: ['grok-imagine-image-2.0'],
+    prompt: [1, 8000],
+    ratios: ['1:1', '2:3', '3:2', '9:16', '16:9'],
+    ratioApiKey: 'aspect_ratio',
+    ratioDefault: '1:1',
+    res: ['1K', '2K'],
+    resDefault: '1K',
+    optionalRefs: [0, 3],
+    n: [1, 4],
+    extra: [
+      {
+        key: 'quality',
+        apiKey: 'quality',
+        kind: 'enum',
+        level: 'common',
+        default: 'medium',
+        enum: ['low', 'medium']
+      }
+    ],
+    limitations: ['Supplying image_urls switches the single model ID from generation to editing.']
+  },
+  {
     slug: 'kling-o1',
     provider: 'Kuaishou',
     family: 'Kling O1',
@@ -275,6 +301,40 @@ const pages: Page[] = [
       }
     ],
     limitations: ['Some seed fields are official-variant only.']
+  },
+  {
+    slug: 'qwen-image-3',
+    provider: 'Alibaba',
+    family: 'Qwen Image 3',
+    ids: ['qwen-image-3', 'qwen-image-3-pro'],
+    prompt: [1, 5000],
+    ratios: ['1:1', '3:2', '2:3', '4:3', '3:4', '16:9', '9:16', '21:9'],
+    res: ['1K', '2K'],
+    resDefault: '1K',
+    optionalRefs: [0, 3],
+    formats: ['png', 'jpeg'],
+    formatDefault: 'png',
+    seed: true,
+    safety: true,
+    extra: [
+      {
+        key: 'negativePrompt',
+        apiKey: 'negative_prompt',
+        kind: 'text',
+        level: 'advanced',
+        max: 5000
+      },
+      {
+        key: 'promptExtend',
+        apiKey: 'prompt_extend',
+        kind: 'boolean',
+        level: 'advanced',
+        default: true
+      }
+    ],
+    limitations: [
+      'Omitting image_urls generates from text; one to three references switch the same model ID to reference generation.'
+    ]
   },
   {
     slug: 'seedream-4',
@@ -397,7 +457,7 @@ function entry(page: Page, id: string, mode: 'base' | 'edit'): ImageRegistryEntr
       ? [
           {
             key: 'aspectRatio',
-            apiKey: 'size',
+            apiKey: page.ratioApiKey ?? 'size',
             kind: 'enum' as const,
             level: 'common' as const,
             enum: effectiveRatios,
