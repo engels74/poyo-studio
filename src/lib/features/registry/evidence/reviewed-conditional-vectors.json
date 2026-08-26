@@ -1,17 +1,23 @@
 {
   "version": 1,
-  "reviewedAt": "2026-08-09T09:47:01Z",
+  "reviewedAt": "2026-08-26T00:00:00Z",
   "vectors": [
     {
       "rule": "size-and-resolution-required",
       "entryKey": "flux-2-pro:text-to-image",
-      "values": { "prompt": "studio image", "aspectRatio": "1:1" },
+      "values": {
+        "prompt": "studio image",
+        "aspectRatio": "1:1"
+      },
       "issueIncludes": "requires both size and resolution"
     },
     {
       "rule": "pro-only-output-format-and-web-search",
       "entryKey": "nano-banana-2:text-to-image",
-      "values": { "prompt": "studio image", "webSearch": true },
+      "values": {
+        "prompt": "studio image",
+        "webSearch": true
+      },
       "issueIncludes": "only by Nano Banana Pro"
     },
     {
@@ -38,13 +44,19 @@
     {
       "rule": "size-is-one-of-resolution-ratio-or-custom",
       "entryKey": "seedream-4.5:text-to-image",
-      "values": { "prompt": "studio image", "resolution": "2K", "aspectRatio": "1:1" },
+      "values": {
+        "prompt": "studio image",
+        "resolution": "2K",
+        "aspectRatio": "1:1"
+      },
       "issueIncludes": "resolution or aspect ratio, not both"
     },
     {
       "rule": "size-required-for-text-only",
       "entryKey": "z-image:text-to-image",
-      "values": { "prompt": "studio image" },
+      "values": {
+        "prompt": "studio image"
+      },
       "issueIncludes": "text generation requires size"
     },
     {
@@ -113,7 +125,12 @@
       "rule": "prompt-vs-multi-prompt-and-sound",
       "entryKey": "kling-3.0/pro:multi-shot-video",
       "values": {
-        "multiPrompt": [{ "prompt": "establishing shot", "duration": 3 }],
+        "multiPrompt": [
+          {
+            "prompt": "establishing shot",
+            "duration": 3
+          }
+        ],
         "duration": 3,
         "aspectRatio": "1:1",
         "sound": true,
@@ -243,6 +260,20 @@
         "multiShots": false
       },
       "issueIncludes": "requires reference image or video input"
+    },
+    {
+      "rule": "wan-3.0-reference-requires-media",
+      "entryKey": "wan3.0-reference-to-video:reference-to-video",
+      "values": {
+        "prompt": "studio video",
+        "duration": 5,
+        "aspectRatio": "adaptive",
+        "resolution": "720p",
+        "seed": 0,
+        "enableSafetyChecker": false,
+        "generateAudio": true
+      },
+      "issueIncludes": "requires reference media"
     }
   ]
 }

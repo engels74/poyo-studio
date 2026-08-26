@@ -32,11 +32,11 @@ function minimum(key: string): GuidedVideoRequest {
 }
 
 describe('audited video registry coverage', () => {
-  test('REG-01/02 accounts for 38 pages, 60 IDs, 132 current workflows and explicit exclusions', () => {
-    expect(VIDEO_PAGE_SLUGS).toHaveLength(38);
-    expect(new Set(VIDEO_PAGE_SLUGS).size).toBe(38);
-    expect(VIDEO_PUBLIC_IDS).toHaveLength(60);
-    expect(VIDEO_CURRENT_ENTRIES).toHaveLength(132);
+  test('REG-01/02 accounts for 40 pages, 66 IDs, 138 current workflows and explicit exclusions', () => {
+    expect(VIDEO_PAGE_SLUGS).toHaveLength(40);
+    expect(new Set(VIDEO_PAGE_SLUGS).size).toBe(40);
+    expect(VIDEO_PUBLIC_IDS).toHaveLength(66);
+    expect(VIDEO_CURRENT_ENTRIES).toHaveLength(138);
     expect(VIDEO_EXCLUDED_ENTRIES).toHaveLength(2);
     expect(VIDEO_EXCLUDED_ENTRIES.every((entry) => entry.status === 'excluded-initial-scope')).toBe(
       true
@@ -89,7 +89,7 @@ describe('audited video registry coverage', () => {
           "SELECT COUNT(*) count FROM registry_entries WHERE modality='video'"
         )
         .get()?.count
-    ).toBe(142);
+    ).toBe(148);
     expect(
       database
         .query<{ count: number }, []>(
@@ -100,7 +100,7 @@ describe('audited video registry coverage', () => {
     expect(
       database.query<{ count: number }, []>('SELECT COUNT(*) count FROM registry_entries').get()
         ?.count
-    ).toBe(200);
+    ).toBe(206);
     database.close();
   });
 });
@@ -152,7 +152,13 @@ describe('reviewed video conditional adapters', () => {
       'wan2.7-text-to-video',
       'wan2.7-image-to-video',
       'wan2.7-reference-to-video',
-      'wan2.7-edit-video'
+      'wan2.7-edit-video',
+      'wan3.0-text-to-video',
+      'wan3.0-image-to-video',
+      'wan3.0-reference-to-video',
+      'wan3.0-prime-text-to-video',
+      'wan3.0-prime-image-to-video',
+      'wan3.0-prime-reference-to-video'
     ]);
     for (const entry of VIDEO_CURRENT_ENTRIES) {
       const values = minimumValidVideoRequest(entry);
@@ -972,5 +978,181 @@ describe('reviewed video conditional adapters', () => {
         keyframes: [{ frame_index: 0 }]
       } as unknown as Parameters<typeof normalizeVideoRequest>[1])
     ).toThrow('Each keyframe requires an image_url.');
+  });
+
+  test('REG-05 Wan 3.0 and Prime share one submit contract across three model IDs', () => {
+    expect(
+      VIDEO_CURRENT_ENTRIES.filter((entry) => entry.family.startsWith('Wan 3.0')).map((entry) => [
+        entry.family,
+        entry.publicModelId,
+        entry.workflow
+      ])
+    ).toEqual([
+      ['Wan 3.0 Video', 'wan3.0-text-to-video', 'text-to-video'],
+      ['Wan 3.0 Video', 'wan3.0-image-to-video', 'image-to-video'],
+      ['Wan 3.0 Video', 'wan3.0-reference-to-video', 'reference-to-video'],
+      ['Wan 3.0 Prime Video', 'wan3.0-prime-text-to-video', 'text-to-video'],
+      ['Wan 3.0 Prime Video', 'wan3.0-prime-image-to-video', 'image-to-video'],
+      ['Wan 3.0 Prime Video', 'wan3.0-prime-reference-to-video', 'reference-to-video']
+    ]);
+
+    const text = videoEntry('wan3.0-text-to-video:text-to-video');
+    expect(text.provider).toBe('Alibaba');
+    expect(text.inputRoles).toEqual([]);
+    expect(text.fields.find((field) => field.key === 'prompt')).toMatchObject({
+      required: true,
+      min: 1,
+      max: 20_000
+    });
+    expect(text.fields.find((field) => field.key === 'duration')).toMatchObject({
+      kind: 'integer',
+      required: true,
+      default: 5,
+      min: 2,
+      max: 30
+    });
+    expect(text.fields.find((field) => field.key === 'aspectRatio')).toMatchObject({
+      apiKey: 'aspect_ratio',
+      default: 'adaptive',
+      enum: ['adaptive', '16:9', '4:3', '1:1', '3:4', '9:16']
+    });
+    expect(text.fields.find((field) => field.key === 'resolution')).toMatchObject({
+      enum: ['480p', '720p', '1080p'],
+      default: '720p'
+    });
+    // Both pages spell the output audio switch `audio`, not the `generate_audio` other pages use.
+    expect(text.fields.find((field) => field.key === 'generateAudio')).toMatchObject({
+      apiKey: 'audio',
+      kind: 'boolean',
+      default: true
+    });
+    expect(text.output.audio).toBe('boolean-generate');
+    expect(normalizeVideoRequest(text.key, minimum(text.key)).request).toEqual({
+      model: 'wan3.0-text-to-video',
+      input: {
+        prompt: 'studio video',
+        duration: 5,
+        aspect_ratio: 'adaptive',
+        resolution: '720p',
+        seed: 0,
+        audio: true,
+        enable_safety_checker: false
+      }
+    });
+    expect(() => normalizeVideoRequest(text.key, { ...minimum(text.key), duration: 31 })).toThrow(
+      'exceeds maximum'
+    );
+    expect(() => normalizeVideoRequest(text.key, { ...minimum(text.key), duration: 1 })).toThrow(
+      'below minimum'
+    );
+
+    // Prime is the same contract under its own model IDs.
+    const prime = videoEntry('wan3.0-prime-text-to-video:text-to-video');
+    expect(prime.fields).toEqual(text.fields);
+    expect(prime.inputRoles).toEqual(text.inputRoles);
+    expect(prime.output).toEqual(text.output);
+    expect(normalizeVideoRequest(prime.key, minimum(prime.key)).request.model).toBe(
+      'wan3.0-prime-text-to-video'
+    );
+  });
+
+  test('REG-05 Wan 3.0 image generation makes the end frame and the prompt optional', () => {
+    for (const key of [
+      'wan3.0-image-to-video:image-to-video',
+      'wan3.0-prime-image-to-video:image-to-video'
+    ]) {
+      const entry = videoEntry(key);
+      expect(entry.inputRoles).toEqual([
+        expect.objectContaining({
+          role: 'start-frame',
+          requestKey: 'imageUrls',
+          apiKey: 'image_urls',
+          required: true,
+          min: 1,
+          max: 2
+        })
+      ]);
+      expect(entry.fields.find((field) => field.key === 'prompt')).toMatchObject({
+        required: false
+      });
+
+      const base = minimum(key);
+      const { prompt: _prompt, ...withoutPrompt } = base;
+      expect(normalizeVideoRequest(key, withoutPrompt).request.input.prompt).toBeUndefined();
+      expect(
+        normalizeVideoRequest(key, {
+          ...base,
+          imageUrls: ['https://assets.example/first.png', 'https://assets.example/last.png']
+        }).request.input.image_urls
+      ).toEqual(['https://assets.example/first.png', 'https://assets.example/last.png']);
+      expect(() =>
+        normalizeVideoRequest(key, {
+          ...base,
+          imageUrls: [
+            'https://assets.example/first.png',
+            'https://assets.example/middle.png',
+            'https://assets.example/last.png'
+          ]
+        })
+      ).toThrow('start-frame supports at most 2 inputs');
+      expect(() => normalizeVideoRequest(key, { ...base, imageUrls: [] })).toThrow(
+        'start-frame requires at least 1 input'
+      );
+    }
+  });
+
+  test('REG-05 Wan 3.0 reference generation caps each list and refuses an empty request', () => {
+    for (const key of [
+      'wan3.0-reference-to-video:reference-to-video',
+      'wan3.0-prime-reference-to-video:reference-to-video'
+    ]) {
+      const entry = videoEntry(key);
+      expect(
+        entry.inputRoles.map((role) => [role.role, role.apiKey, role.required, role.min, role.max])
+      ).toEqual([
+        ['reference-image', 'reference_image_urls', false, 0, 10],
+        ['reference-video', 'reference_video_urls', false, 0, 5],
+        ['reference-audio', 'reference_audio_urls', false, 0, 5]
+      ]);
+      expect(entry.validation.conditionalRules).toEqual(['wan-3.0-reference-requires-media']);
+
+      const base = minimum(key);
+      expect(normalizeVideoRequest(key, base).request.input.reference_image_urls).toEqual([
+        'https://assets.example/reference.png'
+      ]);
+      // Any one of the three exposed lists satisfies the rule; none of them does not.
+      const { referenceImageUrls: _images, ...bare } = base;
+      expect(() => normalizeVideoRequest(key, bare)).toThrow(
+        'Wan 3.0 reference mode requires reference media.'
+      );
+      expect(() =>
+        normalizeVideoRequest(key, {
+          ...bare,
+          referenceVideoUrls: ['https://assets.example/motion.mp4']
+        })
+      ).not.toThrow();
+      expect(() =>
+        normalizeVideoRequest(key, {
+          ...bare,
+          referenceAudioUrls: ['https://assets.example/rhythm.mp3']
+        })
+      ).not.toThrow();
+      expect(() =>
+        normalizeVideoRequest(key, {
+          ...base,
+          referenceVideoUrls: Array.from(
+            { length: 6 },
+            (_, index) => `https://assets.example/motion-${index}.mp4`
+          )
+        })
+      ).toThrow('reference-video supports at most 5 inputs');
+      // The documented document and webpage reference lists are not offered as media roles.
+      expect(() =>
+        normalizeVideoRequest(key, {
+          ...base,
+          imageUrls: ['https://assets.example/first.png']
+        })
+      ).toThrow('imageUrls is not supported for this workflow.');
+    }
   });
 });

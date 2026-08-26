@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "reviewedAt": "2026-08-24T00:00:00Z",
+  "reviewedAt": "2026-08-26T00:00:00Z",
   "conflicts": [
     {
       "scope": "operations:retention",
@@ -64,6 +64,12 @@
       ],
       "finding": "The refetched page dropped output_format and sync_mode from its submit input, and it names the ratio field aspect_ratio while the registry entry still declares both fields and sends size.",
       "decision": "Left unchanged in this review: narrowing that entry is a boundary change to a shipped model and needs its own reviewed vectors."
+    },
+    {
+      "scope": "model:video:seedance-2.5",
+      "sources": ["model:video:seedance-2.5:json"],
+      "finding": "The refetched submit input adds 1080p to the resolution enum, which the shipped entry caps at 720p.",
+      "decision": "Left unchanged in this review: widening a shipped model's resolution tier is a boundary change and needs its own reviewed vectors and pricing signatures."
     }
   ]
 }

@@ -180,7 +180,7 @@ describe('cache-only preview and accepted job estimates', () => {
       estimate: {
         credits: 12,
         signature:
-          'version=pricing-signature-v1|registry=video-2026-08-24.1|model=wan2.2-image-to-video-fast|workflow=frame-to-video|unit=per-output|quantity=1|resolution=720p',
+          'version=pricing-signature-v1|registry=video-2026-08-26.1|model=wan2.2-image-to-video-fast|workflow=frame-to-video|unit=per-output|quantity=1|resolution=720p',
         availability: 'available',
         freshness: 'fresh'
       }

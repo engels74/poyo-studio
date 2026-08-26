@@ -10,7 +10,7 @@ import type {
   VideoWorkflow
 } from './types';
 
-export const VIDEO_REGISTRY_VERSION = 'video-2026-08-24.1';
+export const VIDEO_REGISTRY_VERSION = 'video-2026-08-26.1';
 export const VIDEO_VERIFIED_AT = OFFICIAL_SOURCE_MANIFEST.verifiedAt;
 const videoFormats = ['video/mp4', 'video/webm', 'video/quicktime'];
 const imageFormats = ['image/jpeg', 'image/png', 'image/webp'];
@@ -38,7 +38,7 @@ type Page = {
   fixedLens?: boolean;
   generateAudio?: boolean;
   sound?: boolean;
-  audio?: 'string' | 'setting';
+  audio?: 'string' | 'setting' | 'boolean';
   multiShots?: boolean;
   elements?: boolean;
   orientation?: boolean;
@@ -49,6 +49,7 @@ const ratiosFive = ['1:1', '2:3', '3:2', '16:9', '9:16'];
 const ratiosThree = ['1:1', '16:9', '9:16'];
 const ratiosSix = ['1:1', '21:9', '4:3', '3:4', '16:9', '9:16'];
 const seedanceRatios = ['auto', ...ratiosSix];
+const wan30Ratios = ['adaptive', '16:9', '4:3', '1:1', '3:4', '9:16'];
 const textImage: VideoWorkflow[] = ['text-to-video', 'image-to-video'];
 const klingRich: VideoWorkflow[] = [
   'text-to-video',
@@ -573,6 +574,54 @@ const pages: Page[] = [
     ]
   },
   {
+    slug: 'wan-3-0-video',
+    provider: 'Alibaba',
+    family: 'Wan 3.0 Video',
+    models: [
+      { id: 'wan3.0-text-to-video', workflows: ['text-to-video'] },
+      { id: 'wan3.0-image-to-video', workflows: ['image-to-video'] },
+      { id: 'wan3.0-reference-to-video', workflows: ['reference-to-video'] }
+    ],
+    prompt: [1, 20000],
+    durations: { min: 2, max: 30 },
+    durationDefault: 5,
+    ratios: wan30Ratios,
+    ratioDefault: 'adaptive',
+    resolutions: ['480p', '720p', '1080p'],
+    resolutionDefault: '720p',
+    seed: true,
+    safety: true,
+    audio: 'boolean',
+    limitations: [
+      'Image generation carries the start frame and an optional end frame in one image_urls list.',
+      'Reference generation needs at least one image, video, or audio reference; the reference document and reference webpage the page documents are not offered.'
+    ]
+  },
+  {
+    slug: 'wan-3-0-video-prime',
+    provider: 'Alibaba',
+    family: 'Wan 3.0 Prime Video',
+    models: [
+      { id: 'wan3.0-prime-text-to-video', workflows: ['text-to-video'] },
+      { id: 'wan3.0-prime-image-to-video', workflows: ['image-to-video'] },
+      { id: 'wan3.0-prime-reference-to-video', workflows: ['reference-to-video'] }
+    ],
+    prompt: [1, 20000],
+    durations: { min: 2, max: 30 },
+    durationDefault: 5,
+    ratios: wan30Ratios,
+    ratioDefault: 'adaptive',
+    resolutions: ['480p', '720p', '1080p'],
+    resolutionDefault: '720p',
+    seed: true,
+    safety: true,
+    audio: 'boolean',
+    limitations: [
+      'Image generation carries the start frame and an optional end frame in one image_urls list.',
+      'Reference generation needs at least one image, video, or audio reference; the reference document and reference webpage the page documents are not offered.'
+    ]
+  },
+  {
     slug: 'wan-animate',
     provider: 'Alibaba',
     family: 'Wan Animate',
@@ -684,10 +733,15 @@ function rolesFor(page: Page, modelId: string, workflow: VideoWorkflow): InputRo
         mediaRole('audio', 'audioUrl', 'audio_url', 'audio', false, 0, 1)
       ];
     // A start frame plus an optional end frame travel in one documented image_urls list: index 0
-    // is the starting frame and index 1 the optional ending frame. Hailuo 03 and every Seedance 2
-    // page share that shape, so the end frame stays optional rather than becoming a separate
-    // both-frames-required mode. Seedance 2.5 additionally derives the ratio from the first image.
-    if (page.family === 'Hailuo 03' || page.family.startsWith('Seedance 2'))
+    // is the starting frame and index 1 the optional ending frame. Hailuo 03, every Seedance 2
+    // page and both Wan 3.0 pages share that shape, so the end frame stays optional rather than
+    // becoming a separate both-frames-required mode. Seedance 2.5 additionally derives the ratio
+    // from the first image.
+    if (
+      page.family === 'Hailuo 03' ||
+      page.family.startsWith('Seedance 2') ||
+      page.family.startsWith('Wan 3.0')
+    )
       return [mediaRole('start-frame', 'imageUrls', 'image_urls', 'image', true, 1, 2)];
     if (['Hailuo 2.3', 'Kling 2.1', 'Kling 2.5 Turbo Pro'].includes(page.family))
       return [mediaRole('start-frame', 'startImageUrl', 'start_image_url', 'image', true, 1, 1)];
@@ -807,6 +861,39 @@ function rolesFor(page: Page, modelId: string, workflow: VideoWorkflow): InputRo
       ];
     if (page.family === 'Kling 1.6')
       return [mediaRole('reference-image', 'imageUrls', 'image_urls', 'image', true, 1, 4)];
+    // Wan 3.0 caps each reference list separately and documents no combined total, so the three
+    // media lists carry their own maxima and a conditional rule keeps the request from arriving
+    // with no reference at all.
+    if (page.family.startsWith('Wan 3.0'))
+      return [
+        mediaRole(
+          'reference-image',
+          'referenceImageUrls',
+          'reference_image_urls',
+          'image',
+          false,
+          0,
+          10
+        ),
+        mediaRole(
+          'reference-video',
+          'referenceVideoUrls',
+          'reference_video_urls',
+          'video',
+          false,
+          0,
+          5
+        ),
+        mediaRole(
+          'reference-audio',
+          'referenceAudioUrls',
+          'reference_audio_urls',
+          'audio',
+          false,
+          0,
+          5
+        )
+      ];
     if (page.family === 'Wan 2.7 Video')
       return [
         mediaRole(
@@ -938,7 +1025,8 @@ function fieldsFor(page: Page, modelId: string, workflow: VideoWorkflow): FieldD
   const promptOptional =
     (page.family.startsWith('Happy Horse') &&
       ['image-to-video', 'video-edit'].includes(workflow)) ||
-    (page.family === 'Wan 2.7 Video' && workflow === 'image-to-video');
+    ((page.family === 'Wan 2.7 Video' || page.family.startsWith('Wan 3.0')) &&
+      workflow === 'image-to-video');
   const durations = effectiveDurations(page, modelId, workflow);
   const resolutions = effectiveResolutions(page, modelId);
   const omitDuration =
@@ -1039,6 +1127,10 @@ function fieldsFor(page: Page, modelId: string, workflow: VideoWorkflow): FieldD
       fields.push(field('sound', 'sound', 'boolean', 'common', { required: true, default: true }));
   }
   if (page.audio === 'string') fields.push(field('audio', 'audio', 'text', 'advanced'));
+  // Wan 3.0 spells its output audio switch `audio` rather than `generate_audio`, so the guided
+  // boolean keeps the shared request key and submits the page's own parameter name.
+  if (page.audio === 'boolean')
+    fields.push(field('generateAudio', 'audio', 'boolean', 'common', { default: true }));
   if (page.audio === 'setting' && workflow === 'video-edit')
     fields.push(
       field('audioSetting', 'audio_setting', 'enum', 'common', {
@@ -1113,6 +1205,9 @@ function rulesFor(page: Page, modelId: string, workflow: VideoWorkflow): string[
     ...(page.family.startsWith('Seedance 2') ? ['frames-vs-references-and-reference-counts'] : []),
     ...(page.family.includes('VEO 3.1') ? ['generation-type-model-duration-matrix'] : []),
     ...(page.family === 'Wan 2.7 Video' ? ['wan-id-specific-input-and-duration'] : []),
+    ...(page.family.startsWith('Wan 3.0') && workflow === 'reference-to-video'
+      ? ['wan-3.0-reference-requires-media']
+      : []),
     ...(page.family === 'Omni Flash'
       ? ['omni-image-count-one-or-three-and-video-omits-duration']
       : []),
@@ -1154,7 +1249,7 @@ function entry(page: Page, model: Model, workflow: VideoWorkflow): VideoRegistry
       safetyChecker: Boolean(page.safety),
       audio: page.sound
         ? 'boolean-sound'
-        : page.generateAudio
+        : page.generateAudio || page.audio === 'boolean'
           ? 'boolean-generate'
           : page.audio
             ? 'string-setting'

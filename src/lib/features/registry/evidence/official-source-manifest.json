@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "registryVersion": "image-2026-08-24.1+video-2026-08-24.1",
-  "verifiedAt": "2026-08-24T17:23:08Z",
+  "registryVersion": "image-2026-08-24.1+video-2026-08-26.1",
+  "verifiedAt": "2026-08-26T16:51:42Z",
   "hashAlgorithm": "sha256",
-  "corpusSha256": "1043e5cc7e9642c429b9215ef0ee01034e3f5b028327b9f1999f0f5c49a78950",
+  "corpusSha256": "d8d70fbf5e1d3bed462d074285809a827d79ae00b8c7ecfd207fa77b536d2e86",
   "sources": [
     {
       "id": "audit:legacy:sora-2",
@@ -1071,9 +1071,9 @@
       "url": "https://docs.poyo.ai/llms.txt",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 27105,
-      "sha256": "96a0d23550d6aedf1b2c0c7cbbeb49136efd573a9d6ea6ea4e8d6280f0551c38",
-      "canonicalSha256": "96a0d23550d6aedf1b2c0c7cbbeb49136efd573a9d6ea6ea4e8d6280f0551c38",
+      "byteLength": 27583,
+      "sha256": "5ca486e6299cfcb2a0d34d22fb97c8b5ee87d4430d376af732242d603d505472",
+      "canonicalSha256": "5ca486e6299cfcb2a0d34d22fb97c8b5ee87d4430d376af732242d603d505472",
       "canonicalization": "raw-body-v1",
       "structured": null
     },
@@ -7790,9 +7790,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/seedance-2.5.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 3132,
-      "sha256": "2ea96355c7b91c1f74e143a66a275b4c531076dc807878f5f2863bd576019894",
-      "canonicalSha256": "2ea96355c7b91c1f74e143a66a275b4c531076dc807878f5f2863bd576019894",
+      "byteLength": 3142,
+      "sha256": "a50a442c0d1d9a35a62b0fd4c84e9f80f15ae7fb6c003fcc9747017dc1bf9517",
+      "canonicalSha256": "a50a442c0d1d9a35a62b0fd4c84e9f80f15ae7fb6c003fcc9747017dc1bf9517",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -7861,7 +7861,7 @@
             "path": "SubmitRequest.input.resolution",
             "type": "string",
             "required": true,
-            "enum": ["480p", "720p"]
+            "enum": ["480p", "720p", "1080p"]
           },
           {
             "path": "SubmitRequest.model",
@@ -7881,9 +7881,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/seedance-2.5.md",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 5309,
-      "sha256": "ce6801f535b958f0e34933ba85cdad960103fa0b19b0789cd1e349e005384515",
-      "canonicalSha256": "ce6801f535b958f0e34933ba85cdad960103fa0b19b0789cd1e349e005384515",
+      "byteLength": 5344,
+      "sha256": "07b35c91dbd4d306f8a3357b9492a3b14ec7a5cfa19dee6503d536a7908a8518",
+      "canonicalSha256": "07b35c91dbd4d306f8a3357b9492a3b14ec7a5cfa19dee6503d536a7908a8518",
       "canonicalization": "raw-body-v1",
       "structured": null
     },
@@ -8528,9 +8528,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/wan-2-6.md",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 7902,
-      "sha256": "9c25f06e8afb0cb70f79fab7c6456bf4f6d7491aa22ed8da8377faaecc2e4c6a",
-      "canonicalSha256": "9c25f06e8afb0cb70f79fab7c6456bf4f6d7491aa22ed8da8377faaecc2e4c6a",
+      "byteLength": 7710,
+      "sha256": "43bad40c1a2f9a0962c74d11a8a39c54343d3432382d7de96e2e90f29ff19a12",
+      "canonicalSha256": "43bad40c1a2f9a0962c74d11a8a39c54343d3432382d7de96e2e90f29ff19a12",
       "canonicalization": "raw-body-v1",
       "structured": null
     },
@@ -8543,9 +8543,9 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/wan-2-7-video.json",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 8531,
-      "sha256": "24722d5b11128305f906d7aad1285971b1b01b537126f27ad0d6644990b921cb",
-      "canonicalSha256": "24722d5b11128305f906d7aad1285971b1b01b537126f27ad0d6644990b921cb",
+      "byteLength": 8528,
+      "sha256": "50c2dd59c153b3d79b89ba0047d6575020f6e60dfaa1f156b1ecd0f29b71a2be",
+      "canonicalSha256": "50c2dd59c153b3d79b89ba0047d6575020f6e60dfaa1f156b1ecd0f29b71a2be",
       "canonicalization": "raw-body-v1",
       "structured": {
         "openapi": "3.0.0",
@@ -8693,9 +8693,349 @@
       "url": "https://docs.poyo.ai/api-manual/video-series/wan-2-7-video.md",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 10973,
-      "sha256": "8b6b397a95bcb228c68c63c646236246d83c188d56f246f999463e92984676b9",
-      "canonicalSha256": "8b6b397a95bcb228c68c63c646236246d83c188d56f246f999463e92984676b9",
+      "byteLength": 8618,
+      "sha256": "0916c80cfc8cff9bb65e90208b1f23eb3514cc344f6f3c9ac9f405ba66f4ca12",
+      "canonicalSha256": "0916c80cfc8cff9bb65e90208b1f23eb3514cc344f6f3c9ac9f405ba66f4ca12",
+      "canonicalization": "raw-body-v1",
+      "structured": null
+    },
+    {
+      "id": "model:video:wan-3-0-video-prime:json",
+      "category": "model",
+      "representation": "json",
+      "modality": "video",
+      "pageSlug": "wan-3-0-video-prime",
+      "url": "https://docs.poyo.ai/api-manual/video-series/wan-3-0-video-prime.json",
+      "status": "available",
+      "httpStatus": 200,
+      "byteLength": 7796,
+      "sha256": "aaac596a3d098c2b6152ede2a0ca657b776187423bb2749b959f5e83b8a3372a",
+      "canonicalSha256": "aaac596a3d098c2b6152ede2a0ca657b776187423bb2749b959f5e83b8a3372a",
+      "canonicalization": "raw-body-v1",
+      "structured": {
+        "openapi": "3.0.0",
+        "paths": ["/api/generate/submit"],
+        "properties": [
+          {
+            "path": "SubmitRequest.callback_url",
+            "type": "string",
+            "required": false,
+            "format": "uri"
+          },
+          {
+            "path": "SubmitRequest.input",
+            "type": "object",
+            "required": true
+          },
+          {
+            "path": "SubmitRequest.input.aspect_ratio",
+            "type": "string",
+            "required": false,
+            "enum": ["adaptive", "16:9", "4:3", "1:1", "3:4", "9:16"],
+            "default": "adaptive"
+          },
+          {
+            "path": "SubmitRequest.input.audio",
+            "type": "boolean",
+            "required": false,
+            "default": true
+          },
+          {
+            "path": "SubmitRequest.input.duration",
+            "type": "integer",
+            "required": false,
+            "default": 5,
+            "minimum": 2,
+            "maximum": 30
+          },
+          {
+            "path": "SubmitRequest.input.enable_safety_checker",
+            "type": "boolean",
+            "required": false,
+            "default": true
+          },
+          {
+            "path": "SubmitRequest.input.image_urls",
+            "type": "array",
+            "required": false,
+            "minItems": 1,
+            "maxItems": 2
+          },
+          {
+            "path": "SubmitRequest.input.prompt",
+            "type": "string",
+            "required": false,
+            "maxLength": 20000
+          },
+          {
+            "path": "SubmitRequest.input.reference_audio_urls",
+            "type": "array",
+            "required": false,
+            "minItems": 1,
+            "maxItems": 5
+          },
+          {
+            "path": "SubmitRequest.input.reference_file_urls",
+            "type": "array",
+            "required": false,
+            "minItems": 1,
+            "maxItems": 1
+          },
+          {
+            "path": "SubmitRequest.input.reference_image_urls",
+            "type": "array",
+            "required": false,
+            "minItems": 1,
+            "maxItems": 10
+          },
+          {
+            "path": "SubmitRequest.input.reference_link_urls",
+            "type": "array",
+            "required": false,
+            "minItems": 1,
+            "maxItems": 1
+          },
+          {
+            "path": "SubmitRequest.input.reference_video_urls",
+            "type": "array",
+            "required": false,
+            "minItems": 1,
+            "maxItems": 5
+          },
+          {
+            "path": "SubmitRequest.input.resolution",
+            "type": "string",
+            "required": false,
+            "enum": ["480p", "720p", "1080p"],
+            "default": "720p"
+          },
+          {
+            "path": "SubmitRequest.input.seed",
+            "type": "integer",
+            "required": false,
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          {
+            "path": "SubmitRequest.model",
+            "type": "string",
+            "required": true,
+            "enum": [
+              "wan3.0-prime-text-to-video",
+              "wan3.0-prime-image-to-video",
+              "wan3.0-prime-reference-to-video"
+            ]
+          },
+          {
+            "path": "SubmitResponse.code",
+            "type": "integer",
+            "required": true
+          },
+          {
+            "path": "SubmitResponse.data",
+            "type": "object",
+            "required": true
+          },
+          {
+            "path": "SubmitResponse.data.created_time",
+            "type": "string",
+            "required": true,
+            "format": "date-time"
+          },
+          {
+            "path": "SubmitResponse.data.status",
+            "type": "string",
+            "required": true,
+            "enum": ["not_started"]
+          },
+          {
+            "path": "SubmitResponse.data.task_id",
+            "type": "string",
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "model:video:wan-3-0-video-prime:markdown",
+      "category": "model",
+      "representation": "markdown",
+      "modality": "video",
+      "pageSlug": "wan-3-0-video-prime",
+      "url": "https://docs.poyo.ai/api-manual/video-series/wan-3-0-video-prime.md",
+      "status": "available",
+      "httpStatus": 200,
+      "byteLength": 8319,
+      "sha256": "ed3129e2a3891d919ccb75112ca78884287b3df9cb1f14edcb24239692c04a10",
+      "canonicalSha256": "ed3129e2a3891d919ccb75112ca78884287b3df9cb1f14edcb24239692c04a10",
+      "canonicalization": "raw-body-v1",
+      "structured": null
+    },
+    {
+      "id": "model:video:wan-3-0-video:json",
+      "category": "model",
+      "representation": "json",
+      "modality": "video",
+      "pageSlug": "wan-3-0-video",
+      "url": "https://docs.poyo.ai/api-manual/video-series/wan-3-0-video.json",
+      "status": "available",
+      "httpStatus": 200,
+      "byteLength": 8130,
+      "sha256": "ac533007b5813fef50579ee7ad0da638e52f78ab54a82908f487541712f375f6",
+      "canonicalSha256": "ac533007b5813fef50579ee7ad0da638e52f78ab54a82908f487541712f375f6",
+      "canonicalization": "raw-body-v1",
+      "structured": {
+        "openapi": "3.0.0",
+        "paths": ["/api/generate/submit"],
+        "properties": [
+          {
+            "path": "SubmitRequest.callback_url",
+            "type": "string",
+            "required": false,
+            "format": "uri"
+          },
+          {
+            "path": "SubmitRequest.input",
+            "type": "object",
+            "required": true
+          },
+          {
+            "path": "SubmitRequest.input.aspect_ratio",
+            "type": "string",
+            "required": false,
+            "enum": ["adaptive", "16:9", "4:3", "1:1", "3:4", "9:16"],
+            "default": "adaptive"
+          },
+          {
+            "path": "SubmitRequest.input.audio",
+            "type": "boolean",
+            "required": false,
+            "default": true
+          },
+          {
+            "path": "SubmitRequest.input.duration",
+            "type": "integer",
+            "required": false,
+            "default": 5,
+            "minimum": 2,
+            "maximum": 30
+          },
+          {
+            "path": "SubmitRequest.input.enable_safety_checker",
+            "type": "boolean",
+            "required": false,
+            "default": true
+          },
+          {
+            "path": "SubmitRequest.input.image_urls",
+            "type": "array",
+            "required": false,
+            "minItems": 1,
+            "maxItems": 2
+          },
+          {
+            "path": "SubmitRequest.input.prompt",
+            "type": "string",
+            "required": false,
+            "maxLength": 20000
+          },
+          {
+            "path": "SubmitRequest.input.reference_audio_urls",
+            "type": "array",
+            "required": false,
+            "minItems": 1,
+            "maxItems": 5
+          },
+          {
+            "path": "SubmitRequest.input.reference_file_urls",
+            "type": "array",
+            "required": false,
+            "minItems": 1,
+            "maxItems": 1
+          },
+          {
+            "path": "SubmitRequest.input.reference_image_urls",
+            "type": "array",
+            "required": false,
+            "minItems": 1,
+            "maxItems": 10
+          },
+          {
+            "path": "SubmitRequest.input.reference_link_urls",
+            "type": "array",
+            "required": false,
+            "minItems": 1,
+            "maxItems": 1
+          },
+          {
+            "path": "SubmitRequest.input.reference_video_urls",
+            "type": "array",
+            "required": false,
+            "minItems": 1,
+            "maxItems": 5
+          },
+          {
+            "path": "SubmitRequest.input.resolution",
+            "type": "string",
+            "required": false,
+            "enum": ["480p", "720p", "1080p"],
+            "default": "720p"
+          },
+          {
+            "path": "SubmitRequest.input.seed",
+            "type": "integer",
+            "required": false,
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          {
+            "path": "SubmitRequest.model",
+            "type": "string",
+            "required": true,
+            "enum": ["wan3.0-text-to-video", "wan3.0-image-to-video", "wan3.0-reference-to-video"]
+          },
+          {
+            "path": "SubmitResponse.code",
+            "type": "integer",
+            "required": true
+          },
+          {
+            "path": "SubmitResponse.data",
+            "type": "object",
+            "required": true
+          },
+          {
+            "path": "SubmitResponse.data.created_time",
+            "type": "string",
+            "required": true,
+            "format": "date-time"
+          },
+          {
+            "path": "SubmitResponse.data.status",
+            "type": "string",
+            "required": true,
+            "enum": ["not_started"]
+          },
+          {
+            "path": "SubmitResponse.data.task_id",
+            "type": "string",
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "model:video:wan-3-0-video:markdown",
+      "category": "model",
+      "representation": "markdown",
+      "modality": "video",
+      "pageSlug": "wan-3-0-video",
+      "url": "https://docs.poyo.ai/api-manual/video-series/wan-3-0-video.md",
+      "status": "available",
+      "httpStatus": 200,
+      "byteLength": 8575,
+      "sha256": "224d938bf4aefa5426328c2da68fae1f0a58b24d049a06179f5cea84960737d2",
+      "canonicalSha256": "224d938bf4aefa5426328c2da68fae1f0a58b24d049a06179f5cea84960737d2",
       "canonicalization": "raw-body-v1",
       "structured": null
     },
@@ -9516,9 +9856,9 @@
       "url": "https://docs.poyo.ai/.md",
       "status": "available",
       "httpStatus": 200,
-      "byteLength": 9823,
-      "sha256": "9d68383e0123b9dea48d92575fb206b006b7e0451b8b8f6c19f727dfca92dcb9",
-      "canonicalSha256": "9d68383e0123b9dea48d92575fb206b006b7e0451b8b8f6c19f727dfca92dcb9",
+      "byteLength": 9923,
+      "sha256": "c8ec9c2bd7ed5a0a7278300ad80569819be2332cefa551cabe87489d96dda06c",
+      "canonicalSha256": "c8ec9c2bd7ed5a0a7278300ad80569819be2332cefa551cabe87489d96dda06c",
       "canonicalization": "raw-body-v1",
       "structured": null
     },
@@ -9993,9 +10333,9 @@
       "reviewNote": "Public catalogue only; no pricing-estimate API contract. Drift uses canonical visible main text rather than volatile HTML metadata.",
       "status": "unstructured",
       "httpStatus": 200,
-      "byteLength": 1010264,
-      "sha256": "2f78ff5b4f2c042f235f9fb59ba82d42f3a6c2e68a9edb2bd856aa6138502ca4",
-      "canonicalSha256": "a4a9a3b6b532439444c4e12a7369dc0d3f27719606e74de405200745d61bfb44",
+      "byteLength": 988704,
+      "sha256": "31deef242319365f1a995f8c5082ca161688c0fcea80ccc6ac70a25b71d6d5c1",
+      "canonicalSha256": "654b10d2d336e10ea343c57468f319b971ffd9f03f8e5a22337542ed778200ab",
       "canonicalization": "pricing-visible-text-v1",
       "structured": null
     }

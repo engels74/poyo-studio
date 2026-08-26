@@ -95,7 +95,7 @@ function snapshot(): PublishedPricingSnapshot {
     version: 1,
     signatureVersion: PRICING_SIGNATURE_VERSION,
     pricingHash,
-    registryVersions: { image: registryVersion, video: 'video-2026-08-24.1' },
+    registryVersions: { image: registryVersion, video: 'video-2026-08-26.1' },
     source: {
       kind: 'published',
       url: 'https://poyo.ai/pricing',
