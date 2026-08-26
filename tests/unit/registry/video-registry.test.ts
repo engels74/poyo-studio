@@ -32,11 +32,11 @@ function minimum(key: string): GuidedVideoRequest {
 }
 
 describe('audited video registry coverage', () => {
-  test('REG-01/02 accounts for 38 pages, 60 IDs, 132 current workflows and explicit exclusions', () => {
-    expect(VIDEO_PAGE_SLUGS).toHaveLength(38);
-    expect(new Set(VIDEO_PAGE_SLUGS).size).toBe(38);
-    expect(VIDEO_PUBLIC_IDS).toHaveLength(60);
-    expect(VIDEO_CURRENT_ENTRIES).toHaveLength(132);
+  test('REG-01/02 accounts for 40 pages, 66 IDs, 138 current workflows and explicit exclusions', () => {
+    expect(VIDEO_PAGE_SLUGS).toHaveLength(40);
+    expect(new Set(VIDEO_PAGE_SLUGS).size).toBe(40);
+    expect(VIDEO_PUBLIC_IDS).toHaveLength(66);
+    expect(VIDEO_CURRENT_ENTRIES).toHaveLength(138);
     expect(VIDEO_EXCLUDED_ENTRIES).toHaveLength(2);
     expect(VIDEO_EXCLUDED_ENTRIES.every((entry) => entry.status === 'excluded-initial-scope')).toBe(
       true
@@ -89,7 +89,7 @@ describe('audited video registry coverage', () => {
           "SELECT COUNT(*) count FROM registry_entries WHERE modality='video'"
         )
         .get()?.count
-    ).toBe(142);
+    ).toBe(148);
     expect(
       database
         .query<{ count: number }, []>(
@@ -100,7 +100,7 @@ describe('audited video registry coverage', () => {
     expect(
       database.query<{ count: number }, []>('SELECT COUNT(*) count FROM registry_entries').get()
         ?.count
-    ).toBe(200);
+    ).toBe(206);
     database.close();
   });
 });
@@ -152,7 +152,13 @@ describe('reviewed video conditional adapters', () => {
       'wan2.7-text-to-video',
       'wan2.7-image-to-video',
       'wan2.7-reference-to-video',
-      'wan2.7-edit-video'
+      'wan2.7-edit-video',
+      'wan3.0-text-to-video',
+      'wan3.0-image-to-video',
+      'wan3.0-reference-to-video',
+      'wan3.0-prime-text-to-video',
+      'wan3.0-prime-image-to-video',
+      'wan3.0-prime-reference-to-video'
     ]);
     for (const entry of VIDEO_CURRENT_ENTRIES) {
       const values = minimumValidVideoRequest(entry);

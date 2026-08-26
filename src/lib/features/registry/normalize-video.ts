@@ -215,6 +215,20 @@ function validate(entry: VideoRegistryEntry, values: GuidedVideoRequest): string
       issues.push('Wan 2.7 edit duration must be 0 or 2-10 seconds.');
   }
 
+  // The page also documents a reference document and a reference webpage, neither of which is
+  // media a studio input role can supply, so a reference request that arrives without any of the
+  // three exposed media lists carries nothing to work from.
+  if (
+    entry.family.startsWith('Wan 3.0') &&
+    entry.workflow === 'reference-to-video' &&
+    !(
+      values.referenceImageUrls?.length ||
+      values.referenceVideoUrls?.length ||
+      values.referenceAudioUrls?.length
+    )
+  )
+    issues.push('Wan 3.0 reference mode requires reference media.');
+
   if (entry.family === 'VEO 3.1 Official') {
     const count = values.imageUrls?.length ?? 0;
     const duration = values.duration;
@@ -350,6 +364,8 @@ export function minimumValidVideoRequest(entry: VideoRegistryEntry): GuidedVideo
   if (entry.workflow === 'reference-to-video' && entry.family.startsWith('Seedance 2'))
     values.referenceImageUrls = ['https://assets.example/reference.png'];
   if (entry.workflow === 'reference-to-video' && entry.family === 'Wan 2.7 Video')
+    values.referenceImageUrls = ['https://assets.example/reference.png'];
+  if (entry.workflow === 'reference-to-video' && entry.family.startsWith('Wan 3.0'))
     values.referenceImageUrls = ['https://assets.example/reference.png'];
   if (entry.workflow === 'reference-to-video' && entry.family === 'Hailuo 03')
     values.referenceImageUrls = ['https://assets.example/reference.png'];
