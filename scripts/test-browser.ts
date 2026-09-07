@@ -13,9 +13,9 @@ const suites = {
   ]
 } as const;
 
-const mode = Bun.argv[2] as keyof typeof suites | undefined;
-if (!mode || !suites[mode]) {
-  throw new Error(`Choose a browser suite: ${Object.keys(suites).join(', ')}.`);
+const mode = Bun.argv[2] as keyof typeof suites | 'all' | undefined;
+if (!mode || (mode !== 'all' && !suites[mode])) {
+  throw new Error(`Choose a browser suite: ${Object.keys(suites).join(', ')}, all.`);
 }
 
 const build = Bun.spawnSync({
@@ -25,9 +25,20 @@ const build = Bun.spawnSync({
 });
 if (build.exitCode !== 0) process.exit(build.exitCode);
 
-for (const file of suites[mode]) {
+const files =
+  mode === 'all' ? [...suites.e2e, './tests/security/browser-security.browser.ts'] : suites[mode];
+for (const file of files) {
   const result = Bun.spawnSync({
     cmd: [process.execPath, 'test', '--max-concurrency', '1', file],
+    stdout: 'inherit',
+    stderr: 'inherit'
+  });
+  if (result.exitCode !== 0) process.exit(result.exitCode);
+}
+
+if (mode === 'all') {
+  const result = Bun.spawnSync({
+    cmd: [process.execPath, 'scripts/production-smoke.ts'],
     stdout: 'inherit',
     stderr: 'inherit'
   });

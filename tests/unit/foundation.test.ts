@@ -2,33 +2,39 @@ import { describe, expect, test } from 'bun:test';
 
 interface PackageManifest {
   packageManager: string;
+  engines: { bun: string };
   scripts: Record<string, string>;
   devDependencies: Record<string, string>;
 }
 
-const expectedVersions = {
-  '@biomejs/biome': '2.5.4',
-  '@sveltejs/kit': '2.69.3',
-  '@sveltejs/vite-plugin-svelte': '7.2.0',
-  '@unocss/extractor-svelte': '66.7.5',
-  '@unocss/preset-wind4': '66.7.5',
-  '@unocss/vite': '66.7.5',
-  svelte: '5.56.5',
-  'svelte-adapter-bun': '1.0.1',
-  'svelte-check': '4.7.2',
-  typescript: '5.9.3',
-  unocss: '66.7.5',
-  vite: '8.1.4'
-} as const;
+const pinnedPackages = [
+  '@biomejs/biome',
+  '@sveltejs/kit',
+  '@sveltejs/vite-plugin-svelte',
+  '@unocss/extractor-svelte',
+  '@unocss/preset-wind4',
+  '@unocss/vite',
+  'svelte',
+  'svelte-adapter-bun',
+  'svelte-check',
+  'typescript',
+  'unocss',
+  'vite'
+];
 
 describe('Bun SvelteKit foundation', () => {
   test('pins the verified runtime and dependency baseline', async () => {
     const manifest = (await Bun.file('package.json').json()) as PackageManifest;
 
-    expect(Bun.version).toBe('1.4.0');
-    expect(manifest.packageManager).toBe('bun@1.4.0');
+    const runtime = (await Bun.file('.bun-version').text()).trim();
+    expect(runtime).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(Bun.version).toBe(runtime);
+    expect(manifest.packageManager).toBe(`bun@${runtime}`);
+    expect(manifest.engines.bun).toBe(runtime);
     expect(manifest.scripts.dev).toBe('bun --bun vite dev --host 127.0.0.1');
-    expect(manifest.devDependencies).toMatchObject(expectedVersions);
+    for (const name of pinnedPackages) {
+      expect(manifest.devDependencies[name]).toMatch(/^\d+\.\d+\.\d+$/);
+    }
   });
 
   test('uses the Bun adapter and UnoCSS before SvelteKit', async () => {

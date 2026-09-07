@@ -8,7 +8,7 @@ Poyo Local Studio: a local-first SvelteKit 2 / Svelte 5 (runes) app on Bun, back
 
 ## Commands
 
-Bun is the only supported runner (`bun@1.4.0`, pinned in `.bun-version` and `engines`).
+Bun is the only supported runner (`bun@1.4.2`, pinned in `.bun-version` and `engines`).
 
 | Task | Command |
 | --- | --- |
@@ -33,9 +33,10 @@ unless ExifTool, ImageMagick, FFmpeg and ffprobe are on `PATH`. Run that file th
 run only via `scripts/test-browser.ts` (`test:e2e`, `test:security`) and `bun run test:live`.
 The live suite spends real credits and needs `POYO_LIVE_TESTS=1` plus `POYO_API_KEY`.
 
-There is no CI. `prek.toml` is the only automated gate: on commit it runs format-check, lint,
-svelte-check, `bun test`, registry validation and a full production build, and it blocks
-direct commits to `main`.
+CI runs format-check, lint, Svelte checks, the explicit default test suite, registry validation,
+production browser/security/smoke checks, required native media-tool integration, and hygiene.
+See `CI.md`. `prek.toml` shares these local commands and blocks direct commits to `main`.
+Its test hook uses `bun run test`, preserving the documented media/live suite boundaries.
 
 ## Layout and boundaries
 

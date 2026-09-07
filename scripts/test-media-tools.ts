@@ -2,6 +2,9 @@ import { probeMediaTools } from '../src/lib/server/media/media-sanitizer';
 
 const testFile = 'tests/media-tools/media-sanitizer.host.test.ts';
 const readiness = await probeMediaTools();
+if (Bun.env.POYO_REQUIRE_MEDIA_TOOLS === '1' && (!readiness.imageReady || !readiness.videoReady)) {
+  throw new Error(`Required media tools unavailable: ${JSON.stringify(readiness.tools)}`);
+}
 
 function toolSummary(names: Array<(typeof readiness.tools)[number]['name']>): string {
   return names
