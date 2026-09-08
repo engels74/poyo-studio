@@ -2454,6 +2454,10 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     const submitsBeforeLostResponse = harness.mock.requests.filter(
       (request) => request.pathname === '/api/generate/submit'
     ).length;
+    // Hold delivery until recovery observes a real 404. A fixed server delay
+    // can expire before slower runners finish the browser assertions below.
+    const submissionDelivery = Promise.withResolvers<void>();
+    const requestContext = page.request;
     const lostResponseServer = {} as {
       completed?: boolean;
       request?: Promise<APIResponse>;
@@ -2461,7 +2465,8 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     await page.route(
       '**/api/jobs',
       async (route) => {
-        const serverRequest = route.fetch();
+        const request = route.request();
+        const serverRequest = submissionDelivery.promise.then(() => requestContext.fetch(request));
         lostResponseServer.request = serverRequest.then((response) => {
           lostResponseServer.completed = true;
           return response;
@@ -2500,8 +2505,18 @@ serial('E2E-01..15 production studios, recovery, library, settings and accessibi
     expect(lostResponseServer.completed).not.toBe(true);
     if (!lostResponseServer.request)
       throw new Error('The intercepted server request was not recorded.');
-    expect((await lostResponseServer.request).status()).toBe(202);
-    await page.getByRole('link', { name: 'View job details' }).waitFor({ timeout: 15_000 });
+    submissionDelivery.resolve();
+    const recoveredResponse = await lostResponseServer.request;
+    expect(recoveredResponse.status()).toBe(202);
+    const { job: recoveredJob } = (await recoveredResponse.json()) as { job: { id: string } };
+    // Recovery can reach the completed result before Playwright observes the pending view.
+    const recoveredJobLink = page.getByRole('link', { name: /^View job(?: details)?$/ });
+    await recoveredJobLink.waitFor({ timeout: 15_000 });
+    expect(
+      new URL((await recoveredJobLink.getAttribute('href')) ?? '', harness.url).searchParams.get(
+        'selected'
+      )
+    ).toBe(recoveredJob.id);
     expect(
       await page.evaluate(() => sessionStorage.getItem('poyo-studio-pending-action:image'))
     ).toBeNull();
