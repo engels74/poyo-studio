@@ -66,7 +66,7 @@ pass_filenames = false
 [[repos.hooks]]
 id = "bun-test"
 name = "bun test"
-entry = "bun test"
+entry = "bun run test"
 language = "system"
 files = "^(src|tests|scripts)/|^(package\\.json|bunfig\\.toml|tsconfig\\.json|svelte\\.config\\.(js|ts)|vite\\.config\\.(js|ts))$"
 pass_filenames = false

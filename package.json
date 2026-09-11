@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "license": "AGPL-3.0-only",
-  "packageManager": "bun@1.4.0",
+  "packageManager": "bun@1.4.2",
   "engines": {
-    "bun": "1.4.0"
+    "bun": "1.4.2"
   },
   "scripts": {
     "dev": "bun --bun vite dev --host 127.0.0.1",
@@ -28,7 +28,11 @@
     "registry:audit:network": "bun scripts/audit-registry-network.ts",
     "registry:evidence:refresh": "bun scripts/refresh-registry-sources.ts && bun scripts/refresh-registry-fixtures.ts",
     "test:production-smoke": "bun scripts/production-smoke.ts",
-    "test:smoke": "bun run test:production-smoke"
+    "test:smoke": "bun run test:production-smoke",
+    "prepare": "svelte-kit sync",
+    "test:ci": "bun run test && bun run validate:registry",
+    "test:browser:ci": "bun scripts/test-browser.ts all",
+    "test:media-tools:ci": "POYO_REQUIRE_MEDIA_TOOLS=1 bun scripts/test-media-tools.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.4",

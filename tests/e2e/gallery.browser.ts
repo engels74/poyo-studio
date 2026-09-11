@@ -38,6 +38,14 @@ function isExpectedLifecycleRequestAbort(request: Request): boolean {
   if (request.failure()?.errorText !== 'net::ERR_ABORTED') return false;
 
   const url = new URL(request.url());
+  // SvelteKit preloads and invalidates gallery data while this test navigates.
+  // Superseded reads abort; the suite separately asserts every rendered view.
+  if (
+    request.method() === 'GET' &&
+    url.pathname === '/gallery/__data.json' &&
+    url.searchParams.has('x-sveltekit-invalidated')
+  )
+    return true;
   if (url.pathname === '/api/library/viewer-sequence' || url.pathname === '/api/events/jobs')
     return true;
   return (
