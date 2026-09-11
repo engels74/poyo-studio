@@ -4,8 +4,9 @@ All development pull requests and default-branch pushes run independent required
 quality, unit/registry, browser/security/production smoke, media-tool integration,
 and hygiene jobs. `ci / required` requires every job to succeed and rejects missing,
 skipped, failed or cancelled jobs. Its dispatch guard binds repair runs to the exact
-current PR commit. Configure this required check with up-to-date branches, enforced
-for administrators, and prohibit force pushes/deletion.
+current PR commit. Review the exact current head/base, full CI results and relevant
+artifacts before merging with the maintainer’s ghmerge function. Repository branch protections and
+rulesets are intentionally disabled; local prek protections remain in place.
 
 Use Bun 1.4.2 and `bun install --frozen-lockfile`. CI shares `bun run format:check`,
 `bun run lint`, `bun run check`, `bun run test:ci`, `bun run test:browser:ci`, and
@@ -35,11 +36,10 @@ permissions, lockfile/runtime/runner caches, bounded jobs, source mutation check
 and cancellation of superseded runs apply consistently. Prek skips duplicate
 application hooks only in CI; its local test hook now uses the safe explicit suite.
 
-Renovate uses `engels74/automation:default`, including official Biome package/schema
+Renovate uses `edbfi/automation:default`, including official Biome package/schema
 handling and grouped non-major updates. TypeScript stays below 7 until Svelte's
-compiler API is compatible. Automerge stays off during adoption pending corrected
-shared policy and successful required-check configuration. Biome repair computes
-without write privileges, publishes only allowlisted source/config changes, and
+compiler API is compatible. Automerge stays off; passing CI does not replace manual
+review. Biome repair computes without write privileges, publishes only allowlisted source/config changes, and
 explicitly runs full CI for the repaired SHA. Broad formatting changes beyond the
 shared limits require manual handling. Actions and shared preset updates arrive as
 normal Renovate PRs; full version tags are the agreed reference policy.

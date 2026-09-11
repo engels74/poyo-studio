@@ -115,8 +115,6 @@ counts; read it before touching anything in that directory.
 
 ## Reference rules
 
-- `.agents/rules/poyo-studio-tech-stack.md` — 1694-line Bun / Svelte 5 runes / SvelteKit 2 /
-  UnoCSS Wind4 reference. Read the relevant section before writing new components, load
-  functions or `+server.ts` boilerplate. Caveat: its shadcn-svelte, `unocss-preset-shadcn`,
-  `presetIcons` and Superforms sections describe a stack this repo does not use —
-  `uno.config.ts` loads `presetWind4` only, and none of those packages are dependencies.
+- `.agents/rules/svelte5-sveltekit-app.md` contains the shared Svelte/Bun reference.
+  This repository’s explicit invariants above take precedence where its chosen
+  adapter, styling, test runner or local-only design differ from that reference.
